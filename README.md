@@ -3,29 +3,13 @@
 ## Setup
 
 ```sh
-# Installs git hooks and provisions local placeholder Firebase config.
-# No external key store is cloned.
+# Installs git hooks. No external key store is cloned.
 make setup
 ```
 
 `make setup` is fully self-contained — it does **not** download anything from an
-external repository. It installs the git hooks and copies a committed
-placeholder `GoogleService-Info.plist`
-(`scripts/firebase/GoogleService-Info.template.plist`) into each flavor folder
-under `Tonkeeper/Resources/Firebase/` so the project builds out of the box.
-
-> Note: TOS does not use Firebase; the placeholder only satisfies the Xcode
-> "Firebase plist" build phase while the Firebase SDKs are still present.
-> Removing Firebase entirely is tracked as follow-up work.
-
-#### Build with a real Firebase project (optional)
-
-Only needed if you actually want Firebase services to work locally:
-
-- create your own `GoogleService-Info.plist` ([Steps 1-3](https://firebase.google.com/docs/ios/setup))
-- place it at `Tonkeeper/Resources/Firebase/<Flavor>/GoogleService-Info.plist`
-  (e.g. `Tonkeeper/`, `TonkeeperDev/`). That directory is git-ignored, and
-  `make setup` will not overwrite a plist you have placed there.
+external repository. TOS uses no Firebase or analytics SDKs, so no
+`GoogleService-Info.plist` or telemetry keys are required to build.
 
 #### Device debug
 

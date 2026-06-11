@@ -6,10 +6,6 @@
 	<string>$(APP_GROUP_IDENTIFIER)</string>
 	<key>APP_NAME</key>
 	<string>$(APP_NAME)</string>
-	<key>APTABASE_ENDPOINT</key>
-	<string>$(APTABASE_ENDPOINT)</string>
-	<key>APTABASE_KEY</key>
-	<string>$(APTABASE_KEY)</string>
 	<key>AppIdentifierPrefix</key>
 	<string>$(AppIdentifierPrefix)</string>
 	<key>CFBundleURLTypes</key>

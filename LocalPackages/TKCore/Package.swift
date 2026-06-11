@@ -15,8 +15,6 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/onevcat/Kingfisher.git", .upToNextMajor(from: "7.0.0")),
-        .package(url: "https://github.com/firebase/firebase-ios-sdk", .upToNextMajor(from: "12.8.0")),
-        .package(url: "https://github.com/aptabase/aptabase-swift.git", .upToNextMajor(from: "0.3.9")),
         .package(path: "../TKUIKit"),
         .package(path: "../core-swift"),
         .package(path: "../Ledger"),
@@ -29,10 +27,6 @@ let package = Package(
             name: "TKCore",
             dependencies: [
                 .byName(name: "Kingfisher"),
-                .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
-                .product(name: "FirebaseMessaging", package: "firebase-ios-sdk"),
-                .product(name: "FirebasePerformance", package: "firebase-ios-sdk"),
-                .product(name: "Aptabase", package: "aptabase-swift"),
                 .product(name: "TKUIKitDynamic", package: "TKUIKit"),
                 .product(name: "WalletCore", package: "core-swift"),
                 .product(name: "TonTransport", package: "Ledger"),

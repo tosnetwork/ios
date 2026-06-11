@@ -545,8 +545,6 @@
 				7DB8FB602A1BCC92005B4B11 /* Resources */,
 				7D32F8C02A8CCB58002C130C /* Embed Frameworks */,
 				7D19EB742ABDB58D00BDE7FA /* Embed Foundation Extensions */,
-				C30297552B4EE30300DD6FFC /* Firebase plist */,
-				C30297502B4EDDDD00DD6FFC /* Crashlytics+dSYM */,
 			);
 			buildRules = (
 			);
@@ -732,54 +730,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if [ \"${CONFIGURATION#*Dev}\" != \"${CONFIGURATION}\" ]; then\n  SRC_PLIST=\"${SRCROOT}/Tonkeeper/Resources/Info.plist\"\n  DST_PLIST=\"${SRCROOT}/Tonkeeper/Resources/Info-Dev.plist\"\n  cp \"${SRC_PLIST}\" \"${DST_PLIST}\"\n  /usr/libexec/PlistBuddy -c \"Set :UIDesignRequiresCompatibility false\" \"${DST_PLIST}\"\nfi\n";
-		};
-		C30297502B4EDDDD00DD6FFC /* Crashlytics+dSYM */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
-				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
-				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
-			);
-			name = "Crashlytics+dSYM";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n\nSCRIPT_DIR=\"${CLONED_SOURCE_PACKAGES_DIR:-${BUILD_DIR%/Build/*}/SourcePackages}\"\nif [ ! -x \"${SCRIPT_DIR}/checkouts/firebase-ios-sdk/Crashlytics/run\" ]; then\n  SCRIPT_DIR=\"${BUILD_DIR%/Build/*}/SourcePackages\"\nfi\n\n\"${SCRIPT_DIR}/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
-		};
-		C30297552B4EE30300DD6FFC /* Firebase plist */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/scripts/firebase/copy_google_service_info.sh",
-				"$(PROJECT_DIR)/$(TARGET_NAME)/Resources/Firebase/Tonkeeper/GoogleService-Info.plist",
-				"$(PROJECT_DIR)/$(TARGET_NAME)/Resources/Firebase/TonkeeperDev/GoogleService-Info.plist",
-				"$(PROJECT_DIR)/$(TARGET_NAME)/Resources/Firebase/TonkeeperXDebug/GoogleService-Info.plist",
-				"$(PROJECT_DIR)/$(TARGET_NAME)/Resources/Firebase/TonkeeperXRelease/GoogleService-Info.plist",
-			);
-			name = "Firebase plist";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -e\n\n\"${SRCROOT}/scripts/firebase/copy_google_service_info.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

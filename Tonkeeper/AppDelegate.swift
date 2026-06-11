@@ -17,12 +17,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        FirebaseConfigurator.configurator.configure()
         Log.configure()
-
-        AptabaseConfigurator.configurator.configure(
-            sendStatsImmediately: TKAppPreferences.sendStatsImmediately
-        )
 
         UNUserNotificationCenter.current().delegate = self
 

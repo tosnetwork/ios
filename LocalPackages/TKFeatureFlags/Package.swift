@@ -14,7 +14,6 @@ let package = Package(
     dependencies: [
         .package(path: "../TKAppInfo"),
         .package(path: "../TKLogging"),
-        .package(url: "https://github.com/firebase/firebase-ios-sdk", .upToNextMajor(from: "12.8.0")),
     ],
     targets: [
         .target(
@@ -22,7 +21,6 @@ let package = Package(
             dependencies: [
                 "TKAppInfo",
                 "TKLogging",
-                .product(name: "FirebaseRemoteConfig", package: "firebase-ios-sdk"),
             ],
             swiftSettings: [
                 .treatAllWarnings(as: .error),

@@ -1,22 +1,13 @@
-import FirebasePerformance
 import Foundation
 
+// TOS does not use Firebase Performance. No-op shell kept so call sites that
+// create traces still compile.
 public final class Trace {
-    private let firebaseTrace: FirebasePerformance.Trace?
+    public init(name: String) {}
 
-    public init(name: String) {
-        self.firebaseTrace = Performance.startTrace(name: name)
-    }
+    public func setValue(_ value: String, forAttribute attribute: String) {}
 
-    public func setValue(_ value: String, forAttribute attribute: String) {
-        firebaseTrace?.setValue(value, forAttribute: attribute)
-    }
+    public func incrementMetric(_ name: String, by value: Int64) {}
 
-    public func incrementMetric(_ name: String, by value: Int64) {
-        firebaseTrace?.incrementMetric(name, by: value)
-    }
-
-    public func stop() {
-        firebaseTrace?.stop()
-    }
+    public func stop() {}
 }

@@ -12,8 +12,6 @@ KEYCHAIN_ACCESS_GROUP = $(BASE_BUNDLE_IDENTIFIER).shared
 ASSOCIATED_DOMAIN_APPLINKS_FIRST = applinks:app.tos.network
 ASSOCIATED_DOMAIN_APPLINKS_SECOND = applinks:tos.network
 
-APTABASE_KEY = A-SH-6199502298
-APTABASE_ENDPOINT = https:/$()/anonymous-analytics.tonkeeper.com
 PLATFORM = ios
 
 TERMS_OF_SERVICE_URL = https:/$()/tos.network/terms

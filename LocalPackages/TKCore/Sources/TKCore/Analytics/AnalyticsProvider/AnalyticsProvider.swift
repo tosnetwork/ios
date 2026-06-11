@@ -1,4 +1,3 @@
-import Aptabase
 import Foundation
 
 public enum EventKey: String {
