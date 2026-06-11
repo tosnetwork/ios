@@ -14,18 +14,17 @@ add_task_prefix_to_commit_message() {
     exit 1
   fi
 
+  # The [TASK] prefix is opt-in: only branches that follow the
+  # author/TASK/description convention (TASK = UPPER-123) get a prefix.
+  # Any other branch (e.g. main, feature branches) commits unchanged.
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
-    echo "error: detached HEAD; use a branch like author/IOS-562/description" >&2
-    exit 1
+    return 0
   fi
 
   case "$branch" in
     */*/*) ;;
-    *)
-      echo "error: branch must be author/TASK/description (e.g. rzm/IOS-562/fix-header)" >&2
-      exit 1
-      ;;
+    *) return 0 ;;
   esac
 
   author="${branch%%/*}"
@@ -34,13 +33,11 @@ add_task_prefix_to_commit_message() {
   desc="${rest#*/}"
 
   if [ -z "$author" ] || [ -z "$desc" ]; then
-    echo "error: branch must be author/TASK/description (e.g. rzm/IOS-562/fix-header)" >&2
-    exit 1
+    return 0
   fi
 
   if ! printf "%s" "$task" | grep -Eq '^[A-Z]+-[0-9]+$'; then
-    echo "error: task id must be uppercase letters + '-' + digits (e.g. IOS-562)" >&2
-    exit 1
+    return 0
   fi
 
   first_line="$(head -n 1 "$msg_file")"
@@ -63,7 +60,11 @@ add_task_prefix_to_commit_message() {
 }
 
 run_swiftformat() {
-  "${repo_root}/scripts/require_tool.sh" swiftformat "brew install swiftformat"
+  # Best-effort: skip silently if swiftformat isn't installed so the hook never
+  # blocks a commit just because the optional formatter is missing.
+  if ! command -v swiftformat >/dev/null 2>&1; then
+    return 0
+  fi
 
   staged_swift_files="$(git -C "${repo_root}" diff --cached --name-only --diff-filter=ACMR | grep -E '\.swift$' || true)"
   if [ -z "$staged_swift_files" ]; then

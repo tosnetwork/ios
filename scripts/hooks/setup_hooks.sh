@@ -1,8 +1,11 @@
 #!/bin/sh
 set -e
 
-SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-GIT_DIR="$( cd $(git rev-parse --git-common-dir) && pwd )"
+# POSIX-portable: resolve paths relative to the repo root instead of using the
+# bash-only ${BASH_SOURCE} (which breaks under dash / non-bash /bin/sh).
+cd "$(git rev-parse --show-toplevel)"
+GIT_DIR="$(git rev-parse --git-common-dir)"
 
-cp -f "${SCRIPT_DIR}/commit-msg" "${GIT_DIR}/hooks/commit-msg"
+mkdir -p "${GIT_DIR}/hooks"
+cp -f scripts/hooks/commit-msg "${GIT_DIR}/hooks/commit-msg"
 chmod +x "${GIT_DIR}/hooks/commit-msg"
