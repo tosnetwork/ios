@@ -103,7 +103,7 @@ final class ReceiveViewModelImplementation: ReceiveViewModel, ReceiveModuleOutpu
         if tokens.count > 1 {
             let segmentedControlItems = tokens.map {
                 switch $0 {
-                case .ton: "TON"
+                case .ton: TonInfo.symbol
                 case .tron: "TRC20"
                 }
             }

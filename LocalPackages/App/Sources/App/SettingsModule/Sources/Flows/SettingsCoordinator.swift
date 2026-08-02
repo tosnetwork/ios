@@ -85,10 +85,6 @@ private extension SettingsCoordinator {
             self?.openLegal()
         }
 
-        configurator.didTapLanguage = { [weak self] in
-            self?.openNativeSettings()
-        }
-
         configurator.didTapBackup = { [weak self] wallet in
             self?.openBackup(wallet: wallet)
         }

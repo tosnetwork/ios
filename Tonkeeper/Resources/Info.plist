@@ -15,22 +15,6 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>tc</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>ton</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
 				<string>tos</string>
 			</array>
 		</dict>
@@ -63,26 +47,10 @@
 	<false/>
 	<key>KEYCHAIN_ACCESS_GROUP</key>
 	<string>$(KEYCHAIN_ACCESS_GROUP)</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>tg</string>
-		<string>tonsign</string>
-		<string>ledgerlive</string>
-	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>ip-api.com</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-			</dict>
-		</dict>
 	</dict>
 	<key>NSUserActivityTypes</key>
 	<array>
@@ -117,10 +85,6 @@
 			</array>
 		</dict>
 	</dict>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
 	<key>UIDesignRequiresCompatibility</key>
 	<true/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

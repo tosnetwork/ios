@@ -173,10 +173,8 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             handleStateUpdate(state)
         }
         mainController.start()
-        try? setupTONWalletKitIfNeeded()
         DispatchQueue.main.async {
             _ = self.handleDeeplink(deeplink: deeplink, fromStories: false)
-            self.setupStoriesController()
         }
     }
 
@@ -238,9 +236,6 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             self?.openSwap(wallet: wallet, token: .ton(.ton))
         }
 
-        walletCoordinator.didTapSupportButton = { [weak self] in
-            self?.openSupport()
-        }
 
         walletCoordinator.didTapSettingsButton = { [weak self] wallet in
             self?.openSettings(wallet: wallet)
@@ -372,9 +367,6 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(collectiblesCoordinator)
 
         walletCoordinator.start()
-        historyCoordinator.start()
-        browserCoordinator.start()
-        collectiblesCoordinator.start()
     }
 
     func handleStateUpdate(_ state: MainCoordinatorStateManager.State) {
@@ -1083,31 +1075,6 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         }
 
         fromViewController.present(navigationController, animated: true)
-    }
-
-    func openSupport() {
-        let directSupportURL = keeperCoreMainAssembly.configurationAssembly.configuration.directSupportUrl
-        let urlOpener = coreAssembly.urlOpener()
-        let appSettings = coreAssembly.appSettings
-
-        if appSettings.isSupportPopUpShown {
-            guard let directSupportURL else { return }
-
-            urlOpener.open(url: directSupportURL)
-        } else {
-            appSettings.isSupportPopUpShown = true
-            let module = SupportPopupAssembly.module(directSupportURL: directSupportURL)
-            let bottomSheetViewController = TKBottomSheetViewController(contentViewController: module.view)
-            bottomSheetViewController.present(fromViewController: router.rootViewController.topPresentedViewController())
-
-            module.output.didOpenURL = { [weak bottomSheetViewController] in
-                bottomSheetViewController?.dismiss()
-                urlOpener.open(url: $0)
-            }
-            module.output.didClose = { [weak bottomSheetViewController] in
-                bottomSheetViewController?.dismiss()
-            }
-        }
     }
 
     func openSettings(wallet: Wallet) {

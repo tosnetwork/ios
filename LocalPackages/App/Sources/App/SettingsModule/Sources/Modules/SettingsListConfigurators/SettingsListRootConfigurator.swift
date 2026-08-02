@@ -13,7 +13,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapSecuritySettings: (() -> Void)?
     var didTapLegal: (() -> Void)?
     var didTapBackup: ((Wallet) -> Void)?
-    var didTapLanguage: (() -> Void)?
     var didOpenURL: ((URL) -> Void)?
     var didShowAlert: ((
         _ title: String,
@@ -167,7 +166,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         if let appSettingsSection = createAppSettingsSection() {
             sections.append(appSettingsSection)
         }
-        sections.append(createSupportSection())
+        sections.append(createWalletMaintenanceSection())
         sections.append(createLogoutSection())
         sections.append(createAppInformationSection())
 
@@ -223,7 +222,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         }
         items.append(createThemeItem())
         items.append(createSearchItem())
-        items.append(createLanguageItem())
 
         guard !items.isEmpty else { return nil }
 
@@ -234,14 +232,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         )
     }
 
-    private func createSupportSection() -> SettingsListSection {
-        var items = [
-            createFAQItem(),
-            createSupportItem(),
-            createNewsItem(),
-            createContactUsItem(),
-            createRateItem(),
-        ]
+    private func createWalletMaintenanceSection() -> SettingsListSection {
+        var items = [SettingsListItem]()
         if let deleteItem = createDeleteWalletItem() {
             items.append(deleteItem)
         }
@@ -496,33 +488,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         )
     }
 
-    private func createLanguageItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.language)
-                )
-            )
-        )
-
-        return SettingsListItem(
-            id: .languageItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .text(
-                TKListItemTextAccessoryView.Configuration(
-                    text: TKLocales.language,
-                    color: .Accent.blue,
-                    textStyle: .label1
-                )
-            ),
-            onSelection: { [weak self] _ in
-                guard let self else { return }
-
-                self.didTapLanguage?()
-            }
-        )
-    }
-
     private func createConnectedAppsItem() -> SettingsListItem {
         let cellConfiguration = TKListItemCell.Configuration(
             listItemContentViewConfiguration: TKListItemContentView.Configuration(
@@ -584,141 +549,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                     items: items,
                     selectedIndex: selectedIndex
                 )
-            }
-        )
-    }
-
-    func createFAQItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.faq)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .FAQItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.question, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self, configuration] _ in
-                guard let self else { return }
-                Task {
-                    guard let contactUsURL = configuration
-                        .faqUrl
-                    else {
-                        return
-                    }
-                    await MainActor.run {
-                        self.didOpenURL?(contactUsURL)
-                    }
-                }
-            }
-        )
-    }
-
-    func createSupportItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.support)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .supportItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.telegram, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self, configuration] _ in
-                guard let self else { return }
-                Task {
-                    guard let contactUsURL = configuration
-                        .directSupportUrl
-                    else {
-                        return
-                    }
-                    await MainActor.run {
-                        self.didOpenURL?(contactUsURL)
-                    }
-                }
-            }
-        )
-    }
-
-    func createNewsItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.tkNews)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .tonkeeperNewsItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.telegram, tintColor: .Icon.secondary)),
-            onSelection: {
-                [weak self, configuration] _ in
-                guard let self else { return }
-                Task {
-                    guard let contactUsURL = configuration
-                        .tonkeeperNewsUrl
-                    else {
-                        return
-                    }
-                    await MainActor.run {
-                        self.didOpenURL?(contactUsURL)
-                    }
-                }
-            }
-        )
-    }
-
-    func createContactUsItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.contactUs)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .contactUsItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.messageBubble, tintColor: .Icon.secondary)),
-            onSelection: {
-                [weak self, configuration] _ in
-                guard let self else { return }
-                Task {
-                    guard let contactUsURL = configuration
-                        .supportLink
-                    else {
-                        return
-                    }
-                    await MainActor.run {
-                        self.didOpenURL?(contactUsURL)
-                    }
-                }
-            }
-        )
-    }
-
-    func createRateItem() -> SettingsListItem {
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.rate(InfoProvider.appName()))
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .rateItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.star, tintColor: .Icon.secondary)),
-            onSelection: {
-                [weak self] _ in
-                self?.appStoreReviewer.requestReview()
             }
         )
     }
@@ -985,13 +815,7 @@ private extension String {
     static let walletW5ItemIdentifier = "walletW5ItemIdentifier"
     static let walletV4ItemIdentifier = "walletV4ItemIdentifier"
     static let searchItemIdentifier = "SearchItem"
-    static let languageItemIdentifier = "LanguageItem"
     static let themeItemIdentifier = "ThemeItem"
-    static let FAQItemIdentifier = "FAQItem"
-    static let supportItemIdentifier = "SupportItem"
-    static let tonkeeperNewsItemIdentifier = "TonkeeperNewsItem"
-    static let contactUsItemIdentifier = "ContactUsItem"
-    static let rateItemIdentifier = "RateItem"
     static let legalItemIdentifier = "LegalItem"
     static let signOutIdentifier = "SignOutIdentifier"
     static let deleteAccountIdentifier = "DeleteAccountItem"

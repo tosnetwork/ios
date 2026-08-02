@@ -18,24 +18,18 @@ struct BalanceItemMapper {
         isSecure: Bool,
         isPinned: Bool
     ) -> TKListItemContentView.Configuration {
-        let caption = createPriceSubtitle(
-            price: item.price,
-            currency: item.currency,
-            diff: item.diff,
-            isUnverified: false
-        )
-
         return TKListItemContentView.Configuration(
             iconViewConfiguration: .tonConfiguration(),
             textContentViewConfiguration: createTextContentViewConfiguration(
                 title: TonInfo.symbol,
                 isPinned: isPinned,
-                caption: caption,
+                caption: nil,
                 amount: BigUInt(item.amount),
                 amountFractionDigits: TonInfo.fractionDigits,
                 convertedAmount: item.converted,
                 currency: item.currency,
-                isSecure: isSecure
+                isSecure: isSecure,
+                showsConvertedAmount: false
             )
         )
     }
@@ -159,7 +153,8 @@ struct BalanceItemMapper {
         convertedAmount: Decimal,
         currency: Currency,
         tags: [TKTagView.Configuration] = [],
-        isSecure: Bool
+        isSecure: Bool,
+        showsConvertedAmount: Bool = true
     ) -> TKListItemTextContentView.Configuration {
         var icon: TKListItemTitleView.Configuration.Icon?
         if isPinned {
@@ -192,15 +187,16 @@ struct BalanceItemMapper {
                 alignment: .right,
                 lineBreakMode: .byTruncatingTail
             )
-            let valueCaption = (isSecure ? String.secureModeValueShort : formatConvertedAmount).withTextStyle(
-                .body2,
-                color: .Text.secondary,
-                alignment: .right,
-                lineBreakMode: .byTruncatingTail
-            )
-
             valueViewConfiguration = TKListItemTextView.Configuration(text: value)
-            valueCaptionViewConfiguration = TKListItemTextView.Configuration(text: valueCaption)
+            if showsConvertedAmount {
+                let valueCaption = (isSecure ? String.secureModeValueShort : formatConvertedAmount).withTextStyle(
+                    .body2,
+                    color: .Text.secondary,
+                    alignment: .right,
+                    lineBreakMode: .byTruncatingTail
+                )
+                valueCaptionViewConfiguration = TKListItemTextView.Configuration(text: valueCaption)
+            }
         }
 
         return TKListItemTextContentView.Configuration(

@@ -344,16 +344,7 @@ private extension EthenaStakingDetailsViewModelImplementation {
                     apyValue: "\(method.apy)%",
                     boostTitle: method.apyBonusTitle,
                     boostDescription: method.apyBonusDescription,
-                    faqButtonModel: TKPlainButton.Model(
-                        title: "FAQ".withTextStyle(
-                            .body2,
-                            color: .Text.accent
-                        ),
-                        action: { [weak self] in
-                            guard let faqURL = URL(string: response.about.faqUrl) else { return }
-                            self?.didOpenURLInApp?(faqURL)
-                        }
-                    ),
+                    faqButtonModel: nil,
                     checkEligibilityButtonModel: TKPlainButton.Model(
                         title: TKLocales.Ethena.checkEligibility.withTextStyle(
                             .body2,

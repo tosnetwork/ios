@@ -8,6 +8,24 @@ public enum TransferSigner {
         seqno: UInt64,
         signer: WalletTransferSigner
     ) throws -> Cell {
+        let transferCell = try signWalletTransferBody(
+            walletTransfer,
+            wallet: wallet,
+            signer: signer
+        )
+        let externalMessage = try Message.external(
+            to: wallet.address,
+            stateInit: seqno == 0 ? wallet.contract.stateInit : nil,
+            body: transferCell
+        )
+        return try Builder().store(externalMessage).endCell()
+    }
+
+    static func signWalletTransferBody(
+        _ walletTransfer: WalletTransfer,
+        wallet: Wallet,
+        signer: WalletTransferSigner
+    ) throws -> Cell {
         let signed = try walletTransfer.signMessage(
             signer: signer,
             hashModifier: wallet.network == .tetra
@@ -24,13 +42,7 @@ public enum TransferSigner {
             try body.store(walletTransfer.signingMessage)
             try body.store(data: signed)
         }
-        let transferCell = try body.endCell()
-        let externalMessage = try Message.external(
-            to: wallet.address,
-            stateInit: seqno == 0 ? wallet.contract.stateInit : nil,
-            body: transferCell
-        )
-        return try Builder().store(externalMessage).endCell()
+        return try body.endCell()
     }
 
     public static func signWalletTransfer(

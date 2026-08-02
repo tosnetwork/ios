@@ -578,28 +578,23 @@ public struct TransferService {
         )
         let walletTransfer = try await UnsignedTransferBuilder(transferData: transferData)
             .createUnsignedWalletTransfer(wallet: wallet)
-        let signed = try TransferSigner.signWalletTransfer(
+        let signedBody = try TransferSigner.signWalletTransferBody(
             walletTransfer,
             wallet: wallet,
-            seqno: transferData.seqno,
             signer: WalletTransferEmptyKeySigner()
         )
-        let transactionInfo = try await sendService.loadTransactionInfo(
-            boc: signed.toBoc().hexString(),
-            wallet: wallet,
-            params: params,
-            currency: currencyStore.state
+        let fee = try await sendService.estimateFee(
+            boc: signedBody.toBoc().base64EncodedString(),
+            wallet: wallet
         )
         return TransferEmulationResult(
             transferType: .default,
             extra: TransferEmulationResult.Extra(
                 token: .ton,
-                amount: transactionInfo.event.extra > 0 ?
-                    .refund(BigUInt(transactionInfo.event.extra)) :
-                    .fee(BigUInt(abs(transactionInfo.event.extra))),
+                amount: .fee(BigUInt(fee)),
                 excess: nil
             ),
-            transactionInfo: transactionInfo,
+            transactionInfo: nil,
             isGaslessAvailable: isGaslessAvailable
         )
     }

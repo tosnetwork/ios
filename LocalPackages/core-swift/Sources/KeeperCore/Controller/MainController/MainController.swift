@@ -52,8 +52,6 @@ public final class MainController {
 
     public func start() {
         startUpdates()
-        internalNotificationsLoader.loadNotifications()
-        storiesLoader.loadStories()
     }
 
     public func startUpdates() {
@@ -61,34 +59,12 @@ public final class MainController {
         balanceLoader.loadActiveWalletBalance()
         walletInfoLoader.loadActiveWalletInfoNotifications()
         balanceLoader.startActiveWalletBalanceReload()
-        backgroundUpdate.start()
-        tronUSDTFeesService.start()
-
-        if !configurationAssembly.configuration.featureEnabled(.walletKitEnabled) {
-            Task {
-                await tonConnectEventsStore.addObserver(self)
-                await tonConnectEventsStore.start()
-                await MainActor.run {
-                    updatesStarted = true
-                }
-            }
-        }
+        updatesStarted = true
     }
 
     public func stopUpdates() {
         balanceLoader.stopActiveWalletBalanceReload()
-        backgroundUpdate.stop()
-        tronUSDTFeesService.stop()
-
-        if !configurationAssembly.configuration.featureEnabled(.walletKitEnabled) {
-            Task {
-                await tonConnectEventsStore.stop()
-                await tonConnectEventsStore.removeObserver(self)
-                await MainActor.run {
-                    updatesStarted = false
-                }
-            }
-        }
+        updatesStarted = false
     }
 
     public func parseDeeplink(deeplink: String?) throws -> Deeplink {

@@ -1,0 +1,30 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Install build formatter
+        run: brew install xcbeautify
+
+      - name: Build app
+        run: make compile
+
+      - name: Test wallet core
+        run: make test_keeper_core TEST_DESTINATION='platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5'

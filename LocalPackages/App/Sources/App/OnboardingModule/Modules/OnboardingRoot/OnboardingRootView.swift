@@ -37,8 +37,8 @@ final class OnboardingRootView: UIView, ConfigurableView {
 
     let coverImageView: UIImageView = {
         let imageView = UIImageView()
-        imageView.image = .Onboarding.cover
-        imageView.contentMode = .scaleAspectFill
+        imageView.image = UIImage(resource: .icLogo128)
+        imageView.contentMode = .scaleAspectFit
         return imageView
     }()
 

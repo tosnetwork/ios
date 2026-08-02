@@ -949,34 +949,21 @@ final class WalletBalanceViewModelImplementation:
     }
 
     func createConnectionStatusModel(backgroundUpdateState: BackgroundUpdateConnectionState, isLoading: Bool) -> BalanceHeaderBalanceConnectionStatusView.Model? {
-        switch (backgroundUpdateState, isLoading) {
-        case (.connecting, _):
+        if isLoading {
             return BalanceHeaderBalanceConnectionStatusView.Model(
                 title: TKLocales.ConnectionStatus.updating,
                 titleColor: .Text.secondary,
                 isLoading: true
             )
-        case (.connected, false):
-            return nil
-        case (.connected, true):
-            return BalanceHeaderBalanceConnectionStatusView.Model(
-                title: TKLocales.ConnectionStatus.updating,
-                titleColor: .Text.secondary,
-                isLoading: true
-            )
-        case (.disconnected, _):
-            return BalanceHeaderBalanceConnectionStatusView.Model(
-                title: TKLocales.ConnectionStatus.updating,
-                titleColor: .Text.secondary,
-                isLoading: true
-            )
-        case (.noConnection, _):
+        }
+        if backgroundUpdateState == .noConnection {
             return BalanceHeaderBalanceConnectionStatusView.Model(
                 title: TKLocales.ConnectionStatus.noInternet,
                 titleColor: .Accent.orange,
                 isLoading: false
             )
         }
+        return nil
     }
 
     func createUpdatesViewModel(wallet: Wallet, storiesState: StoriesStore.State) -> WalletBalanceUpdatesView.Model? {

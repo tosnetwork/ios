@@ -31,13 +31,10 @@ final class MainCoordinatorStateManager {
         self.configuration = configuration
         self.walletNFTStoreProvider = walletNFTStoreProvider
 
-        updateWalletNFTsManagedStore()
-
         walletsStore.addObserver(self) { observer, event in
             switch event {
             case .didChangeActiveWallet:
                 DispatchQueue.main.async {
-                    observer.updateWalletNFTsManagedStore()
                     observer.updateState()
                 }
             default: break
@@ -53,15 +50,7 @@ final class MainCoordinatorStateManager {
     }
 
     private func createState(activeWallet: Wallet, nfts: [NFT]) -> State {
-        var tabs = [State.Tab]()
-        tabs.append(.wallet)
-        tabs.append(.history)
-        tabs.append(.browser)
-        if !configuration.flag(\.nftsDisabled, network: activeWallet.network) || !nfts.isEmpty {
-            tabs.append(.purchases)
-        }
-
-        return State(tabs: tabs)
+        State(tabs: [.wallet])
     }
 
     private func updateState() {

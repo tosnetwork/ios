@@ -22,8 +22,6 @@ final class RemoteConfigurationServiceImplementation: RemoteConfigurationService
     }
 
     func loadConfiguration() async throws -> RemoteConfigurations {
-        let configuration = try await api.loadConfiguration()
-        try? repository.saveConfiguration(configuration)
-        return configuration
+        try repository.configuration
     }
 }

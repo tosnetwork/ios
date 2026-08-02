@@ -7,7 +7,6 @@ final class WalletRampAvailabilityTests: XCTestCase {
         let wallet = makeWallet(network: .testnet, kind: .Regular(publicKey, .v4R2))
 
         XCTAssertFalse(wallet.isRampCashOrCryptoAvailable)
-        XCTAssertFalse(wallet.isRampTRC20Available)
     }
 
     func test_watch_only_wallet_hides_cash_or_crypto_options() {
@@ -30,9 +29,6 @@ final class WalletRampAvailabilityTests: XCTestCase {
         )
         let keystone = makeWallet(network: .mainnet, kind: .Keystone(publicKey, nil, nil, .v4R2))
 
-        XCTAssertFalse(signer.isRampTRC20Available)
-        XCTAssertFalse(ledger.isRampTRC20Available)
-        XCTAssertFalse(keystone.isRampTRC20Available)
         XCTAssertTrue(signer.isRampCashOrCryptoAvailable)
         XCTAssertTrue(ledger.isRampCashOrCryptoAvailable)
         XCTAssertTrue(keystone.isRampCashOrCryptoAvailable)

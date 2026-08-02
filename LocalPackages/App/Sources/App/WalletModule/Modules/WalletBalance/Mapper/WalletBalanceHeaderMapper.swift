@@ -23,10 +23,11 @@ struct WalletBalanceHeaderMapper {
     }
 
     func mapTotalBalance(totalBalance: TotalBalance?) -> String {
-        if let totalBalance = totalBalance {
+        if let item = totalBalance?.balance.tonItems.first {
             return amountFormatter.format(
-                decimal: totalBalance.amount,
-                accessory: .currency(totalBalance.currency),
+                amount: BigUInt(item.amount),
+                fractionDigits: item.fractionalDigits,
+                accessory: .symbol("TOS"),
                 style: .compact
             )
         } else {

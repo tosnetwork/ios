@@ -12,6 +12,7 @@ public protocol SendService {
     ) async throws -> TonAPI.MessageConsequences
     func sendTransaction(boc: String, wallet: Wallet) async throws
     func sendTransactions(batch: [String], wallet: Wallet) async throws
+    func estimateFee(boc: String, wallet: Wallet) async throws -> UInt64
     func getTimeoutSafely(wallet: Wallet, TTL: UInt64) async -> UInt64
     func getJettonCustomPayload(wallet: Wallet, jetton: Address) async throws -> JettonTransferPayload
     func getIndexingLatency(wallet: Wallet) async throws -> Int
@@ -62,6 +63,11 @@ final class SendServiceImplementation: SendService {
     func sendTransactions(batch: [String], wallet: Wallet) async throws {
         try await apiProvider.api(wallet.network)
             .sendTransactions(batch: batch)
+    }
+
+    func estimateFee(boc: String, wallet: Wallet) async throws -> UInt64 {
+        try await apiProvider.api(wallet.network)
+            .estimateFee(address: wallet.address, boc: boc)
     }
 
     func getIndexingLatency(wallet: Wallet) async throws -> Int {

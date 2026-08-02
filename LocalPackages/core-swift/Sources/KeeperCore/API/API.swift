@@ -22,7 +22,11 @@ struct MainnetAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
+#if DEBUG
+            ProcessInfo.processInfo.environment["TOS_RPC_URL"] ?? "http://127.0.0.1:18545"
+#else
             await configuration.tonapiV2Endpoint
+#endif
         }
     }
 }
@@ -52,6 +56,70 @@ struct TetraAPIHostProvider: APIHostProvider {
         get async {
             await configuration.tetraHost
         }
+    }
+}
+
+struct TOSRPCClient {
+    enum Error: Swift.Error, LocalizedError {
+        case invalidEndpoint
+        case invalidResponse
+        case server(code: Int, message: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidEndpoint:
+                return "The TOS node endpoint is invalid."
+            case .invalidResponse:
+                return "The TOS node returned an invalid response."
+            case let .server(code, message):
+                return "TOS node error \(code): \(message)"
+            }
+        }
+    }
+
+    let basePath: () async -> String
+    let urlSession: URLSession
+
+    func call(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
+        let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let endpoint = URL(string: basePath + "/jsonRPC") else {
+            throw Error.invalidEndpoint
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0",
+            "id": UUID().uuidString,
+            "method": method,
+            "params": params,
+        ])
+
+        let (data, response) = try await urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200 ..< 300).contains(httpResponse.statusCode),
+              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            throw Error.invalidResponse
+        }
+
+        if envelope["ok"] as? Bool == false {
+            throw Error.server(
+                code: envelope["code"] as? Int ?? -32603,
+                message: envelope["error"] as? String ?? "RPC error"
+            )
+        }
+        if let error = envelope["error"] as? [String: Any] {
+            throw Error.server(
+                code: error["code"] as? Int ?? -32603,
+                message: error["message"] as? String ?? "RPC error"
+            )
+        }
+        guard let result = envelope["result"] as? [String: Any] else {
+            throw Error.invalidResponse
+        }
+        return result
     }
 }
 
@@ -86,6 +154,19 @@ public struct API {
 
     enum Error: Swift.Error {
         case failed
+    }
+
+    private func tosRPCCall(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
+        try await TOSRPCClient(
+            basePath: { await hostProvider.basePath },
+            urlSession: urlSession
+        ).call(method: method, params: params)
+    }
+
+    private func integer(_ value: Any?) -> Int64 {
+        if let value = value as? NSNumber { return value.int64Value }
+        if let value = value as? String { return Int64(value) ?? 0 }
+        return 0
     }
 
     @discardableResult
@@ -157,11 +238,26 @@ extension API {
 
 extension API {
     func getAccountInfo(accountId: String) async throws -> Account {
-        let request = try await createRequest {
-            AccountsAPI.getAccountWithRequestBuilder(accountId: accountId)
-        }
-        let response = try await performRequest(request: request).body
-        return try Account(account: response)
+        let response = try await tosRPCCall(
+            method: "getAddressInformation",
+            params: ["address": accountId]
+        )
+        let walletInfo = try? await tosRPCCall(
+            method: "getWalletInformation",
+            params: ["address": accountId]
+        )
+        let code = response["code"] as? String
+        return Account(
+            address: try Address.parse(accountId),
+            balance: integer(response["balance"]),
+            status: response["state"] as? String ?? (code?.isEmpty == false ? "active" : "uninit"),
+            name: nil,
+            icon: nil,
+            isSuspended: false,
+            isWallet: walletInfo?["wallet"] as? Bool ?? walletInfo?["is_wallet"] as? Bool ?? false,
+            isScam: false,
+            isMemoRequired: false
+        )
     }
 
     func getAccountJettonsBalances(address: Address, currencies: [Currency]) async throws -> [JettonBalance] {
@@ -280,21 +376,25 @@ extension API {
 
 extension API {
     func getSeqno(address: Address) async throws -> Int {
-        let request = try await createRequest {
-            WalletAPI.getAccountSeqnoWithRequestBuilder(accountId: address.toRaw())
-        }
-
-        let response = try await performRequest(request: request).body
-        return response.seqno
+        let response = try await tosRPCCall(
+            method: "getWalletInformation",
+            params: ["address": address.toRaw()]
+        )
+        return Int(integer(response["seqno"]))
     }
 
     func getWalletInfo(address: Address) async throws -> WalletInfo {
-        let request = try await createRequest {
-            WalletAPI.getWalletInfoWithRequestBuilder(accountId: address.toRaw())
-        }
-
-        let response = try await performRequest(request: request).body
-        return try WalletInfo(wallet: response)
+        let response = try await tosRPCCall(
+            method: "getWalletInformation",
+            params: ["address": address.toRaw()]
+        )
+        return WalletInfo(
+            address: address,
+            isWallet: response["wallet"] as? Bool ?? response["is_wallet"] as? Bool ?? false,
+            balance: integer(response["balance"]),
+            plugins: [],
+            lastActivity: integer((response["last_transaction_id"] as? [String: Any])?["lt"])
+        )
     }
 
     func emulateMessageWallet(
@@ -313,25 +413,26 @@ extension API {
     }
 
     func sendTransaction(boc: String) async throws {
-        let request = try await createRequest {
-            BlockchainAPI.sendBlockchainMessageWithRequestBuilder(
-                sendBlockchainMessageRequest: SendBlockchainMessageRequest(
-                    boc: boc
-                )
-            )
-        }
-        try await performRequest(request: request)
+        _ = try await tosRPCCall(method: "sendBocReturnHash", params: ["boc": boc])
     }
 
     func sendTransactions(batch: [String]) async throws {
-        let request = try await createRequest {
-            BlockchainAPI.sendBlockchainMessageWithRequestBuilder(
-                sendBlockchainMessageRequest: SendBlockchainMessageRequest(
-                    batch: batch
-                )
-            )
+        for boc in batch {
+            try await sendTransaction(boc: boc)
         }
-        try await performRequest(request: request)
+    }
+
+    func estimateFee(address: Address, boc: String) async throws -> UInt64 {
+        let response = try await tosRPCCall(
+            method: "estimateFee",
+            params: ["address": address.toRaw(), "body": boc]
+        )
+        let fees = response["source_fees"] as? [String: Any] ?? response
+        let total = integer(fees["in_fwd_fee"])
+            + integer(fees["storage_fee"])
+            + integer(fees["gas_fee"])
+            + integer(fees["fwd_fee"])
+        return UInt64(max(total, 0))
     }
 }
 
@@ -683,12 +784,12 @@ extension API {
 
 extension API {
     func getTime() async throws -> TimeInterval {
-        let request = try await createRequest {
-            LiteServerAPI.getRawTimeWithRequestBuilder()
-        }
-
-        let response = try await performRequest(request: request).body
-        return TimeInterval(response.time)
+        let response = try await tosRPCCall(
+            method: "getAddressInformation",
+            params: ["address": "0:0000000000000000000000000000000000000000000000000000000000000000"]
+        )
+        let timestamp = integer(response["sync_utime"])
+        return timestamp > 0 ? TimeInterval(timestamp) : Date().timeIntervalSince1970
     }
 }
 
@@ -696,10 +797,7 @@ extension API {
 
 extension API {
     func getStatus() async throws -> Int {
-        let request = try await createRequest {
-            UtilitiesAPI.statusWithRequestBuilder()
-        }
-        let response = try await performRequest(request: request).body
-        return response.indexingLatency
+        _ = try await tosRPCCall(method: "getMasterchainInfo")
+        return 0
     }
 }

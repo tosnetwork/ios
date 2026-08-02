@@ -44,7 +44,7 @@ public final class BalanceLoader {
         let walletBalanceLoader = walletBalanceLoaders[wallet]
         let task = Task {
             let currency = currencyStore.state
-            await loadRates(currency: currency)
+            await ratesStore.setRates(ton: [], usdt: [], jettonRates: [:])
             await walletBalanceLoader?.reloadBalance(currency: currency)
         }
         balanceLoadTasks[wallet] = task
@@ -60,7 +60,7 @@ public final class BalanceLoader {
         let loaders = walletStore.wallets.compactMap { walletBalanceLoaders[$0] }
         let task = Task {
             let currency = currencyStore.state
-            await loadRates(currency: currency)
+            await ratesStore.setRates(ton: [], usdt: [], jettonRates: [:])
             let chunks = loaders.chunked(into: 2)
             for chunk in chunks {
                 await withTaskGroup(of: Void.self) { group in

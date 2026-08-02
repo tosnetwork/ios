@@ -24,9 +24,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = TKWindow(windowScene: windowScene)
         let coordinator = App.LaunchCoordinator(
             router: TKCoordinator.WindowRouter(window: window),
-            remoteConfig: TKFirebaseRemoteConfigProvider(
-                requestTimeoutMs: 1500
-            )
+            remoteConfig: LocalRemoteConfigProvider()
         )
 
         if let deeplink = connectionOptions.urlContexts.first?.url.absoluteString {

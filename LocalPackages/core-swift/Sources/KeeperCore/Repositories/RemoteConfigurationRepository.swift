@@ -21,10 +21,6 @@ struct RemoteConfigurationRepositoryImplementation: RemoteConfigurationRepositor
 
     var configuration: RemoteConfigurations {
         get throws {
-            if let configuration = try? fileSystemVault.loadItem(key: .fileVaultConfigurationKey) {
-                return configuration
-            }
-
             guard let url = Bundle.module.url(forResource: .defaultConfigurationFileName, withExtension: nil),
                   let data = try? Data(contentsOf: url)
             else {

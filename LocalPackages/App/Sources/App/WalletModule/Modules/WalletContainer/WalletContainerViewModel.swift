@@ -5,7 +5,6 @@ import UIKit
 
 protocol WalletContainerModuleOutput: AnyObject {
     var walletButtonHandler: (() -> Void)? { get set }
-    var didTapSupportButton: (() -> Void)? { get set }
     var didTapScan: (() -> Void)? { get set }
     var didTapSettingsButton: ((Wallet) -> Void)? { get set }
 }
@@ -23,7 +22,6 @@ final class WalletContainerViewModelImplementation: WalletContainerViewModel, Wa
     // MARK: - WalletContainerModuleOutput
 
     var walletButtonHandler: (() -> Void)?
-    var didTapSupportButton: (() -> Void)?
     var didTapScan: (() -> Void)?
     var didTapSettingsButton: ((Wallet) -> Void)?
 
@@ -103,17 +101,9 @@ private extension WalletContainerViewModelImplementation {
             )
         )
         leadingButtonConfiguration.iconTintColor = .Icon.secondary
-        if configuration.featureEnabled(.newRampFlow) {
-            leadingButtonConfiguration.content.icon = .TKUIKit.Icons.Size28.qrViewFinderThin
-        } else {
-            leadingButtonConfiguration.content.icon = .TKUIKit.Icons.Size28.questionMessage
-        }
+        leadingButtonConfiguration.content.icon = .TKUIKit.Icons.Size28.qrViewFinderThin
         leadingButtonConfiguration.action = { [weak self] in
-            if self?.configuration.featureEnabled(.newRampFlow) == true {
-                self?.didTapScan?()
-            } else {
-                self?.didTapSupportButton?()
-            }
+            self?.didTapScan?()
         }
 
         var settingsButtonConfiguration = TKButton.Configuration.accentButtonConfiguration(

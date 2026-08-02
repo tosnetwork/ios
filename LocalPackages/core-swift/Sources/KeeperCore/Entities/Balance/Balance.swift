@@ -68,8 +68,8 @@ public struct JettonItem: Codable, Equatable, Hashable {
 }
 
 public struct TonInfo {
-    public static let name = "Toncoin"
-    public static let symbol = "TON"
+    public static let name = "TOS"
+    public static let symbol = "TOS"
     public static let fractionDigits = 9
     private init() {}
 }

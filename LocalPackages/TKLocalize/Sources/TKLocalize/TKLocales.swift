@@ -2557,9 +2557,20 @@ extension TKLocales {
 private final class BundleToken {
     static let bundle: Bundle = {
         #if SWIFT_PACKAGE
-            return Bundle.module
+            guard let englishPath = Bundle.module.path(forResource: "en", ofType: "lproj"),
+                  let englishBundle = Bundle(path: englishPath)
+            else {
+                return Bundle.module
+            }
+            return englishBundle
         #else
-            return Bundle(for: BundleToken.self)
+            let bundle = Bundle(for: BundleToken.self)
+            guard let englishPath = bundle.path(forResource: "en", ofType: "lproj"),
+                  let englishBundle = Bundle(path: englishPath)
+            else {
+                return bundle
+            }
+            return englishBundle
         #endif
     }()
 }
