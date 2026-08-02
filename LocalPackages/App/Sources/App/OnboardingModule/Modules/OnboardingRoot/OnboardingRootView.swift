@@ -37,7 +37,7 @@ final class OnboardingRootView: UIView, ConfigurableView {
 
     let coverImageView: UIImageView = {
         let imageView = UIImageView()
-        imageView.image = UIImage(resource: .icLogo128)
+        imageView.image = UIImage(resource: .tosWarmHome)
         imageView.contentMode = .scaleAspectFit
         return imageView
     }()
@@ -95,10 +95,10 @@ private extension OnboardingRootView {
             titleDescriptionView.leftAnchor.constraint(equalTo: leftAnchor),
             titleDescriptionView.rightAnchor.constraint(equalTo: rightAnchor),
 
-            coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -24),
-            coverImageView.leftAnchor.constraint(equalTo: titleDescriptionView.leftAnchor),
-            coverImageView.rightAnchor.constraint(equalTo: titleDescriptionView.rightAnchor),
-            coverImageView.topAnchor.constraint(equalTo: topAnchor),
+            coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -80),
+            coverImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            coverImageView.widthAnchor.constraint(equalToConstant: 220),
+            coverImageView.heightAnchor.constraint(equalTo: coverImageView.widthAnchor),
         ])
     }
 
@@ -114,7 +114,7 @@ private extension OnboardingRootView {
             )
         )
         let linkRange = (caption as NSString).range(of: TKLocales.Onboarding.Terms.title)
-        if let url = URL(string: "https://tos.network/terms") {
+        if let url = URL(string: "https://tos.network/terms.html") {
             attributedText.addAttribute(.link, value: url, range: linkRange)
         }
         termsTextView.attributedText = attributedText

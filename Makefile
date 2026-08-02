@@ -39,6 +39,7 @@ compile:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building Tonkeeper...' && \
+		set -o pipefail; \
 		HOME=$(BUILD_DIR)/codex_home \
 		SWIFTPM_CACHE_PATH=$(BUILD_DIR)/swiftpm-cache \
 		SWIFTPM_CONFIG_DIR=$(BUILD_DIR)/swiftpm-config \
@@ -60,7 +61,13 @@ TEST_ONLY ?=
 
 test: test_all
 
-test_all: test_core_swift test_tron_swift_package test_tkcore_package test_tklocalize_package test_tkchart_package
+test_all:
+	$(MAKE) test_core_swift
+	$(MAKE) test_tron_swift
+	$(MAKE) test_tkcryptokit
+	$(MAKE) test_tkcore_package
+	$(MAKE) test_tklocalize_package
+	$(MAKE) test_tkchart_package
 
 test_project_scheme:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
@@ -72,6 +79,7 @@ test_project_scheme:
 		$(BUILD_DIR)/SourcePackages
 	@test -n "$(SCHEME)" || (echo "SCHEME is required"; exit 1)
 	@echo 'running $(SCHEME) tests...' && \
+		set -o pipefail; \
 		HOME=$(CURDIR)/$(BUILD_DIR)/codex_home \
 		SWIFTPM_CONFIG_DIR=$(CURDIR)/$(BUILD_DIR)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(CURDIR)/$(BUILD_DIR)/clang-module-cache \

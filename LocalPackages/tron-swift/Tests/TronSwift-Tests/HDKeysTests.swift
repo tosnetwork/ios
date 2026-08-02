@@ -9,8 +9,12 @@ struct HDKeysTests {
         moment repair fork clip dish lawn brain stadium garden quantum surge cloud
         """
         let array = mnemonic.components(separatedBy: " ")
-        let keyPair = HDKeys.keyPair(mnemonic: array, derivationCurve: Secp256k1DerivationCurve())
-        let derivedPrivateKey44Hardened = try keyPair.privateKey.deriveKey(index: 44, hardened: true, curve: Secp256k1DerivationCurve())
+        let keyPair = try HDKeys.derivedKeyPair(
+            mnemonic: array,
+            path: "m/44'",
+            derivationCurve: Secp256k1DerivationCurve()
+        )
+        let derivedPrivateKey44Hardened = keyPair.privateKey
         #expect(derivedPrivateKey44Hardened.hexString == "1fcc12bd49f538d2d58d135abe9c9897fd675a658092c447936d507a840d1b25")
         let derivedPrivateKey195Hardened = try derivedPrivateKey44Hardened.deriveKey(index: 195, hardened: true, curve: Secp256k1DerivationCurve())
         #expect(derivedPrivateKey195Hardened.hexString == "a3cc2b2a0474d5c5fd89f4e4ddcdc743ecd724a824bcb53b3b2bd53ec1c4d271")

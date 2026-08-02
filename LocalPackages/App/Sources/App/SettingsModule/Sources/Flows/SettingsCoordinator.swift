@@ -117,6 +117,12 @@ private extension SettingsCoordinator {
             self?.openConnectedApps(wallet: wallet)
         }
 
+        configurator.didTapRPCNode = { [weak self, weak configurator] in
+            self?.openRPCNodeEditor {
+                configurator?.rpcNodeDidChange()
+            }
+        }
+
         configurator.didDeleteWallet = { [weak self] in
             guard let self else { return }
             let wallets = self.keeperCoreMainAssembly.storesAssembly.walletsStore.wallets
@@ -439,6 +445,40 @@ private extension SettingsCoordinator {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         Log.d("open settings URL: \(url)")
         UIApplication.shared.open(url)
+    }
+
+    func openRPCNodeEditor(onSaved: @escaping () -> Void) {
+        let alertController = UIAlertController(
+            title: "RPC Node",
+            message: "Enter a node URL or IP address with an optional port. The wallet adds /jsonRPC automatically.",
+            preferredStyle: .alert
+        )
+        alertController.addTextField { textField in
+            textField.placeholder = "192.168.1.20:18545"
+            textField.text = TOSRPCSettings.customEndpoint
+            textField.keyboardType = .URL
+            textField.autocapitalizationType = .none
+            textField.autocorrectionType = .no
+            textField.clearButtonMode = .whileEditing
+        }
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alertController.addAction(UIAlertAction(title: "Restore Default", style: .destructive) { _ in
+            TOSRPCSettings.reset()
+            onSaved()
+        })
+        alertController.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alertController] _ in
+            do {
+                try TOSRPCSettings.setCustomEndpoint(alertController?.textFields?.first?.text ?? "")
+                onSaved()
+            } catch {
+                self?.presentAlertController(
+                    title: "Invalid RPC Node",
+                    message: error.localizedDescription,
+                    actions: [UIAlertAction(title: "OK", style: .default)]
+                )
+            }
+        })
+        router.rootViewController.present(alertController, animated: true)
     }
 
     func openLegal() {

@@ -1105,7 +1105,7 @@ public enum TKLocales {
         /// Required for blockchain fees: %@ TON.
         /// Your balance: %@ TON.
         public static func feeRequired(_ p1: Any, _ p2: Any) -> String {
-            return TKLocales.tr("Localizable", "insufficientFunds.fee_required", String(describing: p1), String(describing: p2), fallback: "Required for blockchain fees: %@ TON.\nYour balance: %@ TON.")
+            return TKLocales.tr("Localizable", "insufficientFunds.fee_required", String(describing: p1), String(describing: p2), fallback: "Required for blockchain fees: %@ TOS.\nYour balance: %@ TOS.")
         }
 
         /// Insufficient balance
@@ -1382,7 +1382,7 @@ public enum TKLocales {
             /// Enable Notifications
             public static let buttonTitle = TKLocales.tr("Localizable", "onboarding.notifications.button_title", fallback: "Enable Notifications")
             /// Get notified when you receive TON, tokens and NFTs
-            public static let caption = TKLocales.tr("Localizable", "onboarding.notifications.caption", fallback: "Get notified when you receive TON, tokens and NFTs")
+            public static let caption = TKLocales.tr("Localizable", "onboarding.notifications.caption", fallback: "Get notified when you receive TOS, tokens and NFTs")
             /// Get instant notifications
             public static let title = TKLocales.tr("Localizable", "onboarding.notifications.title", fallback: "Get instant notifications")
         }
@@ -1444,7 +1444,7 @@ public enum TKLocales {
     public enum Receive {
         /// Send only %@ and tokens in TON network to this address, or you might lose your funds.
         public static func description(_ p1: Any) -> String {
-            return TKLocales.tr("Localizable", "receive.description", String(describing: p1), fallback: "Send only %@ and tokens in TON network to this address, or you might lose your funds.")
+            return TKLocales.tr("Localizable", "receive.description", String(describing: p1), fallback: "Send only %@ and tokens in the TOS network to this address, or you might lose your funds.")
         }
 
         /// Receive %@
@@ -2500,7 +2500,7 @@ public enum TKLocales {
 
     public enum WalletButtons {
         /// Buy TON
-        public static let buy = TKLocales.tr("Localizable", "wallet_buttons.buy", fallback: "Buy TON")
+        public static let buy = TKLocales.tr("Localizable", "wallet_buttons.buy", fallback: "Buy TOS")
         /// Deposit
         public static let deposit = TKLocales.tr("Localizable", "wallet_buttons.deposit", fallback: "Deposit")
         /// Receive

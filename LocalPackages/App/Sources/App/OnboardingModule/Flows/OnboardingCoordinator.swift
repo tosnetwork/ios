@@ -94,12 +94,7 @@ private extension OnboardingCoordinator {
         let coordinator = module.createAddWalletCoordinator(
             options: [
                 .importRegular,
-                .signer,
-                .keystone,
-                .ledger,
                 .importWatchOnly,
-                .importTestnet,
-                .importTetra,
             ],
             router: router
         )

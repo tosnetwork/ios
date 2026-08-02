@@ -14,6 +14,6 @@ ASSOCIATED_DOMAIN_APPLINKS_SECOND = applinks:tos.network
 
 PLATFORM = ios
 
-TERMS_OF_SERVICE_URL = https:/$()/tos.network/terms
+TERMS_OF_SERVICE_URL = https:/$()/tos.network/terms.html
 PRIVACY_POLICY_URL = https:/$()/tos.network/privacy
 TONKEEPER_SWAP_URL = https:/$()/swap-widget.tos.network

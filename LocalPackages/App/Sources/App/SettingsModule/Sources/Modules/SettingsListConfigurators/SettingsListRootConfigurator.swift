@@ -28,6 +28,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapV4Wallet: ((Wallet) -> Void)?
     var didTapBattery: ((Wallet) -> Void)?
     var didTapConnectedApps: ((Wallet) -> Void)?
+    var didTapRPCNode: (() -> Void)?
 
     // MARK: - SettingsListV2Configurator
 
@@ -222,6 +223,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         }
         items.append(createThemeItem())
         items.append(createSearchItem())
+        items.append(createRPCNodeItem())
 
         guard !items.isEmpty else { return nil }
 
@@ -572,6 +574,37 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         )
     }
 
+    private func createRPCNodeItem() -> SettingsListItem {
+        let endpoint = TOSRPCSettings.customEndpoint ?? "Default node"
+        let cellConfiguration = TKListItemCell.Configuration(
+            listItemContentViewConfiguration: TKListItemContentView.Configuration(
+                textContentViewConfiguration: TKListItemTextContentView.Configuration(
+                    titleViewConfiguration: TKListItemTitleView.Configuration(title: "RPC Node"),
+                    captionViewsConfigurations: [
+                        TKListItemTextView.Configuration(
+                            text: endpoint,
+                            color: .Text.secondary,
+                            textStyle: .body2,
+                            numberOfLines: 1
+                        ),
+                    ]
+                )
+            )
+        )
+        return SettingsListItem(
+            id: .rpcNodeItemIdentifier,
+            cellConfiguration: cellConfiguration,
+            accessory: .chevron,
+            onSelection: { [weak self] _ in
+                self?.didTapRPCNode?()
+            }
+        )
+    }
+
+    func rpcNodeDidChange() {
+        didUpdateState?(createState())
+    }
+
     func createSignOutWalletItem() -> SettingsListItem {
         let title: NSAttributedString
         let action: () -> Void
@@ -824,4 +857,5 @@ private extension String {
     static let batteryIdentifier = "Battery item"
     static let connectedAppsIdentifier = "ConnectedAppsItem"
     static let usdtTronItemIdentifier = "usdtTronItemIdentifier"
+    static let rpcNodeItemIdentifier = "RPCNodeItem"
 }

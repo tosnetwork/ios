@@ -92,7 +92,7 @@
 "wallet_buttons.send_from_here" = "从这里发送";
 "wallet_buttons.receive" = "接收";
 "wallet_buttons.scan" = "扫描";
-"wallet_buttons.buy" = "购买 TON";
+"wallet_buttons.buy" = "购买 TOS";
 "wallet_buttons.swap" = "交换";
 "wallet_buttons.stake" = "质押";
 "send.title" = "发送";
@@ -161,7 +161,7 @@
 "periods.year" = "年";
 "wallet_tags.watch_only" = "仅限查看";
 "receive.title" = "接收 %@";
-"receive.description" = "仅将 %@ 和 TON 网络中的代币发送到此地址，否则您可能会丢失资金。";
+"receive.description" = "仅将 %@ 和 TOS 网络中的代币发送到此地址，否则您可能会丢失资金。";
 "watch_account.title" = "观看账户";
 "watch_account.description" = "监控钱包活动而无需恢复短语。您将收到此钱包的任何交易通知。";
 "watch_account.placeholder" = "地址或名称";
@@ -208,7 +208,7 @@
 "onboarding.backup_intro.caption" = "没有它，你将无法访问你的钱包";
 "onboarding.backup_intro.later" = "稍后";
 "onboarding.notifications.title" = "获取即时通知";
-"onboarding.notifications.caption" = "在你收到 TON、代币和 NFT 时获得通知";
+"onboarding.notifications.caption" = "在你收到 TOS、代币和 NFT 时获得通知";
 "onboarding.notifications.button_title" = "启用通知";
 "onboarding.terms.caption" = "继续即表示你同意我们的%@";
 "onboarding.terms.title" = "使用条款";
@@ -576,7 +576,7 @@
 "insufficientFunds.recharge_wallet" = "充值钱包";
 "insufficientFunds.insufficient_balance" = "余额不足";
 "insufficientFunds.buy_token_title" = "购买%@";
-"insufficientFunds.fee_required" = "区块链费用所需：%@ TON.\\n您的余额：%@ TON。";
+"insufficientFunds.fee_required" = "区块链费用所需：%@ TOS.\\n您的余额：%@ TOS。";
 "insufficientFunds.unknown_token" = "未知令牌";
 "transaction_confirmation.confirm_action" = "确认动作";
 "transaction_confirmation.wallet" = "钱包";

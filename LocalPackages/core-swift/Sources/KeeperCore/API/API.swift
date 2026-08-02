@@ -22,10 +22,16 @@ struct MainnetAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
+            if let environmentEndpoint = ProcessInfo.processInfo.environment["TOS_RPC_URL"] {
+                return environmentEndpoint
+            }
+            if let customEndpoint = TOSRPCSettings.customEndpoint {
+                return customEndpoint
+            }
 #if DEBUG
-            ProcessInfo.processInfo.environment["TOS_RPC_URL"] ?? "http://127.0.0.1:18545"
+            return "http://127.0.0.1:18545"
 #else
-            await configuration.tonapiV2Endpoint
+            return await configuration.tonapiV2Endpoint
 #endif
         }
     }
@@ -40,7 +46,10 @@ struct TestnetAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
-            await configuration.tonapiTestnetHost
+            if let customEndpoint = TOSRPCSettings.customEndpoint {
+                return customEndpoint
+            }
+            return await configuration.tonapiTestnetHost
         }
     }
 }
@@ -54,7 +63,10 @@ struct TetraAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
-            await configuration.tetraHost
+            if let customEndpoint = TOSRPCSettings.customEndpoint {
+                return customEndpoint
+            }
+            return await configuration.tetraHost
         }
     }
 }

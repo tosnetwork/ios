@@ -285,7 +285,7 @@
 "wallet_buttons.send" = "Send";
 "wallet_buttons.receive" = "Receive";
 "wallet_buttons.scan" = "Scan";
-"wallet_buttons.buy" = "Buy TON";
+"wallet_buttons.buy" = "Buy TOS";
 "wallet_buttons.swap" = "Swap";
 "wallet_buttons.stake" = "Stake";
 "wallet_buttons.withdraw" = "Withdraw";
@@ -412,7 +412,7 @@
 "onboarding.backup_intro.caption" = "Without it, you won’t be able to access your wallet";
 "onboarding.backup_intro.later" = "Later";
 "onboarding.notifications.title" = "Get instant notifications";
-"onboarding.notifications.caption" = "Get notified when you receive TON, tokens and NFTs";
+"onboarding.notifications.caption" = "Get notified when you receive TOS, tokens and NFTs";
 "onboarding.notifications.button_title" = "Enable Notifications";
 "onboarding.terms.caption" = "By continuing, you agree to our %@";
 "onboarding.terms.title" = "Terms of Use";
@@ -504,7 +504,7 @@
 
 "receive.title" = "Receive %@";
 "receive.your_address_title" = "Your address";
-"receive.description" = "Send only %@ and tokens in TON network to this address, or you might lose your funds.";
+"receive.description" = "Send only %@ and tokens in the TOS network to this address, or you might lose your funds.";
 
 "receive.trx.description" = "Send only Tron TRX to this address, or you might lose your funds.";
 
@@ -753,7 +753,7 @@
 "insufficientFunds.recharge_wallet" = "Recharge Wallet";
 "insufficientFunds.insufficient_balance" = "Insufficient balance";
 "insufficientFunds.buy_token_title" = "Buy %@";
-"insufficientFunds.fee_required" = "Required for blockchain fees: %@ TON.\nYour balance: %@ TON.";
+"insufficientFunds.fee_required" = "Required for blockchain fees: %@ TOS.\nYour balance: %@ TOS.";
 "insufficientFunds.unknown_token" = "Unknown token";
 
 "transaction_confirmation.confirm_action" = "Confirm action";
