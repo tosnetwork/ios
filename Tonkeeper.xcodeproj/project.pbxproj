@@ -13,6 +13,7 @@
 		7D143C362A4EC0D300B5FCC0 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = 7D143C352A4EC0D300B5FCC0 /* Lottie */; };
 		7D143C3A2A4EC0E800B5FCC0 /* check480.json in Resources */ = {isa = PBXBuildFile; fileRef = 7D143C382A4EC0E800B5FCC0 /* check480.json */; };
 		7D143C3B2A4EC0E800B5FCC0 /* confetti.json in Resources */ = {isa = PBXBuildFile; fileRef = 7D143C392A4EC0E800B5FCC0 /* confetti.json */; };
+		A10000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* PrivacyInfo.xcprivacy */; };
 		7D1BB5BC2CFD0CA90021B4EA /* WalletExtensions in Frameworks */ = {isa = PBXBuildFile; productRef = 7D1BB5BB2CFD0CA90021B4EA /* WalletExtensions */; };
 		7D1BB5BE2CFD0CAE0021B4EA /* WalletExtensions in Frameworks */ = {isa = PBXBuildFile; productRef = 7D1BB5BD2CFD0CAE0021B4EA /* WalletExtensions */; };
 		7D3143A02C2EC8C70022B33B /* TKUIKitDynamic in Frameworks */ = {isa = PBXBuildFile; productRef = 7D31439F2C2EC8C70022B33B /* TKUIKitDynamic */; };
@@ -163,6 +164,7 @@
 		633D1D8F7061AB559FC4BC16 /* TOSWalletUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TOSWalletUITests.swift; sourceTree = "<group>"; };
 		7D143C382A4EC0E800B5FCC0 /* check480.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = check480.json; sourceTree = "<group>"; };
 		7D143C392A4EC0E800B5FCC0 /* confetti.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = confetti.json; sourceTree = "<group>"; };
+		A10000000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7D19EB622ABDB58C00BDE7FA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		7D19EB642ABDB58C00BDE7FA /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		7D1BB5BA2CFCFF0E0021B4EA /* WalletExtensions */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = WalletExtensions; sourceTree = "<group>"; };
@@ -489,6 +491,7 @@
 				7DB8FB6E2A1BCC92005B4B11 /* Assets.xcassets */,
 				7DB8FB702A1BCC92005B4B11 /* LaunchScreen.storyboard */,
 				7DB8FB732A1BCC92005B4B11 /* Info.plist */,
+				A10000000000000000000002 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -742,6 +745,7 @@
 				7D4C14642AD98E44002B2922 /* diamond.json in Resources */,
 				7D143C3B2A4EC0E800B5FCC0 /* confetti.json in Resources */,
 				7DB8FB6F2A1BCC92005B4B11 /* Assets.xcassets in Resources */,
+				A10000000000000000000001 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

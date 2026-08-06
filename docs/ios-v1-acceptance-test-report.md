@@ -16,8 +16,9 @@
 | --- | --- | --- |
 | Full simulator build | Passed | `make compile`; 129-target graph; no embedded Widget or Intents extension |
 | Unsigned generic-device release archive | Passed | `make archive_v1_release`; `TonkeeperRelease`; `Archive Succeeded` |
-| iOS UI tests | Passed | 7 tests, 0 failures; 111.529 seconds in the latest full run |
-| WalletCore/CoreComponents | Passed | 82 KeeperCore XCTest cases, 0 failures; other WalletCore and Swift Testing suites also pass |
+| V1 static/build-artifact gate | Passed | Main app privacy manifest is embedded and linted; tracking is disabled; deferred extensions, permissions, schemes, and entitlements are rejected |
+| iOS UI tests | Passed | 10 tests, 0 failures; 205.816 seconds in the latest full run |
+| WalletCore/CoreComponents | Passed | Native history mapper tests 3/3 passed; previous 82 KeeperCore XCTest cases and other WalletCore suites also passed |
 | Local TOS RPC integration | Passed | 3 live tests against the three-node network, 0 failures |
 | TronSwift package regression | Passed | All discovered package tests passed |
 | TKCryptoKit package regression | Passed | 2 tests, 0 failures |
@@ -25,7 +26,7 @@
 | TKLocalize package regression | Passed | 1 test, 0 failures |
 | TKChart package regression | Passed | 1 test, 0 failures |
 
-The UI suite verifies isolated clean-state TOS onboarding, wallet creation through wallet home, process termination and passcode-protected relaunch, native TOS Receive/address/copy feedback, import navigation to recovery-phrase entry, and absence of inherited home/import/receive options such as Swap, Buy, Stake, Browser, Collectibles, Jetton, NFT, Watch-only, Ledger, Signer, Keystone, Testnet, and TRON.
+The UI suite verifies isolated clean-state TOS onboarding, wallet creation through wallet home, process termination, correct and incorrect passcode behavior, zero native TOS balance, native Send fields, native Receive/address/copy feedback, import navigation to recovery-phrase entry, and absence of inherited home/import/send/receive options such as Swap, Buy, Stake, Browser, Collectibles, Jetton, NFT, Watch-only, Ledger, Signer, Keystone, Testnet, and TRON.
 
 ## Defects found and fixed
 
@@ -49,5 +50,9 @@ The UI suite verifies isolated clean-state TOS onboarding, wallet creation throu
 ## Remaining acceptance gaps
 
 The matrix remains the authority for every uncovered row. The largest gaps are full create/import completion into a deterministic funded wallet, app-driven native TOS send/broadcast/confirmation/history verification, lifecycle and fault-injection scenarios, simulator Keychain inspection, automated accessibility-tree checks, performance budgets, and unsigned release-artifact inspection.
+
+The inherited TonAPI history dependency was removed from the native account-history path. `getAccountEvents` and `getAccountEvent` now use TOS JSON-RPC, and deterministic tests cover empty history, incoming/outgoing native transfers, amount, fee, timestamp, bounced failure mapping, and malformed responses. Seeded history UI, pagination against the local network, comments, and app-originated transfer reconciliation remain incomplete.
+
+Native mnemonic import now normalizes capitalization and arbitrary whitespace at the controller boundary before validation and persistence. The six-case mnemonic suite passes, including tabs, newlines, repeated spaces, checksum rejection, and deterministic address derivation. The main app now embeds its own valid, non-tracking privacy manifest, and the automated build-artifact gate fails if it is absent or malformed.
 
 These rows are not marked passed merely because a lower-layer RPC or build test passed. Physical-device, TestFlight, distribution-signing, and other human/external checks are explicitly excluded from the automated matrix and its completion percentage.

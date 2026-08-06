@@ -107,6 +107,40 @@ final class TOSWalletUITests: XCTestCase {
         }
     }
 
+    func testWrongPasscodePreservesWalletAndCorrectPasscodeStillUnlocks() {
+        createNativeWalletToHome()
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("9999")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+    }
+
+    func testSendOpensNativeTOSFormWithoutDeferredAssetSelector() {
+        createNativeWalletToHome()
+
+        app.descendants(matching: .any)["Send"].tap()
+        XCTAssertTrue(app.staticTexts["Send"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["Address or name"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Amount"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Comment"].exists)
+        for unsupported in ["TRC20", "Jetton", "NFT", "Token"] {
+            XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported send asset is visible: \(unsupported)")
+        }
+    }
+
+    func testNewWalletShowsZeroNativeTOSBalance() {
+        createNativeWalletToHome()
+
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES[c] %@", "0([.,]0+)? TOS")
+        ).firstMatch.waitForExistence(timeout: 10))
+    }
+
     private func createNativeWalletToHome() {
         openCreatePasscode()
         enterPasscode("1234")

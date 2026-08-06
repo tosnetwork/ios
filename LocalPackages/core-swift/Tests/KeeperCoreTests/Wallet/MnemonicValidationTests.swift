@@ -49,4 +49,11 @@ final class MnemonicValidationTests: XCTestCase {
         XCTAssertFalse(TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: words))
         XCTAssertFalse(TOSV1MnemonicValidator.isValid(words))
     }
+
+    func testV1MnemonicNormalizesWhitespaceNewlinesAndCapitalization() {
+        let canonical = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
+        let decorated = "  MANSION\tChef  affair\nancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction VOICE  "
+        XCTAssertEqual(TOSV1MnemonicValidator.normalize(decorated), canonical.split(separator: " ").map(String.init))
+        XCTAssertTrue(TOSV1MnemonicValidator.isValid(TOSV1MnemonicValidator.normalize(decorated)))
+    }
 }

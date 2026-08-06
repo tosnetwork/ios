@@ -325,26 +325,15 @@ extension API {
         beforeLt: Int64?,
         limit: Int
     ) async throws -> AccountEvents {
-        let request = try await createRequest {
-            AccountsAPI.getAccountEventsWithRequestBuilder(
-                accountId: address.toRaw(),
-                limit: limit,
-                subjectOnly: true,
-                beforeLt: beforeLt,
-                startDate: nil,
-                endDate: nil
-            )
-        }
-        let response = try await performRequest(request: request).body
-        let events: [AccountEvent] = response.events.compactMap {
-            guard let activityEvent = try? AccountEvent(accountEvent: $0) else { return nil }
-            return activityEvent
-        }
+        var params: [String: Any] = ["address": address.toRaw(), "limit": limit]
+        if let beforeLt { params["before_lt"] = String(beforeLt) }
+        let response = try await tosRPCCall(method: "getAccountEvents", params: params)
+        let events = try TOSAccountHistoryMapper.events(response["events"], account: address)
         return AccountEvents(
             address: address,
             events: events,
             startFrom: beforeLt ?? 0,
-            nextFrom: response.nextFrom
+            nextFrom: TOSAccountHistoryMapper.int64(response["next_from"]) ?? 0
         )
     }
 
@@ -382,14 +371,11 @@ extension API {
         address: Address,
         eventId: String
     ) async throws -> AccountEvent {
-        let request = try await createRequest {
-            AccountsAPI.getAccountEventWithRequestBuilder(
-                accountId: address.toRaw(),
-                eventId: eventId
-            )
-        }
-        let response = try await performRequest(request: request).body
-        return try AccountEvent(accountEvent: response)
+        let response = try await tosRPCCall(
+            method: "getAccountEvent",
+            params: ["address": address.toRaw(), "event_id": eventId]
+        )
+        return try TOSAccountHistoryMapper.event(response, account: address)
     }
 }
 

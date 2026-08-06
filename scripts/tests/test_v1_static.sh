@@ -27,6 +27,10 @@ test "$display_name" = "TOS Wallet" || fail "CFBundleDisplayName is '$display_na
 test "$bundle_name" = "TOS Wallet" || fail "CFBundleName is '$bundle_name'"
 test "$bundle_identifier" = "network.tos.wallet" || fail "unexpected bundle identifier '$bundle_identifier'"
 test ! -e "$app_path/PlugIns" || fail "V1 app embeds deferred extensions"
+test -f "$app_path/PrivacyInfo.xcprivacy" || fail "V1 app is missing its privacy manifest"
+plutil -lint "$app_path/PrivacyInfo.xcprivacy" >/dev/null || fail "V1 privacy manifest is malformed"
+tracking=$(plutil -extract NSPrivacyTracking raw "$app_path/PrivacyInfo.xcprivacy")
+test "$tracking" = "false" || fail "V1 privacy manifest enables tracking"
 
 for forbidden_key in NSBluetoothAlwaysUsageDescription NSCameraUsageDescription NSFaceIDUsageDescription NSUserActivityTypes; do
     if plutil -extract "$forbidden_key" raw "$app_path/Info.plist" >/dev/null 2>&1; then

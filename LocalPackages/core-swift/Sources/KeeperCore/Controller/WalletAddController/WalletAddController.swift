@@ -109,6 +109,7 @@ public final class WalletAddController {
         passcode: String,
         network: Network
     ) async throws {
+        let phrase = TOSV1MnemonicValidator.normalize(phrase)
         guard TOSV1MnemonicValidator.isValid(phrase) else {
             throw Mnemonic.Error.incorrectMnemonicWords
         }

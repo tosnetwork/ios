@@ -1,8 +1,20 @@
 import TonSwift
 
 public enum TOSV1MnemonicValidator {
+    public static func normalize(_ phrase: String) -> [String] {
+        phrase
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .map { $0.lowercased() }
+    }
+
+    public static func normalize(_ words: [String]) -> [String] {
+        normalize(words.joined(separator: " "))
+    }
+
     public static func isValid(_ words: [String]) -> Bool {
-        words.count == 24 && Mnemonic.mnemonicValidate(mnemonicArray: words)
+        let normalized = normalize(words)
+        return normalized.count == 24 && Mnemonic.mnemonicValidate(mnemonicArray: normalized)
     }
 }
 
