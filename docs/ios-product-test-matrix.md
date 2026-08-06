@@ -61,7 +61,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | CRT-07 | Recovery-phrase confirmation challenge accepts correct answers and rejects incorrect answers | UI | Not covered | Complete backup flow automation |
 | CRT-08 | Skip-backup warning and backup state persist correctly | UI | Not covered | Add both branches and relaunch assertion |
 | CRT-09 | Creation completes at native TOS wallet home | UI | Passed | UI completes passcode, skip-backup, customization, and asserts Wallet/History plus native V1 actions |
-| CRT-10 | Created address parses and is queryable on the local TOS network | Unit + Integration | Not covered | Connect created fixture to local RPC |
+| CRT-10 | Created address parses and is queryable on the local TOS network | Unit + Integration | Passed | Fixed V5R1 mnemonic derives the asserted friendly address; local TOS RPC returns its account state |
 | CRT-11 | Repeated creation never overwrites an existing wallet | UI + Storage | Not covered | Add two-wallet data-safety test |
 
 ## D. Native TOS wallet import
@@ -69,12 +69,12 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | IMP-01 | Import Wallet reaches recovery-phrase entry | UI | Passed | `testImportWalletOpensRecoveryPhraseFlow` |
-| IMP-02 | Valid deterministic TOS recovery phrase imports successfully | Unit + UI | Not covered | Add a non-production fixture mnemonic |
+| IMP-02 | Valid deterministic TOS recovery phrase imports successfully | Unit + UI | Partial | Non-production 24-word native-checksum vector passes and derives deterministically; full import UI completion missing |
 | IMP-03 | Paste imports the exact fixture phrase | UI | Partial | Paste control exists; pasteboard result not asserted |
 | IMP-04 | Spaces and capitalization are normalized safely | Unit + UI | Not covered | Add table-driven normalization cases |
 | IMP-05 | Invalid word count is rejected | Unit + UI | Partial | Unit rejection passes; UI assertion missing |
 | IMP-06 | Unknown words and invalid checksum are rejected | Unit + UI | Partial | Unknown-word unit rejection passes; checksum and UI cases missing |
-| IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Not covered | Add address vector and local RPC query |
+| IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Partial | Exact mnemonic-to-address vector and local RPC query pass; import-controller persistence assertion missing |
 | IMP-08 | Imported funded wallet reaches home with correct balance and history | UI + Integration | Not covered | Seed local chain fixture |
 | IMP-09 | Cancelled import leaves no partial wallet or secret | UI + Storage | Not covered | Add storage inspection through test support API |
 
@@ -106,13 +106,13 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
-| RCV-01 | Receive opens the native TOS receive screen | UI | Not covered | Seeded-wallet UI path missing |
-| RCV-02 | Receive shows the exact fixture wallet address | UI | Not covered | Compare to deterministic address |
+| RCV-01 | Receive opens the native TOS receive screen | UI | Passed | Created-wallet UI opens `Receive TOS` and asserts a valid friendly address |
+| RCV-02 | Receive shows the exact fixture wallet address | UI | Partial | UI asserts a valid displayed address; deterministic seeded-wallet equality missing |
 | RCV-03 | Rendered QR decodes to the exact TOS address | UI + QR decoder | Not covered | Decode screenshot or generated image |
-| RCV-04 | Copy writes the exact address to simulator pasteboard | UI | Not covered | Add pasteboard assertion |
+| RCV-04 | Copy writes the exact address to simulator pasteboard | UI | Partial | Copy action and `Copied` feedback pass; iOS 26 blocks reliable cross-process exact pasteboard reads |
 | RCV-05 | Share activity payload contains the exact address | UI | Not covered | Inspect activity sheet payload through test hook |
 | RCV-06 | Incoming local-chain transfer refreshes balance and history | UI + Integration | Not covered | Add deterministic sender and polling bound |
-| RCV-07 | Receive exposes no TRC20, Jetton, or NFT option | Unit + UI | Not covered | Native-only filter implemented; UI assertion missing |
+| RCV-07 | Receive exposes no TRC20, Jetton, or NFT option | Unit + UI | Partial | Receive UI negative inventory passes and production filter is present; isolated mapper test missing |
 
 ## H. Send native TOS
 

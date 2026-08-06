@@ -4,6 +4,23 @@ import TonSwift
 import XCTest
 
 final class MnemonicValidationTests: XCTestCase {
+    func testDeterministicNativeTOSMnemonicDerivesExpectedAddress() throws {
+        let words = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice".split(separator: " ").map(String.init)
+        XCTAssertTrue(TOSV1MnemonicValidator.isValid(words))
+        let pair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: words)
+        let wallet = Wallet(
+            id: "fixture",
+            identity: WalletIdentity(network: .mainnet, kind: .Regular(pair.publicKey, .currentVersion)),
+            metaData: WalletMetaData(label: "Fixture", tintColor: .defaultColor, icon: .icon(.wallet)),
+            setupSettings: WalletSetupSettings(),
+            batterySettings: BatterySettings()
+        )
+        XCTAssertEqual(
+            try wallet.friendlyAddress.toString(),
+            "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        )
+    }
+
     func testGeneratedNativeWalletPhrasesHaveExpectedCountAndValidate() throws {
         for _ in 0 ..< 20 {
             let words = TonSwift.Mnemonic.mnemonicNew()

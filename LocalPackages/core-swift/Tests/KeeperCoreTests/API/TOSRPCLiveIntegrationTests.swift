@@ -3,6 +3,7 @@ import XCTest
 
 final class TOSRPCLiveIntegrationTests: XCTestCase {
     private static let faucetAddress = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+    private static let deterministicWalletAddress = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
 
     func testThreeNodeRPCReportsFundedFaucetAndAdvancingMasterchain() async throws {
         let client = try await makeLiveClient()
@@ -39,6 +40,17 @@ final class TOSRPCLiveIntegrationTests: XCTestCase {
         } catch TOSRPCClient.Error.server {
             // Expected: proves errors from a live node reach the wallet unchanged.
         }
+    }
+
+    func testDeterministicIOSWalletAddressIsQueryable() async throws {
+        let client = try await makeLiveClient()
+        let account = try await client.call(
+            method: "getAddressInformation",
+            params: ["address": Self.deterministicWalletAddress]
+        )
+
+        XCTAssertNotNil(account["balance"] as? String)
+        XCTAssertNotNil(account["state"] as? String)
     }
 
     private func makeLiveClient() async throws -> TOSRPCClient {

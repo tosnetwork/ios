@@ -16,16 +16,16 @@
 | --- | --- | --- |
 | Full simulator build | Passed | `make compile`; 129-target graph; no embedded Widget or Intents extension |
 | Unsigned generic-device release archive | Passed | `make archive_v1_release`; `TonkeeperRelease`; `Archive Succeeded` |
-| iOS UI tests | Passed | 6 tests, 0 failures; 98.126 seconds in the latest full run |
-| WalletCore/CoreComponents | Passed | 80 KeeperCore XCTest cases, 0 failures; other WalletCore and Swift Testing suites also pass |
-| Local TOS RPC integration | Passed | 2 live tests against the three-node network, 0 failures |
+| iOS UI tests | Passed | 7 tests, 0 failures; 111.529 seconds in the latest full run |
+| WalletCore/CoreComponents | Passed | 82 KeeperCore XCTest cases, 0 failures; other WalletCore and Swift Testing suites also pass |
+| Local TOS RPC integration | Passed | 3 live tests against the three-node network, 0 failures |
 | TronSwift package regression | Passed | All discovered package tests passed |
 | TKCryptoKit package regression | Passed | 2 tests, 0 failures |
 | TKCore package regression | Passed | 1 test, 0 failures |
 | TKLocalize package regression | Passed | 1 test, 0 failures |
 | TKChart package regression | Passed | 1 test, 0 failures |
 
-The UI suite verifies isolated clean-state TOS onboarding, wallet creation through wallet home, process termination and passcode-protected relaunch, import navigation to recovery-phrase entry, and absence of inherited home/import options such as Swap, Buy, Stake, Browser, Collectibles, Watch-only, Ledger, Signer, Keystone, Testnet, and TRON.
+The UI suite verifies isolated clean-state TOS onboarding, wallet creation through wallet home, process termination and passcode-protected relaunch, native TOS Receive/address/copy feedback, import navigation to recovery-phrase entry, and absence of inherited home/import/receive options such as Swap, Buy, Stake, Browser, Collectibles, Jetton, NFT, Watch-only, Ledger, Signer, Keystone, Testnet, and TRON.
 
 ## Defects found and fixed
 

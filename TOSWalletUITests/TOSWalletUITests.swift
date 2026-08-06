@@ -72,6 +72,42 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testCreateWalletCompletesAndPersistsAcrossRelaunch() {
+        createNativeWalletToHome()
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+    }
+
+    func testReceiveOpensNativeTOSAddressWithoutDeferredAssets() {
+        createNativeWalletToHome()
+
+        let receive = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
+        ).firstMatch
+        receive.tap()
+
+        let receiveTitle = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Receive TOS")
+        ).firstMatch
+        XCTAssertTrue(receiveTitle.waitForExistence(timeout: 10))
+        let address = app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")
+        ).firstMatch
+        XCTAssertTrue(address.exists)
+        let copy = app.descendants(matching: .any)["Copy"]
+        XCTAssertTrue(copy.exists)
+        copy.tap()
+        XCTAssertTrue(app.staticTexts["Copied"].waitForExistence(timeout: 5))
+        for unsupported in ["TRC20", "Jetton", "NFT", "TON"] {
+            XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported receive asset is visible: \(unsupported)")
+        }
+    }
+
+    private func createNativeWalletToHome() {
         openCreatePasscode()
         enterPasscode("1234")
         XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
@@ -91,13 +127,6 @@ final class TOSWalletUITests: XCTestCase {
             XCTFail(message)
         }
 
-        assertNativeWalletHome()
-
-        app.terminate()
-        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
-        app.launch()
-        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
-        enterPasscode("1234")
         assertNativeWalletHome()
     }
 
