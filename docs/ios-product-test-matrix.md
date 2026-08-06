@@ -166,13 +166,13 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
-| SET-01 | Open settings and return to wallet | UI | Not covered | Add seeded-wallet navigation test |
+| SET-01 | Open settings and return to wallet | UI | Passed | `testSettingsNavigationAndV1Inventory` opens Settings from a created wallet and returns to the native wallet home |
 | SET-02 | View recovery phrase only after correct passcode | UI | Not covered | Add secret flow |
 | SET-03 | Edit, validate, persist, reset, and use the RPC endpoint | Unit + UI + Integration | Partial | Settings unit tests pass; UI path missing |
 | SET-04 | Delete wallet requires explicit confirmation | UI | Not covered | Add cancel and confirm branches |
 | SET-05 | Deleting the last wallet returns to clean onboarding | UI + Storage | Not covered | Add post-delete storage assertion |
 | SET-06 | Legal/privacy/license links and reachable copy use approved TOS branding | Static + UI | Not covered | Add URL/copy allowlist test |
-| SET-07 | Settings inventory contains only V1 options | Unit + UI | Not covered | Settings gate implemented; UI inventory missing |
+| SET-07 | Settings inventory contains only V1 options | Unit + UI | Passed | UI asserts the Backup, RPC, Delete Account, and Legal inventory and rejects deferred product entries |
 
 ## L. Automated quality and build checks
 

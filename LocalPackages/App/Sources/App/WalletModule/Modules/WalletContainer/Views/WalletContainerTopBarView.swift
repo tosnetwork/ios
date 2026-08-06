@@ -52,6 +52,10 @@ private extension WalletContainerTopBarView {
     func setup() {
         backgroundColor = .Background.page
 
+        settingsButton.accessibilityIdentifier = "wallet.settings"
+        settingsButton.isAccessibilityElement = true
+        settingsButton.accessibilityLabel = "Settings"
+
         addSubview(contentContainerView)
         addSubview(separatorView)
         contentContainerView.addSubview(leadingButton)

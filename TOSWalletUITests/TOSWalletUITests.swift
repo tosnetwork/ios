@@ -146,6 +146,27 @@ final class TOSWalletUITests: XCTestCase {
         ).firstMatch.waitForExistence(timeout: 10))
     }
 
+    func testSettingsNavigationAndV1Inventory() {
+        createNativeWalletToHome()
+
+        let settings = app.descendants(matching: .any)["wallet.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.cells["settings.BackupItem"].exists)
+        XCTAssertTrue(app.cells["settings.RPCNodeItem"].exists)
+        XCTAssertTrue(app.cells["settings.DeleteAccountItem"].exists)
+        XCTAssertTrue(app.cells["settings.LegalItem"].exists)
+
+        for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "TRON"] {
+            XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 setting is visible: \(unsupported)")
+        }
+
+        app.descendants(matching: .any)["settings.back"].tap()
+        assertNativeWalletHome()
+    }
+
     private func createNativeWalletToHome() {
         openCreatePasscode()
         enterPasscode("1234")

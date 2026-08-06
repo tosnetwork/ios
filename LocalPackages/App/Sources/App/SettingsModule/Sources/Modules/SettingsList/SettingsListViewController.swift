@@ -94,11 +94,14 @@ final class SettingsListViewController: GenericViewViewController<SettingsListVi
         else {
             return
         }
-        customView.navigationBar.leftViews = [
-            TKUINavigationBar.createBackButton {
-                navigationController.popViewController(animated: true)
-            },
-        ]
+        let backButton = TKUINavigationBar.createBackButton {
+            navigationController.popViewController(animated: true)
+        }
+        backButton.accessibilityIdentifier = "settings.back"
+        backButton.isAccessibilityElement = true
+        backButton.accessibilityLabel = "Back"
+        backButton.accessibilityTraits = .button
+        customView.navigationBar.leftViews = [backButton]
     }
 
     private lazy var dataSource: DataSource = {
@@ -118,6 +121,7 @@ final class SettingsListViewController: GenericViewViewController<SettingsListVi
                     for: indexPath,
                     item: listItem.cellConfiguration
                 )
+                cell.accessibilityIdentifier = "settings.\(listItem.id)"
                 if let accessoryView = listItem.accessory?.view {
                     cell.defaultAccessoryViews = [accessoryView]
                 } else {
