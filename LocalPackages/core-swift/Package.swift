@@ -43,6 +43,7 @@ let package = Package(
             name: "CoreComponentsTests",
             dependencies: [
                 "CoreComponents",
+                .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
             swiftSettings: [

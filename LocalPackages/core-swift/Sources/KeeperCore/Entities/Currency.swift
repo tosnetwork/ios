@@ -78,7 +78,7 @@ public enum Currency: String, Codable, CaseIterable {
         case .KES: return "KSh"
         case .UGX: return "USh"
         case .VES: return "Bs"
-        case .TON: return "TON"
+        case .TON: return TonInfo.symbol
         case .BTC: return "₿"
         case .AUD: return "AU$"
         }

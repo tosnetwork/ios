@@ -5,29 +5,37 @@
 //  Created by Grigory Serebryanyy on 14.01.2024.
 //
 
+@testable import CoreComponents
+import TKKeychain
 import XCTest
 
 final class CoreComponentsTests: XCTestCase {
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-    }
+    func testPasswordUsesDeviceOnlyUnlockedKeychainWithBiometry() throws {
+        let keychain = KeychainVaultSpy()
+        let vault = MnemonicsVault(keychainVault: keychain, seedProvider: { "test" })
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+        try vault.savePassword("secret")
 
-    func testExample() {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-    }
-
-    func testPerformanceExample() {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
+        let query = try XCTUnwrap(keychain.lastSetQuery)
+        guard case .whenUnlockedThisDeviceOnly = query.accessible else {
+            return XCTFail("Password must not be migratable or readable while locked")
+        }
+        guard case .any = query.biometry else {
+            return XCTFail("Password query must require enrolled biometry")
         }
     }
+}
+
+private final class KeychainVaultSpy: TKKeychainVault {
+    var lastSetQuery: TKKeychainQuery?
+
+    func get(query: TKKeychainQuery) throws -> Data { throw TKKeychainVaultError.unexpectedData }
+    func get(query: TKKeychainQuery) throws -> String { throw TKKeychainVaultError.unexpectedData }
+    func get<T: Codable>(query: TKKeychainQuery) throws -> T { throw TKKeychainVaultError.unexpectedData }
+
+    func set(_ value: Data, query: TKKeychainQuery) throws { lastSetQuery = query }
+    func set(_ value: String, query: TKKeychainQuery) throws { lastSetQuery = query }
+    func set<T: Codable>(_ value: T, query: TKKeychainQuery) throws { lastSetQuery = query }
+
+    func delete(_ query: TKKeychainQuery) throws {}
 }

@@ -77,11 +77,13 @@ private extension SendV3ViewController {
             viewModel?.didTapRecipientPasteButton()
         }
         customView.recipientPasteButton.configuration = configuration
+        customView.recipientPasteButton.accessibilityIdentifier = "send.recipient.paste"
 
         configuration.action = { [weak viewModel] in
             viewModel?.didTapCommentPasteButton()
         }
         customView.commentPasteButton.configuration = configuration
+        customView.commentPasteButton.accessibilityIdentifier = "send.comment.paste"
 
         var scanConfiguration = TKButton.Configuration.fieldAccentButtonConfiguration()
         scanConfiguration.content.icon = .TKUIKit.Icons.Size28.qrViewFinderThin
@@ -91,6 +93,7 @@ private extension SendV3ViewController {
             viewModel?.didTapRecipientScanButton()
         }
         customView.recipientScanButton.configuration = scanConfiguration
+        customView.recipientScanButton.accessibilityIdentifier = "send.recipient.scan"
 
         let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(viewTapGestureHandler))
         tapGestureRecognizer.delegate = self

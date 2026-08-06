@@ -85,13 +85,66 @@ final class TOSRPCClientTests: XCTestCase {
     }
 
     func testCallSurfacesUnavailableNode() async throws {
-        RPCURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+        var attempts = 0
+        RPCURLProtocol.handler = { _ in
+            attempts += 1
+            throw URLError(.cannotConnectToHost)
+        }
 
         do {
             _ = try await makeClient().call(method: "getMasterchainInfo")
             XCTFail("Expected an unavailable-node error")
         } catch let error as URLError {
             XCTAssertEqual(error.code, .cannotConnectToHost)
+            XCTAssertEqual(attempts, 2)
+        }
+    }
+
+    func testReadCallReconnectsAfterOneTransientFailure() async throws {
+        var attempts = 0
+        RPCURLProtocol.handler = { _ in
+            attempts += 1
+            if attempts == 1 { throw URLError(.networkConnectionLost) }
+            return (200, #"{"ok":true,"result":{"balance":"42"}}"#)
+        }
+
+        let result = try await makeClient().call(method: "getAddressInformation")
+
+        XCTAssertEqual(result["balance"] as? String, "42")
+        XCTAssertEqual(attempts, 2)
+    }
+
+    func testBroadcastIsNeverRetriedAfterAmbiguousNetworkFailure() async throws {
+        var attempts = 0
+        RPCURLProtocol.handler = { _ in
+            attempts += 1
+            throw URLError(.networkConnectionLost)
+        }
+
+        do {
+            _ = try await makeClient().call(method: "sendBocReturnHash", params: ["boc": "fixture"])
+            XCTFail("Expected the ambiguous broadcast failure")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .networkConnectionLost)
+            XCTAssertEqual(attempts, 1)
+        }
+    }
+
+    func testTLSAndCertificateFailuresAreReturnedWithoutRetry() async throws {
+        for code in [URLError.secureConnectionFailed, .serverCertificateUntrusted, .clientCertificateRejected] {
+            var attempts = 0
+            RPCURLProtocol.handler = { _ in
+                attempts += 1
+                throw URLError(code)
+            }
+
+            do {
+                _ = try await makeClient().call(method: "getMasterchainInfo")
+                XCTFail("Expected TLS failure \(code)")
+            } catch let error as URLError {
+                XCTAssertEqual(error.code, code)
+                XCTAssertEqual(attempts, 1)
+            }
         }
     }
 

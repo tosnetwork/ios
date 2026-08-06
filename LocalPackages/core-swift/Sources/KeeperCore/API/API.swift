@@ -93,6 +93,18 @@ struct TOSRPCClient {
     let urlSession: URLSession
 
     func call(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
+        let attempts = isSafeToRetry(method: method) ? 2 : 1
+        for attempt in 1 ... attempts {
+            do {
+                return try await callOnce(method: method, params: params)
+            } catch let error as URLError where attempt < attempts && isTransient(error) {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+        preconditionFailure("TOS RPC retry loop exhausted without returning or throwing")
+    }
+
+    private func callOnce(method: String, params: [String: Any]) async throws -> [String: Any] {
         let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let endpoint = URL(string: basePath + "/jsonRPC") else {
             throw Error.invalidEndpoint
@@ -141,6 +153,19 @@ struct TOSRPCClient {
             throw Error.invalidResponse
         }
         return result
+    }
+
+    private func isSafeToRetry(method: String) -> Bool {
+        method != "sendBoc" && method != "sendBocReturnHash"
+    }
+
+    private func isTransient(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet:
+            return true
+        default:
+            return false
+        }
     }
 }
 

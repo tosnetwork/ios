@@ -29,10 +29,10 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | BRD-01 | App bundle name and onboarding identify TOS Wallet | Static + UI | Passed | UI title plus built `Info.plist` name and identifier assertions |
-| BRD-02 | Native asset symbol is TOS throughout balance, receive, send, confirmation, and history | Unit + UI | Partial | Native symbol and formatter accessory pass; seeded-screen assertions missing |
-| BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Partial | Onboarding and wallet-home UI inventory passes; complete reachable-copy tree scan missing |
-| BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Partial | Import options pass; home, receive, settings, and stale-state gates need full UI assertions |
-| BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Partial | Wallet-home/import negative inventory and deep-link policy pass; remaining screen inventories missing |
+| BRD-02 | Native asset symbol is TOS throughout balance, receive, send, confirmation, and history | Unit + UI | Passed | Native formatter plus zero/funded home, receive, send confirmation, and seeded history UI assertions pass |
+| BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Passed | Recursive reachable-element scan runs across onboarding, creation/import, home, receive, send/confirmation, history, settings, and legal flows |
+| BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory plus import/home/receive/send/settings negative assertions and stale-route gates reject TRON/TRC20 |
+| BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory, production V1 filters, and deep-link policy cover every retained V1 surface |
 | BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Passed | Static gate validates remote configuration, built legal URLs, HTTPS `tos.network` hosts, and RPC defaults |
 | BRD-07 | Unsupported deep links and stale tab state are rejected | Unit + UI | Partial | Unit policy rejects inherited routes and static gate asserts Wallet/History tabs; launch-URL UI coverage missing |
 | BRD-08 | V1 app bundle embeds no Widget or App Intents extension | Build artifact | Passed | `make compile`; built app has no `PlugIns` directory |
@@ -75,7 +75,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | IMP-05 | Invalid word count is rejected | Unit + UI | Passed | Unit validation and `testRecoveryPhraseInvalidWordCountIsRejected` both reject the 23-word vector |
 | IMP-06 | Unknown words and invalid checksum are rejected | Unit + UI | Passed | Dedicated UI tests reject unknown words and the inherited BIP39 checksum vector; import validator was fixed to enforce TOS V1 |
 | IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Passed | Import UI reaches receive and asserts `UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe`; local RPC query passes |
-| IMP-08 | Imported funded wallet reaches home with correct balance and history | UI + Integration | Not covered | Seed local chain fixture |
+| IMP-08 | Imported funded wallet reaches home with correct balance and history | UI + Integration | Passed | `testFundedFixtureLoadsExactNativeBalanceAndIncomingHistory` imports the funded local-chain fixture and asserts `100 TOS` plus incoming history |
 | IMP-09 | Cancelled import leaves no partial wallet or secret | UI + Storage | Passed | UI cancels after fixture paste, relaunches without reset, and asserts clean onboarding with no wallet state |
 
 ## E. Passcode and secret protection
@@ -84,18 +84,18 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | --- | --- | --- | --- | --- |
 | SEC-01 | Correct passcode unlocks the seeded wallet | UI | Passed | UI terminates and relaunches a created wallet, enters the correct passcode, and reaches wallet home |
 | SEC-02 | Wrong passcode is rejected without changing wallet data | UI + Storage | Passed | After a wrong passcode the lock remains; the original passcode still unlocks the persisted wallet home |
-| SEC-03 | Retry and lockout behavior matches the encoded policy | Unit + UI | Not covered | Add policy and boundary cases |
+| SEC-03 | Retry and lockout behavior matches the encoded policy | Unit + UI | Partial | UI now exercises five consecutive rejected attempts and recovery with the correct passcode; explicit policy unit extraction remains |
 | SEC-04 | Change-passcode controls are absent when that feature is not retained in V1 | Static + UI | Passed | The encoded V1 Settings inventory excludes Security/Change Passcode and the UI negative inventory passes |
 | SEC-05 | Recovery phrase requires passcode authentication | UI | Passed | Settings UI proves a wrong passcode remains gated, then the correct passcode reveals the exact fixture words |
-| SEC-06 | Recovery phrase is absent from logs and pasteboard unless explicitly copied | Static + UI | Not covered | Capture process logs and pasteboard around secret flows |
-| SEC-07 | Stored secret uses the expected Keychain accessibility class | Unit + Simulator Keychain | Not covered | Add Keychain attribute inspection test |
+| SEC-06 | Recovery phrase is absent from logs and pasteboard unless explicitly copied | Static + UI | Passed | Post-UI runtime gate scans the TOS Wallet process log and simulator pasteboard for the exact fixture recovery phrase |
+| SEC-07 | Stored secret uses the expected Keychain accessibility class | Unit + Simulator Keychain | Passed | `CoreComponentsTests` captures the password Keychain query and requires biometric access with `whenUnlockedThisDeviceOnly` |
 
 ## F. Native TOS wallet home and balance
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | WAL-01 | Home displays the fixture wallet's exact TOS address | UI + Integration | Passed | Deterministic imported wallet reaches home and receive asserts the exact fixture address |
-| WAL-02 | Home displays the exact native TOS symbol and balance | UI + Integration | Not covered | Seeded balance assertion missing |
+| WAL-02 | Home displays the exact native TOS symbol and balance | UI + Integration | Passed | Funded local-chain fixture renders the exact `100 TOS` home balance; zero-wallet coverage remains in `WAL-03` |
 | WAL-03 | Zero balance and empty history render correctly | UI | Passed | Fresh wallet renders `0 TOS`; History opens and renders the deterministic empty-state title and caption |
 | WAL-04 | Refresh updates balance after a local-chain transfer | UI + Integration | Not covered | Add local transfer orchestration |
 | WAL-05 | Loading, timeout, malformed response, and retry are safe | Unit + UI | Partial | Malformed result covered; timeout/retry UI missing |
@@ -119,17 +119,17 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | SND-01 | Send opens the native TOS form | UI | Passed | Created-wallet UI opens Send and asserts recipient, amount, and comment fields |
-| SND-02 | Valid typed and pasted TOS addresses are accepted | Unit + UI | Partial | Exact fixture address is accepted through typed UI and parser tests pass; paste-button path remains |
+| SND-02 | Valid typed and pasted TOS addresses are accepted | Unit + UI | Passed | Parser tests plus typed-address and exact recipient paste-button UI paths pass |
 | SND-03 | Invalid address is rejected with deterministic UI error | Unit + UI | Passed | Live-node rejection plus UI entry of `invalid-address` deterministically renders `Invalid wallet address.` |
-| SND-04 | Whole and fractional TOS amounts are accepted | Unit + UI | Not covered | Add decimal cases |
-| SND-05 | Zero, negative, excessive precision, overflow, and over-balance amounts are rejected | Unit + UI | Not covered | Add boundary table |
+| SND-04 | Whole and fractional TOS amounts are accepted | Unit + UI | Passed | `testNativeSendAmountBoundaries` accepts `1` and `1.25` TOS with a funded fixture |
+| SND-05 | Zero, negative, excessive precision, overflow, and over-balance amounts are rejected | Unit + UI | Passed | Boundary UI table rejects zero, negative sign, sub-nano precision, huge overflow input, and `101 TOS` against the funded fixture; zero-amount core validation was fixed |
 | SND-06 | Max amount reserves the required network fee | Unit + Integration | Not covered | Add deterministic fee fixture |
-| SND-07 | Optional comment is encoded and recovered exactly | Unit + Integration | Not covered | Add UTF-8 and length boundaries |
+| SND-07 | Optional comment is encoded and recovered exactly | Unit + Integration | Passed | UI enforces the 120 UTF-8-byte boundary; an app-originated `TOS 星河 🚀` comment is recovered byte-for-byte through native `getAccountEvent` |
 | SND-08 | Confirmation shows exact recipient, amount, fee, and comment | UI | Not covered | Add confirmation assertions |
-| SND-09 | Cancel never broadcasts | UI + Integration | Not covered | Assert unchanged account sequence/history |
-| SND-10 | Passcode signs a native TOS transfer | Unit + UI | Partial | Signer primitives pass; app path missing |
-| SND-11 | iOS broadcasts to the local three-node TOS network | UI + Integration | Not covered | App-originated transaction fixture missing |
-| SND-12 | Confirmation updates sender/recipient balances and app history | UI + Integration | Not covered | End-to-end orchestration missing |
+| SND-09 | Cancel never broadcasts | UI + Integration | Passed | Confirmation cancellation returns home and leaves the recipient's exact local-chain balance unchanged |
+| SND-10 | Passcode signs a native TOS transfer | Unit + UI | Passed | `testPasscodeSignsBroadcastsAndReconcilesNativeTransfer` completes confirmation, passcode signing, and native submission |
+| SND-11 | iOS broadcasts to the local three-node TOS network | UI + Integration | Passed | App-originated `0.5 TOS` transfer is accepted by the resident three-validator local network and observed through native RPC |
+| SND-12 | Confirmation updates sender/recipient balances and app history | UI + Integration | Passed | Bounded polling asserts sender debit, recipient `0.5 TOS` credit, and the matching TOS history row |
 | SND-13 | Insufficient balance and insufficient fee show safe errors | Unit + UI | Not covered | Add funded/underfunded fixtures |
 | SND-14 | Timeout/disconnect retry does not duplicate the transfer | UI + Integration | Not covered | Add fault proxy and idempotency assertion |
 | SND-15 | Relaunch reconciles a pending transaction | UI + Integration | Not covered | Add controlled delayed-confirmation fixture |
@@ -139,13 +139,13 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
-| HIS-01 | Load deterministic native TOS history | Integration + UI | Partial | Account history now uses native `getAccountEvents`; deterministic mapper fixture passes, seeded UI events remain |
-| HIS-02 | Render incoming and outgoing directions, counterparties, and amounts | Unit + UI | Partial | Native transfer mapper covers both directions, counterparties, and nanotOS amounts; UI assertions remain |
+| HIS-01 | Load deterministic native TOS history | Integration + UI | Passed | Native `getAccountEvents` mapper tests plus funded incoming and app-originated outgoing history UI fixtures pass |
+| HIS-02 | Render incoming and outgoing directions, counterparties, and amounts | Unit + UI | Passed | Mapper fixtures assert both directions/counterparties/nanotOS; UI asserts exact incoming `100 TOS` and outgoing `0.5 TOS` rows |
 | HIS-03 | Render pending, confirmed, and failed states accurately | Unit + UI | Partial | Confirmed and bounced/failed native mappings pass; pending UI fixture remains |
 | HIS-04 | Details show exact timestamp, fee, address, amount, and comment | Unit + UI | Partial | Timestamp, fee, addresses, and amount mapping pass; node comment decoding and details UI remain |
 | HIS-05 | Pagination has no duplicate or missing records | Unit + Integration | Not covered | Add multi-page local fixture |
 | HIS-06 | Empty, loading, error, and retry states are deterministic | Unit + UI | Partial | Empty native response now renders and passes in UI; malformed mapping passes, while loading/error/retry UI remains |
-| HIS-07 | Newly confirmed app transfer appears once | UI + Integration | Not covered | Reuse send end-to-end fixture |
+| HIS-07 | Newly confirmed app transfer appears once | UI + Integration | Passed | End-to-end send compares event-ID sets before/after and requires exactly one new event before asserting the UI row |
 | HIS-08 | V1 history exposes no TRON, Jetton, NFT, DApp, or spam navigation | Unit + UI | Passed | Native mapper rejects unsupported directions and the now-started History UI has a complete negative V1 navigation inventory |
 
 ## J. TOS RPC and local three-node network
@@ -158,9 +158,9 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | RPC-04 | Query the funded fixture account | Integration | Passed | `TOSRPCLiveIntegrationTests` |
 | RPC-05 | Masterchain advances within the bounded interval | Integration | Passed | `TOSRPCLiveIntegrationTests` |
 | RPC-06 | Structured node errors are preserved | Unit | Passed | `TOSRPCClientTests` |
-| RPC-07 | Timeout, unavailable node, and reconnect are bounded and recoverable | Unit + Integration | Partial | Timeout and unavailable-node propagation pass; reconnect scenario missing |
+| RPC-07 | Timeout, unavailable node, and reconnect are bounded and recoverable | Unit + Integration | Passed | Client tests cover timeout, bounded unavailable-node retries, one-transient reconnect, non-retried broadcasts, and stable error propagation |
 | RPC-08 | Malformed JSON and malformed result never crash | Unit | Passed | Both malformed forms map to stable `invalidResponse` |
-| RPC-09 | All three validators converge before and after a transfer | Integration | Not covered | Add per-node height, balance, and transaction assertions |
+| RPC-09 | All three validators converge before and after a transfer | Integration | Partial | All validators now expose consecutive RPC ports and agree on height, funded balance, and event IDs after funding; the same assertion around an in-test transfer remains |
 
 ## K. V1 settings and destructive actions
 
@@ -178,12 +178,12 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
-| QLT-01 | Every reachable V1 control has a non-empty accessibility identifier or label | Static + UI | Not covered | Add recursive accessibility-tree assertion |
+| QLT-01 | Every reachable V1 control has a non-empty accessibility identifier or label | Static + UI | Passed | Recursive UI assertion checks every hittable button, text field, secure field, link, and switch across all retained V1 flows |
 | QLT-02 | V1 screens do not clip at supported simulator text sizes and screen dimensions installed on this host | Multi-destination UI | Not covered | Add screenshot geometry assertions, not human review |
 | QLT-03 | Light and dark modes preserve readable elements and stable layouts | Snapshot + UI | Not covered | Add pixel/geometry thresholds with stored baselines |
 | QLT-04 | Launch time, memory, and repeated refresh/send flows stay within encoded budgets | XCTMetric | Not covered | Define numeric budgets and performance tests |
-| QLT-05 | Process logs and telemetry contain no fixture secret or passcode | Static + Runtime log scan | Not covered | Add forbidden-value scanner |
-| QLT-06 | TLS, certificate, and proxy failures return safe errors | Unit + Integration | Not covered | Add local TLS/fault fixtures |
+| QLT-05 | Process logs and telemetry contain no fixture secret or passcode | Static + Runtime log scan | Passed | `test_v1_runtime_secrets.sh`, wired into `make test_ui`, rejects the exact fixture phrase and passcode/password log patterns |
+| QLT-06 | TLS, certificate, and proxy failures return safe errors | Unit + Integration | Passed | Deterministic URL-protocol tests return safe TLS/certificate errors without retry and preserve bounded proxy/network failures |
 | BLD-01 | Debug simulator build succeeds | Build | Passed | `make compile` |
 | BLD-02 | Unsigned generic-device release build/archive succeeds | Build | Passed | `make archive_v1_release`; signing-disabled `TonkeeperRelease` archive succeeded for generic iOS |
 | BLD-03 | Built V1 app contains required privacy metadata and only approved entitlements/permission strings | Build artifact | Passed | Main app privacy manifest is embedded, valid, and non-tracking; deferred schemes, permissions, entitlements, and extensions are rejected |

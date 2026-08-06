@@ -348,13 +348,21 @@ final class SendV3ViewModelImplementation: SendV3ViewModel, SendV3ModuleOutput, 
     }
 
     func didTapRecipientPasteButton() {
-        guard let pasteboardString = UIPasteboard.general.string else { return }
+        let environment = ProcessInfo.processInfo.environment
+        let pasteboardString = environment["TOS_UI_TEST_RESET"] != nil
+            ? environment["TOS_UI_TEST_SEND_RECIPIENT"]
+            : UIPasteboard.general.string
+        guard let pasteboardString else { return }
         didInputRecipient(pasteboardString)
         didUpdateRecipient?(pasteboardString)
     }
 
     func didTapCommentPasteButton() {
-        guard let pasteboardString = UIPasteboard.general.string else { return }
+        let environment = ProcessInfo.processInfo.environment
+        let pasteboardString = environment["TOS_UI_TEST_RESET"] != nil
+            ? environment["TOS_UI_TEST_SEND_COMMENT"]
+            : UIPasteboard.general.string
+        guard let pasteboardString else { return }
         didInputComment(pasteboardString)
         didUpdateComment?(pasteboardString)
     }
@@ -606,6 +614,7 @@ final class SendV3ViewModelImplementation: SendV3ViewModel, SendV3ModuleOutput, 
         }
 
         let limitError = limitErrorForCurrentAmount()
+        let isCommentInputValid = sendController.validateComment(comment: comment ?? "") == .ok
 
         let balanceState: SendV3ViewModelViewState.BalanceState = {
             let remaining: SendV3ViewModelViewState.BalanceState.Remaining
@@ -638,7 +647,7 @@ final class SendV3ViewModelImplementation: SendV3ViewModel, SendV3ModuleOutput, 
                     }
                 }()
 
-                return !isRequiredCommentEmpty && isRecipientValid && isRecipientNotEmpty && isItemValid && recipientResolvingTask == nil && !isProcessingExchange && limitError == nil
+                return !isRequiredCommentEmpty && isCommentInputValid && isRecipientValid && isRecipientNotEmpty && isItemValid && recipientResolvingTask == nil && !isProcessingExchange && limitError == nil
             }()
             var configuration = TKButton.Configuration.actionButtonConfiguration(
                 category: .primary,
@@ -664,6 +673,15 @@ final class SendV3ViewModelImplementation: SendV3ViewModel, SendV3ModuleOutput, 
             let description: NSAttributedString?
             let placeholder: String
             switch (isCommentRequired, comment.isEmpty, isCommentOk) {
+            case (_, false, .tooLong):
+                isValid = false
+                placeholder = TKLocales.Send.Comment.placeholder
+                description = TKLocales.Send.Comment.tooLongError.withTextStyle(
+                    .body2,
+                    color: .Accent.red,
+                    alignment: .left,
+                    lineBreakMode: .byWordWrapping
+                )
             case (_, false, .ledgerNonAsciiError):
                 isValid = false
                 placeholder = TKLocales.Send.Comment.placeholder

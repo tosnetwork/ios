@@ -1700,6 +1700,8 @@ public enum TKLocales {
         }
 
         public enum Comment {
+            /// Comment must be 120 UTF-8 bytes or fewer.
+            public static let tooLongError = TKLocales.tr("Localizable", "send.comment.too_long_error", fallback: "Comment must be 120 UTF-8 bytes or fewer.")
             /// Use only ASCII characters: digits, latin alphabet letters and punctuation marks.
             public static let asciiError = TKLocales.tr("Localizable", "send.comment.ascii_error", fallback: "Use only ASCII characters: digits, latin alphabet letters and punctuation marks.")
             /// Will be visible to everyone.

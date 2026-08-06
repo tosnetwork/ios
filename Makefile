@@ -160,6 +160,7 @@ test_tos_live: test_project_scheme
 
 test_ui: SCHEME=TOSWalletUITests
 test_ui: test_project_scheme
+	@sh scripts/tests/test_v1_runtime_secrets.sh
 
 test_wallet_core: SCHEME=WalletCore
 test_wallet_core: TEST_ONLY=WalletCoreTests

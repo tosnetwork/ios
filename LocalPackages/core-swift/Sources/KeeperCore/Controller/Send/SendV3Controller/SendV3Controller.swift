@@ -84,6 +84,7 @@ public final class SendV3Controller {
     }
 
     public func isAmountAvailableToSend(amount: BigUInt, token: TonToken) -> Bool {
+        guard amount > 0 else { return false }
         guard let balance = balanceStore.state[wallet]?.balance else { return false }
 
         switch token {
@@ -98,6 +99,7 @@ public final class SendV3Controller {
     }
 
     public func isTronUSDTAmountAvailableToSend(amount: BigUInt) -> Bool {
+        guard amount > 0 else { return false }
         guard let balance = balanceStore.state[wallet]?.balance else { return false }
         guard let tronUSDTBalance = balance.tronUSDT else { return false }
 
@@ -245,12 +247,14 @@ public final class SendV3Controller {
         currencyStore.state
     }
 
-    public enum CommentState {
+    public enum CommentState: Equatable {
         case ledgerNonAsciiError
+        case tooLong
         case ok
     }
 
     public func validateComment(comment: String) -> CommentState {
+        guard comment.utf8.count <= 120 else { return .tooLong }
         if wallet.kind == .ledger && comment.count > 0 && !comment.containsOnlyAsciiCharacters {
             return .ledgerNonAsciiError
         }

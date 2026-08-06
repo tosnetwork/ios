@@ -10,6 +10,8 @@ final class TOSWalletUITests: XCTestCase {
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = "TOS automated transfer"
         app.launch()
     }
 
@@ -210,6 +212,28 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
     }
 
+    func testFundedFixtureLoadsExactNativeBalanceAndIncomingHistory() {
+        importFixtureWalletToHome()
+
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES[c] %@", "100([.,]0+)? TOS")
+        ).firstMatch.waitForExistence(timeout: 20))
+
+        app.descendants(matching: .any)["History"].tap()
+        let amount = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "100", "TOS")
+        ).firstMatch
+        if !amount.waitForExistence(timeout: 20) {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Funded history hierarchy"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("Funded history did not expose the exact native amount")
+        }
+        XCTAssertFalse(app.staticTexts["Make your first transaction!"].exists)
+        assertReachableControlsAreAccessible()
+    }
+
     func testRecoveryPhraseNormalization() {
         let decorated = "MANSION Chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction VOICE"
         launchRecoveryPhraseImport(phrase: decorated)
@@ -317,8 +341,13 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
         app.launch()
         XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
-        enterPasscode("9999")
-        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 5))
+        for attempt in 1...5 {
+            enterPasscode("9999")
+            XCTAssertTrue(
+                app.staticTexts["Enter passcode"].waitForExistence(timeout: 5),
+                "Wallet unlocked or lost its retry state after wrong attempt \(attempt)"
+            )
+        }
         enterPasscode("1234")
         assertNativeWalletHome()
     }
@@ -398,6 +427,138 @@ final class TOSWalletUITests: XCTestCase {
             object: invalidError
         )
         XCTAssertEqual(XCTWaiter.wait(for: [errorRemoved], timeout: 10), .completed)
+    }
+
+    func testSendPasteButtonsUseExactRecipientAndComment() {
+        importFixtureWalletToHome()
+        app.descendants(matching: .any)["Send"].tap()
+
+        let recipient = app.textViews["Address or name"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["send.recipient.paste"].tap()
+        XCTAssertEqual(recipient.value as? String, "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU")
+        app.descendants(matching: .any)["send.comment.paste"].tap()
+        XCTAssertEqual(app.textViews["Comment"].value as? String, "TOS automated transfer")
+    }
+
+    func testNativeCommentUTF8ByteBoundary() {
+        importFixtureWalletToHome(comment: String(repeating: "a", count: 120))
+        app.descendants(matching: .any)["Send"].tap()
+        app.descendants(matching: .any)["send.recipient.paste"].tap()
+        replaceText(in: app.textFields["Amount"], with: "1")
+        app.descendants(matching: .any)["send.comment.paste"].tap()
+
+        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(waitForEnabled(continueButton, expected: true))
+
+        replaceText(in: app.textViews["Comment"], with: String(repeating: "a", count: 121))
+        XCTAssertTrue(app.staticTexts["Comment must be 120 UTF-8 bytes or fewer."].waitForExistence(timeout: 5))
+        assertCannotContinue(continueButton: continueButton, amountField: app.textFields["Amount"])
+    }
+
+    func testNativeSendAmountBoundaries() {
+        importFixtureWalletToHome()
+        app.descendants(matching: .any)["Send"].tap()
+        app.descendants(matching: .any)["send.recipient.paste"].tap()
+        let amount = app.textFields["Amount"]
+        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(amount.waitForExistence(timeout: 5))
+
+        replaceText(in: amount, with: "1")
+        XCTAssertTrue(waitForEnabled(continueButton, expected: true))
+        replaceText(in: amount, with: "1.25")
+        XCTAssertTrue(waitForEnabled(continueButton, expected: true))
+        replaceText(in: amount, with: "0")
+        assertCannotContinue(continueButton: continueButton, amountField: amount)
+        replaceText(in: amount, with: "101")
+        assertCannotContinue(continueButton: continueButton, amountField: amount)
+        replaceText(in: amount, with: "0.0000000001")
+        assertCannotContinue(continueButton: continueButton, amountField: amount)
+        replaceText(in: amount, with: "999999999999999999999999999999999999")
+        assertCannotContinue(continueButton: continueButton, amountField: amount)
+        replaceText(in: amount, with: "-1")
+        XCTAssertFalse((amount.value as? String)?.contains("-") == true)
+    }
+
+    func testNativeSendConfirmationShowsExactValuesAndCancelDoesNotBroadcast() throws {
+        let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        let balanceBefore = try rpcBalance(address: faucet)
+        importFixtureWalletToHome()
+        app.descendants(matching: .any)["Send"].tap()
+
+        let recipient = app.textViews["Address or name"]
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 5))
+        recipient.typeText(faucet)
+        amount.tap()
+        amount.typeText("1.25")
+        let comment = app.textViews["Comment"]
+        comment.tap()
+        comment.typeText("TOS automated transfer")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+
+        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(continueButton.isEnabled)
+        continueButton.tap()
+
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "1.25", "TOS")
+        ).firstMatch.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", faucet)
+        ).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["TOS automated transfer"].exists)
+        assertReachableControlsAreAccessible()
+
+        app.descendants(matching: .any)["Close"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["Send"].waitForExistence(timeout: 10))
+        XCTAssertEqual(try rpcBalance(address: faucet), balanceBefore)
+    }
+
+    func testPasscodeSignsBroadcastsAndReconcilesNativeTransfer() throws {
+        let transferComment = "TOS 星河 🚀"
+        let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let faucetBefore = try rpcBalance(address: faucet)
+        let senderBefore = try rpcBalance(address: sender)
+        let eventsBefore = try rpcEventIDs(address: sender)
+        importFixtureWalletToHome(comment: transferComment)
+        app.descendants(matching: .any)["Send"].tap()
+
+        let recipient = app.textViews["Address or name"]
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 5))
+        recipient.typeText(faucet)
+        amount.tap()
+        amount.typeText("0.5")
+        let comment = app.textViews["Comment"]
+        app.descendants(matching: .any)["send.comment.paste"].tap()
+        XCTAssertEqual(comment.value as? String, transferComment)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(continueButton.isEnabled)
+        continueButton.tap()
+
+        XCTAssertTrue(app.staticTexts["Confirm action"].waitForExistence(timeout: 20))
+        let sliderStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.91))
+        let sliderEnd = app.coordinate(withNormalizedOffset: CGVector(dx: 0.88, dy: 0.91))
+        sliderStart.press(forDuration: 0.2, thenDragTo: sliderEnd)
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+
+        XCTAssertTrue(waitForBalance(address: faucet, timeout: 30) { $0 >= faucetBefore + 500_000_000 })
+        XCTAssertTrue(waitForBalance(address: sender, timeout: 30) { $0 < senderBefore - 500_000_000 })
+        let eventsAfter = try rpcEventIDs(address: sender)
+        let newEvents = eventsAfter.subtracting(eventsBefore)
+        XCTAssertEqual(newEvents.count, 1)
+        XCTAssertEqual(try rpcEventComment(address: sender, eventID: XCTUnwrap(newEvents.first)), transferComment)
+        XCTAssertTrue(app.staticTexts["History"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "0.5", "TOS")
+        ).firstMatch.waitForExistence(timeout: 20))
+        assertReachableControlsAreAccessible()
     }
 
     func testNewWalletShowsZeroNativeTOSBalance() {
@@ -551,6 +712,18 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
     }
 
+    private func importFixtureWalletToHome(comment: String = "TOS automated transfer") {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic, comment: comment)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+    }
+
     private func assertV1ImportOptionsAreHidden() {
         let unsupportedOptions = [
             "Watch-only Wallet", "Ledger", "Signer", "Keystone", "Testnet", "TRON",
@@ -564,6 +737,26 @@ final class TOSWalletUITests: XCTestCase {
         for digit in passcode {
             app.buttons[String(digit)].tap()
         }
+    }
+
+    private func replaceText(in element: XCUIElement, with value: String) {
+        element.tap()
+        element.typeKey("a", modifierFlags: .command)
+        element.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        element.typeText(value)
+    }
+
+    private func waitForEnabled(_ element: XCUIElement, expected: Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == %@", NSNumber(value: expected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+    }
+
+    private func assertCannotContinue(continueButton: XCUIElement, amountField: XCUIElement) {
+        continueButton.tap()
+        XCTAssertTrue(amountField.waitForExistence(timeout: 1), "Invalid amount advanced past the send form")
     }
 
     private func openCreatePasscode() {
@@ -583,11 +776,16 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
     }
 
-    private func launchRecoveryPhraseImport(phrase: String) {
+    private func launchRecoveryPhraseImport(
+        phrase: String,
+        comment: String = "TOS automated transfer"
+    ) {
         app.terminate()
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
         app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
+        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = comment
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
         app.launch()
         openRecoveryPhraseImport()
@@ -628,7 +826,7 @@ final class TOSWalletUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let forbiddenCopy = app.staticTexts.matching(
+        let forbiddenCopy = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label MATCHES[c] %@",
                 ".*(^|[^A-Za-z])(TON|Tonkeeper|TRON|TRC20|Jetton|NFT|Swap|Staking|Buy|DApp|TonConnect)([^A-Za-z]|$).*"
@@ -662,6 +860,104 @@ final class TOSWalletUITests: XCTestCase {
                 )
             }
         }
+    }
+
+    private func rpcBalance(address: String) throws -> UInt64 {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        let url = try XCTUnwrap(URL(string: endpoint + "/jsonRPC"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "getAddressInformation",
+            "params": ["address": address],
+        ])
+        let completed = expectation(description: "TOS RPC balance")
+        var result: Result<UInt64, Error>?
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            defer { completed.fulfill() }
+            do {
+                if let error { throw error }
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(data)) as? [String: Any])
+                let envelope = try XCTUnwrap(object["result"] as? [String: Any])
+                result = .success(try XCTUnwrap(UInt64(try XCTUnwrap(envelope["balance"] as? String))))
+            } catch {
+                result = .failure(error)
+            }
+        }.resume()
+        wait(for: [completed], timeout: 10)
+        return try XCTUnwrap(result).get()
+    }
+
+    private func waitForBalance(
+        address: String,
+        timeout: TimeInterval,
+        predicate: (UInt64) -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let balance = try? rpcBalance(address: address), predicate(balance) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        return false
+    }
+
+    private func rpcEventIDs(address: String) throws -> Set<String> {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        let url = try XCTUnwrap(URL(string: endpoint + "/jsonRPC"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "getAccountEvents",
+            "params": ["address": address, "limit": 100],
+        ])
+        let completed = expectation(description: "TOS RPC events")
+        var result: Result<Set<String>, Error>?
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            defer { completed.fulfill() }
+            do {
+                if let error { throw error }
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(data)) as? [String: Any])
+                let envelope = try XCTUnwrap(object["result"] as? [String: Any])
+                let events = try XCTUnwrap(envelope["events"] as? [[String: Any]])
+                result = .success(Set(events.compactMap { $0["event_id"] as? String }))
+            } catch {
+                result = .failure(error)
+            }
+        }.resume()
+        wait(for: [completed], timeout: 10)
+        return try XCTUnwrap(result).get()
+    }
+
+    private func rpcEventComment(address: String, eventID: String) throws -> String? {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        let url = try XCTUnwrap(URL(string: endpoint + "/jsonRPC"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "getAccountEvent",
+            "params": ["address": address, "event_id": eventID],
+        ])
+        let completed = expectation(description: "TOS RPC event comment")
+        var result: Result<String?, Error>?
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            defer { completed.fulfill() }
+            do {
+                if let error { throw error }
+                let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(data)) as? [String: Any])
+                let envelope = try XCTUnwrap(object["result"] as? [String: Any])
+                let transfers = try XCTUnwrap(envelope["transfers"] as? [[String: Any]])
+                result = .success(transfers.first?["comment"] as? String)
+            } catch {
+                result = .failure(error)
+            }
+        }.resume()
+        wait(for: [completed], timeout: 10)
+        return try XCTUnwrap(result).get()
     }
 
 }
