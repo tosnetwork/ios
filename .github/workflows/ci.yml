@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
       - name: Install build formatter
         run: brew install xcbeautify
@@ -27,4 +27,4 @@ jobs:
         run: make compile
 
       - name: Test wallet core
-        run: make test_keeper_core TEST_DESTINATION='platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5'
+        run: make test_keeper_core TEST_DESTINATION='platform=iOS Simulator,name=iPhone 17 Pro,OS=latest'
