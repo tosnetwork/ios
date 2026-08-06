@@ -101,6 +101,10 @@ public final class TKRecoveryPhraseItemView: UIView, ConfigurableView {
     public func configure(model: Model) {
         self.index = model.index
         self.word = model.word
+        isAccessibilityElement = true
+        accessibilityIdentifier = "recovery.word.\(model.index)"
+        accessibilityLabel = "Recovery word \(model.index)"
+        accessibilityValue = model.word
         reconfigure()
         setNeedsLayout()
     }

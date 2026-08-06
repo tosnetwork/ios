@@ -104,6 +104,7 @@ final class SettingsDeleteWarningViewController: UIViewController, TKBottomSheet
         stackView.setCustomSpacing(32, after: contentView)
 
         let signoutButton = TKButton()
+        signoutButton.accessibilityIdentifier = "settings.delete.confirm"
         var signoutButtonConfiguration: TKButton.Configuration = .actionButtonConfiguration(
             category: .secondary,
             size: .large

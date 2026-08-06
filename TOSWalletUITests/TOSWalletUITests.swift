@@ -1,7 +1,9 @@
+import CoreImage
 import XCTest
 
 final class TOSWalletUITests: XCTestCase {
     private var app: XCUIApplication!
+    private let fixtureMnemonic = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -21,6 +23,27 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(tosGalaxy.exists)
         XCTAssertLessThanOrEqual(tosGalaxy.frame.width, 136)
         XCTAssertTrue(app.windows.firstMatch.frame.contains(tosGalaxy.frame))
+        assertReachableControlsAreAccessible()
+    }
+
+    func testBackgroundPrivacyShieldAppearsAndForegroundRestores() {
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        let hiddenShield = app.descendants(matching: .any)["app.privacyShield"]
+        let shieldRemoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: hiddenShield
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [shieldRemoved], timeout: 5), .completed)
+
+        app.terminate()
+        app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
+        app.launchEnvironment["TOS_UI_TEST_KEEP_PRIVACY_SHIELD"] = "1"
+        app.launch()
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.descendants(matching: .any)["app.privacyShield"].waitForExistence(timeout: 5))
     }
 
     func testCreateWalletRequiresPasscodeConfirmationBeforeBackup() {
@@ -62,6 +85,91 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
     }
 
+    func testCancelledCreationLeavesNoPartialWallet() {
+        openCreatePasscode()
+        enterPasscode("12")
+        let close = app.descendants(matching: .any)["Close"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 5))
+        close.tap()
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 10))
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Import Existing Wallet"].exists)
+    }
+
+    func testRecoveryPhraseBackupRejectsWrongWordAndCompletesWithExactWords() {
+        openCreatePasscode()
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+
+        let continueControl = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(continueControl.waitForExistence(timeout: 5))
+        continueControl.tap()
+        XCTAssertTrue(app.staticTexts["Recovery phrase"].waitForExistence(timeout: 5))
+        assertReachableControlsAreAccessible()
+        var phrase = [Int: String]()
+        for index in 1 ... 24 {
+            let word = app.descendants(matching: .any)["recovery.word.\(index)"]
+            XCTAssertTrue(word.exists)
+            phrase[index] = word.value as? String
+        }
+        XCTAssertEqual(phrase.count, 24)
+        app.descendants(matching: .any)["Continue"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["Backup Check"].waitForExistence(timeout: 5))
+        assertReachableControlsAreAccessible()
+        let inputs = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "backup.check.input.")
+        ).allElementsBoundByIndex
+        XCTAssertEqual(inputs.count, 3)
+        var challengedIndexes = [Int]()
+        for (offset, input) in inputs.enumerated() {
+            let index = Int(input.identifier.split(separator: ".").last ?? "") ?? 0
+            challengedIndexes.append(index)
+            input.tap()
+            input.typeText(offset == 0 ? "wrong" : phrase[index] ?? "")
+        }
+        app.descendants(matching: .any)["Continue"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Backup Check"].exists)
+
+        let wrongInput = app.descendants(matching: .any)["backup.check.input.\(challengedIndexes[0])"]
+        wrongInput.tap()
+        wrongInput.typeKey("a", modifierFlags: .command)
+        wrongInput.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        wrongInput.typeText(phrase[challengedIndexes[0]] ?? "")
+        app.descendants(matching: .any)["Continue"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].firstMatch.tap()
+        assertNativeWalletHome()
+        XCTAssertFalse(app.staticTexts["Back up your recovery phrase"].exists)
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+        XCTAssertFalse(app.staticTexts["Back up your recovery phrase"].exists)
+    }
+
+    func testSkippedBackupWarningPersistsAcrossRelaunch() {
+        createNativeWalletToHome()
+        XCTAssertTrue(app.staticTexts["Back up your recovery phrase"].exists)
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+        XCTAssertTrue(app.staticTexts["Back up your recovery phrase"].exists)
+    }
+
     func testImportWalletOpensRecoveryPhraseFlow() {
         let importWallet = app.buttons["Import Existing Wallet"]
         XCTAssertTrue(importWallet.waitForExistence(timeout: 15))
@@ -74,6 +182,74 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["Paste"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Continue"].exists)
+        assertReachableControlsAreAccessible()
+    }
+
+    func testValidFixturePhrasePastesAndStartsNativeImport() {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+
+        app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
+        ).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+    }
+
+    func testRecoveryPhraseNormalization() {
+        let decorated = "MANSION Chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction VOICE"
+        launchRecoveryPhraseImport(phrase: decorated)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+    }
+
+    func testRecoveryPhraseInvalidWordCountIsRejected() {
+        let invalidCount = fixtureMnemonic.split(separator: " ").dropLast().joined(separator: " ")
+        launchRecoveryPhraseImport(phrase: invalidCount)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+    }
+
+    func testRecoveryPhraseUnknownWordIsRejected() {
+        let unknownWord = fixtureMnemonic.replacingOccurrences(of: "mansion", with: "notaword")
+        launchRecoveryPhraseImport(phrase: unknownWord)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+    }
+
+    func testRecoveryPhraseInvalidChecksumIsRejected() {
+        let invalidChecksum = Array(repeating: "abandon", count: 24).joined(separator: " ")
+        launchRecoveryPhraseImport(phrase: invalidChecksum)
+        XCTAssertEqual(app.descendants(matching: .any)["mnemonic.input.23"].value as? String, "abandon")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+    }
+
+    func testCancelledImportLeavesNoWallet() {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.08)).tap()
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Import Existing Wallet"].exists)
     }
 
     func testCreateWalletCompletesAndPersistsAcrossRelaunch() {
@@ -103,13 +279,35 @@ final class TOSWalletUITests: XCTestCase {
             NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")
         ).firstMatch
         XCTAssertTrue(address.exists)
+        let qrCode = app.images["receive.qrCode"]
+        XCTAssertTrue(qrCode.waitForExistence(timeout: 10))
+        let qrImage = CIImage(image: qrCode.screenshot().image)
+        let detector = CIDetector(
+            ofType: CIDetectorTypeQRCode,
+            context: nil,
+            options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+        )
+        let payload = qrImage.flatMap {
+            detector?.features(in: $0).compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
+        }
+        XCTAssertNotNil(payload)
+        XCTAssertTrue(payload?.contains(address.label) == true)
         let copy = app.descendants(matching: .any)["Copy"]
         XCTAssertTrue(copy.exists)
         copy.tap()
         XCTAssertTrue(app.staticTexts["Copied"].waitForExistence(timeout: 5))
+        let copyResult = app.descendants(matching: .any)["receive.copy.result"]
+        XCTAssertTrue(copyResult.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyResult.value as? String, address.label)
+        let share = app.descendants(matching: .any)["receive.share"]
+        XCTAssertTrue(share.exists)
+        share.tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
+        XCTAssertEqual(share.value as? String, address.label)
         for unsupported in ["TRC20", "Jetton", "NFT", "TON"] {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported receive asset is visible: \(unsupported)")
         }
+        assertReachableControlsAreAccessible()
     }
 
     func testWrongPasscodePreservesWalletAndCorrectPasscodeStillUnlocks() {
@@ -125,6 +323,44 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
     }
 
+    func testRecoveryPhraseInSettingsRequiresCorrectPasscode() {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+
+        openSettings()
+        app.cells["settings.BackupItem"].tap()
+        XCTAssertTrue(app.staticTexts["Backup"].waitForExistence(timeout: 10))
+        let showPhrase = app.cells.containing(.staticText, identifier: "Show Recovery Phrase").firstMatch
+        XCTAssertTrue(showPhrase.waitForExistence(timeout: 5))
+        showPhrase.tap()
+        XCTAssertTrue(app.staticTexts["Attention"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["Continue"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("9999")
+        XCTAssertFalse(app.descendants(matching: .any)["recovery.word.1"].exists)
+        XCTAssertTrue(app.staticTexts["Enter passcode"].exists)
+        let passcodeReset = expectation(description: "Wrong-passcode animation resets")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { passcodeReset.fulfill() }
+        wait(for: [passcodeReset], timeout: 2)
+        enterPasscode("1234")
+
+        XCTAssertTrue(app.staticTexts["Recovery phrase"].waitForExistence(timeout: 10))
+        let expectedWords = fixtureMnemonic.split(separator: " ").map(String.init)
+        for (offset, expectedWord) in expectedWords.enumerated() {
+            let word = app.descendants(matching: .any)["recovery.word.\(offset + 1)"]
+            XCTAssertTrue(word.exists)
+            XCTAssertEqual(word.value as? String, expectedWord)
+        }
+    }
+
     func testSendOpensNativeTOSFormWithoutDeferredAssetSelector() {
         createNativeWalletToHome()
 
@@ -136,6 +372,32 @@ final class TOSWalletUITests: XCTestCase {
         for unsupported in ["TRC20", "Jetton", "NFT", "Token"] {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported send asset is visible: \(unsupported)")
         }
+        assertReachableControlsAreAccessible()
+    }
+
+    func testSendRejectsInvalidAddressAndAcceptsFixtureAddress() {
+        createNativeWalletToHome()
+        app.descendants(matching: .any)["Send"].tap()
+        XCTAssertTrue(app.staticTexts["Send"].waitForExistence(timeout: 10))
+
+        let recipient = app.textViews["Address or name"]
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 5))
+        recipient.typeText("invalid-address")
+        amount.tap()
+        XCTAssertTrue(app.staticTexts["Invalid wallet address."].waitForExistence(timeout: 5))
+
+        recipient.tap()
+        recipient.typeKey("a", modifierFlags: .command)
+        recipient.typeKey(XCUIKeyboardKey.delete.rawValue, modifierFlags: [])
+        recipient.typeText("UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe")
+        amount.tap()
+        let invalidError = app.staticTexts["Invalid wallet address."]
+        let errorRemoved = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: invalidError
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [errorRemoved], timeout: 10), .completed)
     }
 
     func testNewWalletShowsZeroNativeTOSBalance() {
@@ -144,6 +406,19 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label MATCHES[c] %@", "0([.,]0+)? TOS")
         ).firstMatch.waitForExistence(timeout: 10))
+        for unsupported in ["TON", "TRX", "USDT", "Jetton", "NFT"] {
+            XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 asset is visible: \(unsupported)")
+        }
+
+        app.descendants(matching: .any)["History"].tap()
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Your history")
+        ).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Make your first transaction!"].exists)
+        for unsupported in ["TRON", "Jetton", "NFT", "DApp", "Spam"] {
+            XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 history entry is visible: \(unsupported)")
+        }
+        assertReachableControlsAreAccessible()
     }
 
     func testSettingsNavigationAndV1Inventory() {
@@ -162,9 +437,95 @@ final class TOSWalletUITests: XCTestCase {
         for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "TRON"] {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 setting is visible: \(unsupported)")
         }
+        assertReachableControlsAreAccessible()
 
         app.descendants(matching: .any)["settings.back"].tap()
         assertNativeWalletHome()
+    }
+
+    func testRPCNodeValidationPersistenceAndRestore() {
+        createNativeWalletToHome()
+        openSettings()
+        app.cells["settings.RPCNodeItem"].tap()
+
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.tap()
+        endpoint.typeText("not a valid endpoint")
+        app.buttons["Save"].firstMatch.tap()
+        XCTAssertTrue(app.alerts["Invalid RPC Node"].waitForExistence(timeout: 5))
+        app.alerts["Invalid RPC Node"].buttons["OK"].tap()
+
+        app.cells["settings.RPCNodeItem"].tap()
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.tap()
+        endpoint.typeText("127.0.0.1:18545/jsonRPC")
+        app.buttons["Save"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["http://127.0.0.1:18545"].waitForExistence(timeout: 5))
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        openSettings()
+        XCTAssertTrue(app.staticTexts["http://127.0.0.1:18545"].waitForExistence(timeout: 5))
+
+        app.cells["settings.RPCNodeItem"].tap()
+        app.buttons["Restore Default"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Default node"].waitForExistence(timeout: 5))
+    }
+
+    func testDeleteWalletRequiresAcknowledgementAndCanBeCancelled() {
+        createNativeWalletToHome()
+        openSettings()
+        app.cells["settings.DeleteAccountItem"].tap()
+
+        XCTAssertTrue(app.staticTexts["Delete Wallet Data"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["settings.delete.confirm"].isEnabled)
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+    }
+
+    func testDeletingLastWalletReturnsToCleanOnboarding() {
+        createNativeWalletToHome()
+        openSettings()
+        app.cells["settings.DeleteAccountItem"].tap()
+
+        let acknowledge = app.descendants(matching: .any)["settings.delete.acknowledge"]
+        XCTAssertTrue(acknowledge.waitForExistence(timeout: 5))
+        acknowledge.tap()
+        let confirm = app.descendants(matching: .any)["settings.delete.confirm"]
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.tap()
+
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["Import Existing Wallet"].exists)
+
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 10))
+    }
+
+    func testLegalInventoryUsesApprovedTOSBranding() {
+        createNativeWalletToHome()
+        openSettings()
+        app.cells["settings.LegalItem"].tap()
+
+        XCTAssertTrue(app.staticTexts["Legal"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.cells["settings.termsOfServiceIdentifier"].exists)
+        XCTAssertTrue(app.cells["settings.privacyPolicyIdentifier"].exists)
+        XCTAssertTrue(app.cells["settings.montserratFontIdentifier"].exists)
+        XCTAssertTrue(app.staticTexts["Terms of service"].exists)
+        XCTAssertTrue(app.staticTexts["Privacy policy"].exists)
+        assertReachableControlsAreAccessible()
     }
 
     private func createNativeWalletToHome() {
@@ -212,6 +573,34 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 5))
     }
 
+    private func openRecoveryPhraseImport() {
+        let importWallet = app.buttons["Import Existing Wallet"]
+        XCTAssertTrue(importWallet.waitForExistence(timeout: 15))
+        importWallet.tap()
+        let existingWallet = app.cells.containing(.staticText, identifier: "Existing Wallet").firstMatch
+        XCTAssertTrue(existingWallet.waitForExistence(timeout: 5))
+        existingWallet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
+    }
+
+    private func launchRecoveryPhraseImport(phrase: String) {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
+        app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
+        app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        app.launch()
+        openRecoveryPhraseImport()
+        app.descendants(matching: .any)["mnemonic.paste"].tap()
+    }
+
+    private func openSettings() {
+        let settings = app.descendants(matching: .any)["wallet.settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        settings.tap()
+        XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
+    }
+
     private func assertNativeWalletHome() {
         let send = app.descendants(matching: .any)["Send"]
         guard send.waitForExistence(timeout: 20) else {
@@ -231,6 +620,47 @@ final class TOSWalletUITests: XCTestCase {
         for unsupported in ["Scan", "Swap", "Buy", "Stake", "Browser", "Collectibles"] {
             XCTAssertFalse(app.buttons[unsupported].exists, "Unsupported V1 home action is visible: \(unsupported)")
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 tab is visible: \(unsupported)")
+        }
+        assertReachableControlsAreAccessible()
+    }
+
+    private func assertReachableControlsAreAccessible(
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let forbiddenCopy = app.staticTexts.matching(
+            NSPredicate(
+                format: "label MATCHES[c] %@",
+                ".*(^|[^A-Za-z])(TON|Tonkeeper|TRON|TRC20|Jetton|NFT|Swap|Staking|Buy|DApp|TonConnect)([^A-Za-z]|$).*"
+            )
+        )
+        XCTAssertEqual(
+            forbiddenCopy.count,
+            0,
+            "Reachable V1 screen exposes inherited or deferred product copy: \(forbiddenCopy.allElementsBoundByIndex.map(\.label))",
+            file: file,
+            line: line
+        )
+
+        let controlTypes: [XCUIElement.ElementType] = [
+            .button, .textField, .secureTextField, .link, .switch,
+        ]
+        let keyboard = app.keyboards.firstMatch
+        let keyboardFrame = keyboard.exists ? keyboard.frame : .null
+        for type in controlTypes {
+            for element in app.descendants(matching: type).allElementsBoundByIndex where element.isHittable {
+                if keyboardFrame.intersects(element.frame) {
+                    continue
+                }
+                let hasIdentifier = !element.identifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let hasLabel = !element.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                XCTAssertTrue(
+                    hasIdentifier || hasLabel,
+                    "Reachable \(type) has no accessibility identifier or label: \(element)",
+                    file: file,
+                    line: line
+                )
+            }
         }
     }
 

@@ -156,8 +156,11 @@ private extension TKInputRecoveryPhraseViewModelImplementation {
         var pasteButtonConfiguration = TKButton.Configuration.actionButtonConfiguration(category: .tertiary, size: .medium)
         pasteButtonConfiguration.content.title = .plainString(pasteButtonTitle)
         pasteButtonConfiguration.action = { [weak self] in
-            guard UIPasteboard.general.hasStrings,
-                  let string = UIPasteboard.general.string else { return }
+            let environment = ProcessInfo.processInfo.environment
+            let injectedValue = environment["TOS_UI_TEST_RESET"] == "1"
+                ? environment["TOS_UI_TEST_PASTEBOARD"]
+                : nil
+            guard let string = injectedValue ?? UIPasteboard.general.string else { return }
             _ = self?.shouldPaste(text: string, index: 0)
         }
         didUpdatePasteButton?(pasteButtonConfiguration)
@@ -261,9 +264,11 @@ private extension TKInputRecoveryPhraseViewModelImplementation {
     func shouldPaste(text: String, index: Int) -> Bool {
         let wordsCount = mode.wordsCount
         guard index == 0 else { return false }
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
         let phrase = text
-            .components(separatedBy: CharacterSet([" ", ",", "\n", "\u{00a0}"]))
+            .components(separatedBy: separators)
             .filter { !$0.isEmpty }
+            .map { $0.lowercased() }
 
         guard phrase.count <= wordsCount else {
             let text = "Incorrect phrase: \(phrase.count) words phrase was inserted with \(wordsCount) words mode selected."

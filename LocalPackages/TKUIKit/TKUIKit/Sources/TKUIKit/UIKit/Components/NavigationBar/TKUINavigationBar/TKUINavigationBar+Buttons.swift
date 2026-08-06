@@ -8,6 +8,9 @@ public extension TKUINavigationBar {
                 image: .TKUIKit.Icons.Size16.chevronLeft
             )
         )
+        button.isAccessibilityElement = true
+        button.accessibilityLabel = "Back"
+        button.accessibilityTraits = .button
 
         button.addTapAction(action)
 
@@ -46,6 +49,9 @@ public extension TKUINavigationBar {
                 image: .TKUIKit.Icons.Size16.close
             )
         )
+        button.isAccessibilityElement = true
+        button.accessibilityLabel = "Close"
+        button.accessibilityTraits = .button
 
         button.addTapAction(action)
 

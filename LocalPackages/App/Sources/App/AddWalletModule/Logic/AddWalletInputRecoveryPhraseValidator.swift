@@ -1,5 +1,6 @@
 import CoreComponents
 import Foundation
+import KeeperCore
 import TKScreenKit
 import TonSwift
 
@@ -9,13 +10,7 @@ struct AddWalletInputRecoveryPhraseValidator: TKInputRecoveryPhraseValidator {
     }
 
     func validatePhrase(_ phrase: [String]) -> RecoveryPhraseValidationResult {
-        if Mnemonic.mnemonicValidate(mnemonicArray: phrase) {
-            return .ton
-        }
-        if Mnemonic.isMultiAccountSeed(mnemonicArray: phrase) {
-            return .multiaccount
-        }
-        if MnemonicLegacy.isValidBip39Mnemonic(mnemonicArray: phrase) {
+        if TOSV1MnemonicValidator.isValid(phrase) {
             return .ton
         }
         return .invalid

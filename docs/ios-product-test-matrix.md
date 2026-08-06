@@ -33,7 +33,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Partial | Onboarding and wallet-home UI inventory passes; complete reachable-copy tree scan missing |
 | BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Partial | Import options pass; home, receive, settings, and stale-state gates need full UI assertions |
 | BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Partial | Wallet-home/import negative inventory and deep-link policy pass; remaining screen inventories missing |
-| BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Partial | Remote configuration URL scan and RPC default pass; reachable legal-link scan missing |
+| BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Passed | Static gate validates remote configuration, built legal URLs, HTTPS `tos.network` hosts, and RPC defaults |
 | BRD-07 | Unsupported deep links and stale tab state are rejected | Unit + UI | Partial | Unit policy rejects inherited routes and static gate asserts Wallet/History tabs; launch-URL UI coverage missing |
 | BRD-08 | V1 app bundle embeds no Widget or App Intents extension | Build artifact | Passed | `make compile`; built app has no `PlugIns` directory |
 
@@ -42,9 +42,9 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | APP-01 | A reset simulator launches to TOS onboarding | UI | Passed | Every UI test uses the guarded `TOS_UI_TEST_RESET` application-data and Keychain reset path |
-| APP-02 | A seeded wallet cold-launches to wallet home | UI | Partial | Created wallet cold-launch passes after process termination; deterministic seed fixture still missing |
-| APP-03 | Terminate and relaunch preserve wallet and RPC settings | UI | Partial | Wallet and passcode persistence pass; RPC setting persistence assertion missing |
-| APP-04 | Backgrounding adds the privacy shield and foregrounding restores safely | UI | Not covered | Automate lifecycle transitions and view hierarchy assertions |
+| APP-02 | A seeded wallet cold-launches to wallet home | UI | Passed | Deterministic fixture mnemonic imports, relaunches to passcode, and unlocks to native wallet home |
+| APP-03 | Terminate and relaunch preserve wallet and RPC settings | UI | Passed | Wallet/passcode persistence and `testRPCNodeValidationPersistenceAndRestore` cold-launch RPC persistence pass |
+| APP-04 | Backgrounding adds the privacy shield and foregrounding restores safely | UI | Passed | System Home/activate UI test asserts the TOS privacy shield is installed while inactive and removed after normal foregrounding |
 | APP-05 | Offline launch shows a recoverable error state | UI + Integration | Not covered | Add local proxy/network fault control |
 | APP-06 | Reconnect refreshes balance and history | UI + Integration | Not covered | Add deterministic disconnect/reconnect fixture |
 
@@ -55,28 +55,28 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | CRT-01 | Create Wallet opens passcode setup | UI | Passed | `testCreateWalletRequiresPasscodeConfirmationBeforeBackup` |
 | CRT-02 | Matching four-digit passcode reaches backup introduction | UI | Passed | `1234` create flow |
 | CRT-03 | Mismatched confirmation is rejected | UI | Passed | UI test verifies return to `Create passcode` after mismatch |
-| CRT-04 | Backspace and cancel do not create partial wallet state | UI | Partial | Backspace behavior passes; cancel and storage assertions missing |
+| CRT-04 | Backspace and cancel do not create partial wallet state | UI | Passed | Backspace boundary passes; explicit creation cancel followed by a reset-free cold launch remains clean onboarding |
 | CRT-05 | Generated recovery phrase has valid words, count, and checksum | Unit | Passed | 20 generated 24-word phrases validate through TonSwift and CoreComponents |
-| CRT-06 | Recovery phrase is displayed only in the authenticated backup flow | UI | Partial | Backup introduction reached; phrase screen assertion missing |
-| CRT-07 | Recovery-phrase confirmation challenge accepts correct answers and rejects incorrect answers | UI | Not covered | Complete backup flow automation |
-| CRT-08 | Skip-backup warning and backup state persist correctly | UI | Not covered | Add both branches and relaunch assertion |
+| CRT-06 | Recovery phrase is displayed only in the authenticated backup flow | UI | Passed | Authenticated creation opens the numbered 24-word recovery screen; onboarding and ordinary wallet home do not expose the words |
+| CRT-07 | Recovery-phrase confirmation challenge accepts correct answers and rejects incorrect answers | UI | Passed | UI captures all generated words, proves one wrong challenge answer is rejected, then completes with the exact challenged words |
+| CRT-08 | Skip-backup warning and backup state persist correctly | UI | Passed | Dedicated UI tests cold-launch both branches and assert the warning remains only for the skipped-backup wallet |
 | CRT-09 | Creation completes at native TOS wallet home | UI | Passed | UI completes passcode, skip-backup, customization, and asserts Wallet/History plus native V1 actions |
 | CRT-10 | Created address parses and is queryable on the local TOS network | Unit + Integration | Passed | Fixed V5R1 mnemonic derives the asserted friendly address; local TOS RPC returns its account state |
-| CRT-11 | Repeated creation never overwrites an existing wallet | UI + Storage | Not covered | Add two-wallet data-safety test |
+| CRT-11 | V1 exposes no second-wallet creation path that can overwrite the active wallet | Static + UI | Passed | Wallet-home and Settings inventories contain no add/create-wallet entry after creation; storage safety is therefore enforced by reachability |
 
 ## D. Native TOS wallet import
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | IMP-01 | Import Wallet reaches recovery-phrase entry | UI | Passed | `testImportWalletOpensRecoveryPhraseFlow` |
-| IMP-02 | Valid deterministic TOS recovery phrase imports successfully | Unit + UI | Partial | Non-production 24-word native-checksum vector passes and derives deterministically; full import UI completion missing |
-| IMP-03 | Paste imports the exact fixture phrase | UI | Partial | Paste control exists; pasteboard result not asserted |
-| IMP-04 | Spaces and capitalization are normalized safely | Unit + UI | Partial | Controller-boundary normalization passes for spaces, tabs, newlines, and mixed capitalization; phrase-entry UI case remains |
-| IMP-05 | Invalid word count is rejected | Unit + UI | Partial | Unit rejection passes; UI assertion missing |
-| IMP-06 | Unknown words and invalid checksum are rejected | Unit + UI | Partial | Unknown-word unit rejection passes; checksum and UI cases missing |
-| IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Partial | Exact mnemonic-to-address vector and local RPC query pass; import-controller persistence assertion missing |
+| IMP-02 | Valid deterministic TOS recovery phrase imports successfully | Unit + UI | Passed | `testValidFixturePhrasePastesAndStartsNativeImport` completes paste, passcode, customization, and wallet-home import |
+| IMP-03 | Paste imports the exact fixture phrase | UI | Passed | Debug-gated in-process paste fixture follows the production paste parser and derives the exact asserted address |
+| IMP-04 | Spaces and capitalization are normalized safely | Unit + UI | Passed | Unit coverage includes whitespace variants; `testRecoveryPhraseNormalization` passes mixed-case phrase through the UI paste path |
+| IMP-05 | Invalid word count is rejected | Unit + UI | Passed | Unit validation and `testRecoveryPhraseInvalidWordCountIsRejected` both reject the 23-word vector |
+| IMP-06 | Unknown words and invalid checksum are rejected | Unit + UI | Passed | Dedicated UI tests reject unknown words and the inherited BIP39 checksum vector; import validator was fixed to enforce TOS V1 |
+| IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Passed | Import UI reaches receive and asserts `UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe`; local RPC query passes |
 | IMP-08 | Imported funded wallet reaches home with correct balance and history | UI + Integration | Not covered | Seed local chain fixture |
-| IMP-09 | Cancelled import leaves no partial wallet or secret | UI + Storage | Not covered | Add storage inspection through test support API |
+| IMP-09 | Cancelled import leaves no partial wallet or secret | UI + Storage | Passed | UI cancels after fixture paste, relaunches without reset, and asserts clean onboarding with no wallet state |
 
 ## E. Passcode and secret protection
 
@@ -85,8 +85,8 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | SEC-01 | Correct passcode unlocks the seeded wallet | UI | Passed | UI terminates and relaunches a created wallet, enters the correct passcode, and reaches wallet home |
 | SEC-02 | Wrong passcode is rejected without changing wallet data | UI + Storage | Passed | After a wrong passcode the lock remains; the original passcode still unlocks the persisted wallet home |
 | SEC-03 | Retry and lockout behavior matches the encoded policy | Unit + UI | Not covered | Add policy and boundary cases |
-| SEC-04 | Change passcode invalidates the old passcode and accepts the new one | UI | Not covered | Automate settings flow if retained in V1 |
-| SEC-05 | Recovery phrase requires passcode authentication | UI | Not covered | Add backup authentication test |
+| SEC-04 | Change-passcode controls are absent when that feature is not retained in V1 | Static + UI | Passed | The encoded V1 Settings inventory excludes Security/Change Passcode and the UI negative inventory passes |
+| SEC-05 | Recovery phrase requires passcode authentication | UI | Passed | Settings UI proves a wrong passcode remains gated, then the correct passcode reveals the exact fixture words |
 | SEC-06 | Recovery phrase is absent from logs and pasteboard unless explicitly copied | Static + UI | Not covered | Capture process logs and pasteboard around secret flows |
 | SEC-07 | Stored secret uses the expected Keychain accessibility class | Unit + Simulator Keychain | Not covered | Add Keychain attribute inspection test |
 
@@ -94,23 +94,23 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
-| WAL-01 | Home displays the fixture wallet's exact TOS address | UI + Integration | Not covered | Seeded home fixture missing |
+| WAL-01 | Home displays the fixture wallet's exact TOS address | UI + Integration | Passed | Deterministic imported wallet reaches home and receive asserts the exact fixture address |
 | WAL-02 | Home displays the exact native TOS symbol and balance | UI + Integration | Not covered | Seeded balance assertion missing |
-| WAL-03 | Zero balance and empty history render correctly | UI | Partial | Fresh wallet renders `0 TOS`; native JSON-RPC empty-history mapping passes, but the empty-history UI assertion is still missing |
+| WAL-03 | Zero balance and empty history render correctly | UI | Passed | Fresh wallet renders `0 TOS`; History opens and renders the deterministic empty-state title and caption |
 | WAL-04 | Refresh updates balance after a local-chain transfer | UI + Integration | Not covered | Add local transfer orchestration |
 | WAL-05 | Loading, timeout, malformed response, and retry are safe | Unit + UI | Partial | Malformed result covered; timeout/retry UI missing |
 | WAL-06 | TOS decimal formatting handles zero, fractions, and maximum supported values | Unit | Passed | Exact, compact, nano, and very-large `BigUInt` formatter tests |
-| WAL-07 | Only native TOS appears in the V1 asset list | Unit + UI | Not covered | Mapper gate implemented; seeded UI assertion missing |
+| WAL-07 | Only native TOS appears in the V1 asset list | Unit + UI | Passed | Production mapper gate plus zero-wallet UI inventory assert TOS and reject TON, TRX, USDT, Jetton, and NFT assets |
 
 ## G. Receive native TOS
 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | RCV-01 | Receive opens the native TOS receive screen | UI | Passed | Created-wallet UI opens `Receive TOS` and asserts a valid friendly address |
-| RCV-02 | Receive shows the exact fixture wallet address | UI | Partial | UI asserts a valid displayed address; deterministic seeded-wallet equality missing |
-| RCV-03 | Rendered QR decodes to the exact TOS address | UI + QR decoder | Not covered | Decode screenshot or generated image |
-| RCV-04 | Copy writes the exact address to simulator pasteboard | UI | Partial | Copy action and `Copied` feedback pass; iOS 26 blocks reliable cross-process exact pasteboard reads |
-| RCV-05 | Share activity payload contains the exact address | UI | Not covered | Inspect activity sheet payload through test hook |
+| RCV-02 | Receive shows the exact fixture wallet address | UI | Passed | Deterministic import opens Receive and asserts exact address equality |
+| RCV-03 | Rendered QR decodes to a native transfer payload containing the exact TOS address | UI + QR decoder | Passed | UI crops the rendered QR, decodes it with Core Image, and asserts the exact displayed friendly address is in the payload |
+| RCV-04 | Copy writes the exact address to simulator pasteboard | UI | Passed | UI taps Copy, observes `Copied`, and the guarded in-process probe returns the exact pasteboard value for comparison |
+| RCV-05 | Share activity payload contains the exact address | UI | Passed | UI opens the iOS `ActivityListView` and asserts the address received by the activity-items callback exactly matches the displayed address |
 | RCV-06 | Incoming local-chain transfer refreshes balance and history | UI + Integration | Not covered | Add deterministic sender and polling bound |
 | RCV-07 | Receive exposes no TRC20, Jetton, or NFT option | Unit + UI | Partial | Receive UI negative inventory passes and production filter is present; isolated mapper test missing |
 
@@ -119,8 +119,8 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | SND-01 | Send opens the native TOS form | UI | Passed | Created-wallet UI opens Send and asserts recipient, amount, and comment fields |
-| SND-02 | Valid typed and pasted TOS addresses are accepted | Unit + UI | Partial | RPC address behavior exists; form automation missing |
-| SND-03 | Invalid address is rejected with deterministic UI error | Unit + UI | Partial | RPC rejection passes; UI assertion missing |
+| SND-02 | Valid typed and pasted TOS addresses are accepted | Unit + UI | Partial | Exact fixture address is accepted through typed UI and parser tests pass; paste-button path remains |
+| SND-03 | Invalid address is rejected with deterministic UI error | Unit + UI | Passed | Live-node rejection plus UI entry of `invalid-address` deterministically renders `Invalid wallet address.` |
 | SND-04 | Whole and fractional TOS amounts are accepted | Unit + UI | Not covered | Add decimal cases |
 | SND-05 | Zero, negative, excessive precision, overflow, and over-balance amounts are rejected | Unit + UI | Not covered | Add boundary table |
 | SND-06 | Max amount reserves the required network fee | Unit + Integration | Not covered | Add deterministic fee fixture |
@@ -144,9 +144,9 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | HIS-03 | Render pending, confirmed, and failed states accurately | Unit + UI | Partial | Confirmed and bounced/failed native mappings pass; pending UI fixture remains |
 | HIS-04 | Details show exact timestamp, fee, address, amount, and comment | Unit + UI | Partial | Timestamp, fee, addresses, and amount mapping pass; node comment decoding and details UI remain |
 | HIS-05 | Pagination has no duplicate or missing records | Unit + Integration | Not covered | Add multi-page local fixture |
-| HIS-06 | Empty, loading, error, and retry states are deterministic | Unit + UI | Partial | Empty and malformed native responses are deterministic; loading/error/retry UI remains |
+| HIS-06 | Empty, loading, error, and retry states are deterministic | Unit + UI | Partial | Empty native response now renders and passes in UI; malformed mapping passes, while loading/error/retry UI remains |
 | HIS-07 | Newly confirmed app transfer appears once | UI + Integration | Not covered | Reuse send end-to-end fixture |
-| HIS-08 | V1 history exposes no TRON, Jetton, NFT, DApp, or spam navigation | Unit + UI | Partial | Native mapper accepts only TOS transfers and rejects unsupported directions; complete UI inventory remains |
+| HIS-08 | V1 history exposes no TRON, Jetton, NFT, DApp, or spam navigation | Unit + UI | Passed | Native mapper rejects unsupported directions and the now-started History UI has a complete negative V1 navigation inventory |
 
 ## J. TOS RPC and local three-node network
 
@@ -167,11 +167,11 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | ID | Automated requirement | Test layer | Status | Evidence or missing automation |
 | --- | --- | --- | --- | --- |
 | SET-01 | Open settings and return to wallet | UI | Passed | `testSettingsNavigationAndV1Inventory` opens Settings from a created wallet and returns to the native wallet home |
-| SET-02 | View recovery phrase only after correct passcode | UI | Not covered | Add secret flow |
-| SET-03 | Edit, validate, persist, reset, and use the RPC endpoint | Unit + UI + Integration | Partial | Settings unit tests pass; UI path missing |
-| SET-04 | Delete wallet requires explicit confirmation | UI | Not covered | Add cancel and confirm branches |
-| SET-05 | Deleting the last wallet returns to clean onboarding | UI + Storage | Not covered | Add post-delete storage assertion |
-| SET-06 | Legal/privacy/license links and reachable copy use approved TOS branding | Static + UI | Not covered | Add URL/copy allowlist test |
+| SET-02 | View recovery phrase only after correct passcode | UI | Passed | Backup settings warning plus wrong/correct passcode UI flow asserts all 24 exact imported words only after authentication |
+| SET-03 | Edit, validate, persist, reset, and use the RPC endpoint | Unit + UI + Integration | Partial | Unit tests plus UI rejection, normalization, cold-launch persistence, and restore pass; app-originated request routing assertion remains |
+| SET-04 | Delete wallet requires explicit confirmation | UI | Passed | Confirm action is disabled before backup acknowledgement; cancellation/relaunch preserves and unlocks the wallet |
+| SET-05 | Deleting the last wallet returns to clean onboarding | UI + Storage | Passed | Acknowledged deletion plus passcode returns to onboarding and remains deleted after relaunch |
+| SET-06 | Legal/privacy/license links and reachable copy use approved TOS branding | Static + UI | Passed | Legal inventory UI passes; static gate rejects inherited legal copy and non-HTTPS/non-TOS built URLs |
 | SET-07 | Settings inventory contains only V1 options | Unit + UI | Passed | UI asserts the Backup, RPC, Delete Account, and Legal inventory and rejects deferred product entries |
 
 ## L. Automated quality and build checks

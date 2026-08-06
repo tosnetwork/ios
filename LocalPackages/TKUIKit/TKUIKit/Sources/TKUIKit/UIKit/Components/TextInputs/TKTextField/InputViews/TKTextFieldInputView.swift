@@ -76,6 +76,7 @@ public final class TKTextFieldInputView: UIControl, TKTextFieldInputViewControl 
 
     public var placeholder: String = "" {
         didSet {
+            textInputControl.accessibilityLabel = placeholder
             placeholderLabel.attributedText = placeholder.withTextStyle(
                 .body1,
                 color: .Text.secondary,
@@ -156,6 +157,11 @@ public final class TKTextFieldInputView: UIControl, TKTextFieldInputViewControl 
         self.textInputControl = textInputControl
         super.init(frame: .zero)
         setup()
+    }
+
+    public func setInputAccessibility(identifier: String, label: String) {
+        textInputControl.accessibilityIdentifier = identifier
+        textInputControl.accessibilityLabel = label
     }
 
     @available(*, unavailable)

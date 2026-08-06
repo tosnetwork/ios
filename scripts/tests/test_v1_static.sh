@@ -26,6 +26,11 @@ bundle_identifier=$(plutil -extract CFBundleIdentifier raw "$app_path/Info.plist
 test "$display_name" = "TOS Wallet" || fail "CFBundleDisplayName is '$display_name'"
 test "$bundle_name" = "TOS Wallet" || fail "CFBundleName is '$bundle_name'"
 test "$bundle_identifier" = "network.tos.wallet" || fail "unexpected bundle identifier '$bundle_identifier'"
+
+for legal_key in TermsOfServiceURL PrivacyPolicyURL; do
+    legal_url=$(plutil -extract "$legal_key" raw "$app_path/Info.plist")
+    printf '%s\n' "$legal_url" | rg -q '^https://tos\.network/' || fail "$legal_key is not an approved HTTPS TOS URL: $legal_url"
+done
 test ! -e "$app_path/PlugIns" || fail "V1 app embeds deferred extensions"
 test -f "$app_path/PrivacyInfo.xcprivacy" || fail "V1 app is missing its privacy manifest"
 plutil -lint "$app_path/PrivacyInfo.xcprivacy" >/dev/null || fail "V1 privacy manifest is malformed"
@@ -50,6 +55,17 @@ assert_contains "$scope_file" 'supportsOnlyNativeTOS = true' "native-only scope 
 for flag in allowsScanner allowsSwap allowsBuySell allowsStaking allowsNonNativeAssets allowsWatchOnlyWallets allowsConnectedApps allowsBiometry; do
     assert_contains "$scope_file" "${flag} = false" "$flag is enabled"
 done
+
+receive_view_model="$project_root/LocalPackages/App/Sources/App/ReceiveModule/Modules/Receive/ReceiveViewModel.swift"
+assert_contains "$receive_view_model" 'self\.tokens = tokens\.filter' "Receive does not filter its offered assets"
+assert_contains "$receive_view_model" 'if case \.ton = \$0' "Receive does not retain only native-chain assets in V1"
+
+main_coordinator="$project_root/LocalPackages/App/Sources/App/MainModule/Flows/MainCoordinator/MainCoordinator.swift"
+assert_contains "$main_coordinator" 'guard sendTransferData\.jettonAddress == nil else \{ return false \}' "Send accepts a token transfer deeplink in V1"
+
+locale_file="$project_root/LocalPackages/TKLocalize/Sources/TKLocalize/Resources/Locales/en.lproj/Localizable.strings"
+legal_copy=$(rg '^"settings\.legal\.' "$locale_file")
+printf '%s\n' "$legal_copy" | rg -q 'TON|Tonkeeper' && fail "reachable legal copy contains inherited branding"
 
 state_file="$project_root/LocalPackages/App/Sources/App/MainModule/Flows/MainCoordinator/MainCoordinatorStateManager.swift"
 assert_contains "$state_file" 'State\(tabs: \[\.wallet, \.history\]\)' "V1 tab state is not exactly Wallet and History"

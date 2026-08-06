@@ -76,6 +76,10 @@ public final class TKCheckRecoveryPhraseView: UIView, ConfigurableView {
             .forEach { index, inputModel in
                 let textField = TKMnemonicTextField()
                 textField.indexNumber = inputModel.index
+                textField.setInputAccessibility(
+                    identifier: "backup.check.input.\(inputModel.index)",
+                    label: "Recovery word \(inputModel.index)"
+                )
                 textField.didUpdateText = { text in
                     inputModel.didUpdateText(text)
                 }

@@ -16,6 +16,7 @@ final class SettingsDeleteWarningContentView: TKView {
         didSet {
             didToggle?(isSelected)
             tickButton.isSelected = isSelected
+            tickButton.accessibilityTraits = isSelected ? [.button, .selected] : .button
         }
     }
 
@@ -26,6 +27,11 @@ final class SettingsDeleteWarningContentView: TKView {
         backgroundColor = .Background.content
         layer.cornerRadius = 16
         layer.cornerCurve = .continuous
+
+        tickButton.accessibilityIdentifier = "settings.delete.acknowledge"
+        tickButton.isAccessibilityElement = true
+        tickButton.accessibilityLabel = "I have a backup copy of the recovery phrase"
+        tickButton.accessibilityTraits = .button
 
         tickButton.addAction(UIAction(handler: { [weak self] _ in
             self?.isSelected.toggle()

@@ -478,6 +478,7 @@ final class WalletBalanceViewModelImplementation:
                     accessory: .switch(
                         TKListItemSwitchAccessoryView.Configuration(
                             isOn: false,
+                            accessibilityLabel: TKLocales.WalletBalanceList.transactionNotifications,
                             action: action
                         )
                     ),
@@ -528,6 +529,7 @@ final class WalletBalanceViewModelImplementation:
                     accessory: .switch(
                         TKListItemSwitchAccessoryView.Configuration(
                             isOn: false,
+                            accessibilityLabel: TKLocales.FinishSetup.biometryUnavailable,
                             action: action
                         )
                     ),

@@ -19,7 +19,10 @@ public final class TKMnemonicTextField: UIControl {
 
     public var text: String! {
         get { textFieldInputView.inputText }
-        set { textFieldInputView.inputText = newValue }
+        set {
+            textFieldInputView.inputText = newValue
+            accessibilityValue = newValue
+        }
     }
 
     public var placeholder: String {
@@ -38,6 +41,10 @@ public final class TKMnemonicTextField: UIControl {
     public var shouldPaste: ((String) -> Bool)?
 
     public var didTapReturn: (() -> Void)?
+
+    public func setInputAccessibility(identifier: String, label: String) {
+        textFieldInputView.setInputAccessibility(identifier: identifier, label: label)
+    }
 
     var textFieldState: TKTextFieldState = .inactive {
         didSet {
@@ -88,6 +95,7 @@ public final class TKMnemonicTextField: UIControl {
 private extension TKMnemonicTextField {
     func setup() {
         textFieldInputView.didUpdateText = { [weak self] text in
+            self?.accessibilityValue = text
             self?.didUpdateText?(text)
         }
 

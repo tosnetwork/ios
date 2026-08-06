@@ -166,6 +166,9 @@ private extension TKInputRecoveryPhraseView {
     func setup() {
         backgroundColor = .Background.page
 
+        pasteButton.accessibilityIdentifier = "mnemonic.paste"
+        continueButton.accessibilityIdentifier = "mnemonic.continue"
+
         suggestsView.alpha = 0
 
         contentStackView.addArrangedSubview(titleDescriptionView)
@@ -240,7 +243,10 @@ private extension TKInputRecoveryPhraseView {
         inputTextFields = []
         for (index, inputModel) in inputs.enumerated() {
             let textField = TKMnemonicTextField()
-            textField.accessibilityLabel = "mnemonic.input.\(index)"
+            textField.setInputAccessibility(
+                identifier: "mnemonic.input.\(index)",
+                label: "Recovery word \(index + 1)"
+            )
             textField.accessoryView = suggestsView
             textField.indexNumber = inputModel.index
             textField.didUpdateText = { text in

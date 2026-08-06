@@ -38,6 +38,8 @@ final class ReceiveButtonsView: UIView, ConfigurableView {
 
 private extension ReceiveButtonsView {
     func setup() {
+        shareButton.accessibilityIdentifier = "receive.share"
+        shareButton.accessibilityLabel = "Share address"
         addSubview(stackView)
         stackView.addArrangedSubview(copyButton)
         stackView.addArrangedSubview(shareButton)

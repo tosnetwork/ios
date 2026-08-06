@@ -454,6 +454,8 @@ private extension SettingsCoordinator {
             preferredStyle: .alert
         )
         alertController.addTextField { textField in
+            textField.accessibilityIdentifier = "settings.rpc.endpoint"
+            textField.accessibilityLabel = "RPC node endpoint"
             textField.placeholder = "192.168.1.20:18545"
             textField.text = TOSRPCSettings.customEndpoint
             textField.keyboardType = .URL
@@ -462,11 +464,13 @@ private extension SettingsCoordinator {
             textField.clearButtonMode = .whileEditing
         }
         alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        alertController.addAction(UIAlertAction(title: "Restore Default", style: .destructive) { _ in
+        let restoreAction = UIAlertAction(title: "Restore Default", style: .destructive) { _ in
             TOSRPCSettings.reset()
             onSaved()
-        })
-        alertController.addAction(UIAlertAction(title: "Save", style: .default) { [weak self, weak alertController] _ in
+        }
+        restoreAction.accessibilityIdentifier = "settings.rpc.restore"
+        alertController.addAction(restoreAction)
+        let saveAction = UIAlertAction(title: "Save", style: .default) { [weak self, weak alertController] _ in
             do {
                 try TOSRPCSettings.setCustomEndpoint(alertController?.textFields?.first?.text ?? "")
                 onSaved()
@@ -477,7 +481,9 @@ private extension SettingsCoordinator {
                     actions: [UIAlertAction(title: "OK", style: .default)]
                 )
             }
-        })
+        }
+        saveAction.accessibilityIdentifier = "settings.rpc.save"
+        alertController.addAction(saveAction)
         router.rootViewController.present(alertController, animated: true)
     }
 

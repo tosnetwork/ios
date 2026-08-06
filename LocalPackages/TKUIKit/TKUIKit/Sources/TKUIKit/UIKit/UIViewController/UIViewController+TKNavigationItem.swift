@@ -36,6 +36,9 @@ public extension UIViewController {
                 image: .TKUIKit.Icons.Size16.close
             )
         )
+        closeButton.isAccessibilityElement = true
+        closeButton.accessibilityLabel = "Close"
+        closeButton.accessibilityTraits = .button
         closeButton.addTapAction {
             action()
         }
@@ -52,6 +55,9 @@ public extension UINavigationItem {
                 image: .TKUIKit.Icons.Size16.chevronLeft
             )
         )
+        backButton.isAccessibilityElement = true
+        backButton.accessibilityLabel = "Back"
+        backButton.accessibilityTraits = .button
 
         backButton.addTapAction(action)
 
@@ -66,6 +72,9 @@ public extension UINavigationItem {
                 image: .TKUIKit.Icons.Size16.chevronDown
             )
         )
+        backButton.isAccessibilityElement = true
+        backButton.accessibilityLabel = "Dismiss"
+        backButton.accessibilityTraits = .button
 
         backButton.addTapAction(action)
 

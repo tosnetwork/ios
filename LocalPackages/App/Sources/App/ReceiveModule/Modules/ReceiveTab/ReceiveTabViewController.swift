@@ -58,9 +58,13 @@ private extension ReceiveTabViewController {
             customView?.qrCodeView.qrCodeImageView.image = image
         }
 
-        viewModel.didTapCopy = { address in
+        viewModel.didTapCopy = { [weak self] address in
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             UIPasteboard.general.string = address
+            if ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] != nil {
+                self?.customView.accessibilityIdentifier = "receive.copy.result"
+                self?.customView.accessibilityValue = UIPasteboard.general.string
+            }
         }
 
         viewModel.showToast = { configuration in
@@ -68,6 +72,7 @@ private extension ReceiveTabViewController {
         }
 
         viewModel.didTapShare = { [weak self] address in
+            self?.customView.buttonsView.shareButton.accessibilityValue = address
             let activityViewController = UIActivityViewController(
                 activityItems: [address as Any],
                 applicationActivities: nil

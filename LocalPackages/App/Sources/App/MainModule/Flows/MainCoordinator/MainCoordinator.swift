@@ -367,6 +367,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(collectiblesCoordinator)
 
         walletCoordinator.start()
+        historyCoordinator.start()
     }
 
     func handleStateUpdate(_ state: MainCoordinatorStateManager.State) {

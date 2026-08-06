@@ -43,6 +43,10 @@ private extension ReceiveQRCodeView {
         layer.cornerRadius = 20
         layer.masksToBounds = true
 
+        qrCodeImageView.accessibilityIdentifier = "receive.qrCode"
+        qrCodeImageView.accessibilityLabel = "TOS receive QR code"
+        qrCodeImageView.isAccessibilityElement = true
+
         iconViewBackgroudView.backgroundColor = .white
 
         addSubview(contentContainer)
