@@ -79,7 +79,6 @@ public final class RootAssembly {
                 deeplinkParser: DeeplinkParser(),
                 keeperInfoRepository: repositoriesAssembly.keeperInfoRepository(),
                 mnemonicsRepository: secureAssembly.mnemonicsRepository(),
-                buySellProvider: buySellAssembly.buySellProvider,
                 knownAccountsProvider: knownAccountsAssembly.knownAccountsProvider
             )
             self._rootController = rootController

@@ -39,7 +39,7 @@ final class TOSRPCClientTests: XCTestCase {
 
     func testCallSurfacesNodeError() async throws {
         RPCURLProtocol.handler = { _ in
-            (200, #"{"ok":false,"code":-32602,"error":"invalid address"}"#)
+            (422, #"{"ok":false,"code":-32602,"error":"invalid address"}"#)
         }
 
         do {

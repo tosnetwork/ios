@@ -110,9 +110,7 @@ struct TOSRPCClient {
 
         let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200 ..< 300).contains(httpResponse.statusCode),
-              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
+              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Error.invalidResponse
         }
 
@@ -127,6 +125,9 @@ struct TOSRPCClient {
                 code: error["code"] as? Int ?? -32603,
                 message: error["message"] as? String ?? "RPC error"
             )
+        }
+        guard (200 ..< 300).contains(httpResponse.statusCode) else {
+            throw Error.invalidResponse
         }
         guard let result = envelope["result"] as? [String: Any] else {
             throw Error.invalidResponse

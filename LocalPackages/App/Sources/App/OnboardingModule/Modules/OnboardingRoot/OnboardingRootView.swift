@@ -70,6 +70,16 @@ private extension OnboardingRootView {
     func setup() {
         backgroundColor = .Background.page
 
+        createButton.accessibilityIdentifier = "onboarding.createWallet"
+        createButton.isAccessibilityElement = true
+        createButton.accessibilityLabel = TKLocales.Onboarding.Buttons.createNew
+        createButton.accessibilityTraits = .button
+        importButton.accessibilityIdentifier = "onboarding.importWallet"
+        importButton.isAccessibilityElement = true
+        importButton.accessibilityLabel = TKLocales.Onboarding.Buttons.importExisting
+        importButton.accessibilityTraits = .button
+        termsTextView.accessibilityIdentifier = "onboarding.terms"
+
         bottomControlsContainer.setViews([createButton, importButton, termsTextView])
 
         addSubview(coverImageView)

@@ -100,14 +100,22 @@ private extension TKKeyboardView {
 
     func createButton(type: Button) -> TKKeyboardButton {
         let button = TKKeyboardButton()
+        button.isAccessibilityElement = true
+        button.accessibilityTraits = .button
 
         switch type {
         case let .digit(digit):
             button.configure(model: .text("\(digit)"))
+            button.accessibilityIdentifier = "passcode.digit.\(digit)"
+            button.accessibilityLabel = "\(digit)"
         case .backspace:
             button.configure(model: .image(.TKUIKit.Icons.Size36.delete))
+            button.accessibilityIdentifier = "passcode.backspace"
+            button.accessibilityLabel = "Delete"
         case .biometry:
             button.configure(model: biometry.model)
+            button.accessibilityIdentifier = "passcode.biometry"
+            button.accessibilityLabel = "Biometry"
             button.isUserInteractionEnabled = biometry.isUserInteractionEnable
         }
 

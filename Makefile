@@ -9,7 +9,9 @@ SHELL := /bin/sh
 	tonconnect_generate \
 	compile \
 	test \
-	test_all
+	test_all \
+	test_tos_live \
+	test_ui
 
 locale:
 	@scripts/require_tool.sh swiftgen "brew install swiftgen"
@@ -58,6 +60,8 @@ compile:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
+TEST_BUILD_DIR ?= $(BUILD_DIR)
+TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 
 test: test_all
 
@@ -71,18 +75,18 @@ test_all:
 
 test_project_scheme:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
-	@mkdir -p $(BUILD_DIR) \
-		$(BUILD_DIR)/codex_home \
-		$(BUILD_DIR)/swiftpm-cache \
-		$(BUILD_DIR)/swiftpm-config \
-		$(BUILD_DIR)/clang-module-cache \
-		$(BUILD_DIR)/SourcePackages
+	@mkdir -p $(TEST_BUILD_ROOT) \
+		$(TEST_BUILD_ROOT)/codex_home \
+		$(TEST_BUILD_ROOT)/swiftpm-cache \
+		$(TEST_BUILD_ROOT)/swiftpm-config \
+		$(TEST_BUILD_ROOT)/clang-module-cache \
+		$(TEST_BUILD_ROOT)/SourcePackages
 	@test -n "$(SCHEME)" || (echo "SCHEME is required"; exit 1)
 	@echo 'running $(SCHEME) tests...' && \
 		set -o pipefail; \
-		HOME=$(CURDIR)/$(BUILD_DIR)/codex_home \
-		SWIFTPM_CONFIG_DIR=$(CURDIR)/$(BUILD_DIR)/swiftpm-config \
-		CLANG_MODULE_CACHE_PATH=$(CURDIR)/$(BUILD_DIR)/clang-module-cache \
+		HOME=$(TEST_BUILD_ROOT)/codex_home \
+		SWIFTPM_CONFIG_DIR=$(TEST_BUILD_ROOT)/swiftpm-config \
+		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
 		xcodebuild \
 		-project Tonkeeper.xcodeproj \
 		-scheme $(SCHEME) \
@@ -90,9 +94,9 @@ test_project_scheme:
 		-disableAutomaticPackageResolution \
 		-onlyUsePackageVersionsFromResolvedFile \
 		-skipPackageUpdates \
-		-derivedDataPath $(CURDIR)/$(BUILD_DIR)/DerivedData-tests/$(SCHEME) \
-		-clonedSourcePackagesDirPath $(CURDIR)/$(BUILD_DIR)/SourcePackages \
-		-packageCachePath $(CURDIR)/$(BUILD_DIR)/swiftpm-cache \
+		-derivedDataPath $(TEST_BUILD_ROOT)/DerivedData-tests/$(SCHEME) \
+		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
+		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
 		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) | xcbeautify
 
@@ -118,6 +122,13 @@ test_core_components: test_project_scheme
 test_keeper_core: SCHEME=WalletCore
 test_keeper_core: TEST_ONLY=KeeperCoreTests
 test_keeper_core: test_project_scheme
+
+test_tos_live: SCHEME=WalletCore
+test_tos_live: TEST_ONLY=KeeperCoreTests/TOSRPCLiveIntegrationTests
+test_tos_live: test_project_scheme
+
+test_ui: SCHEME=TOSWalletUITests
+test_ui: test_project_scheme
 
 test_wallet_core: SCHEME=WalletCore
 test_wallet_core: TEST_ONLY=WalletCoreTests

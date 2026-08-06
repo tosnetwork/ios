@@ -10,7 +10,6 @@ public final class RootController {
     private let deeplinkParser: DeeplinkParser
     private let keeperInfoRepository: KeeperInfoRepository
     private let mnemonicsRepository: MnemonicsRepository
-    private let buySellProvider: BuySellProvider
     private let knownAccountsProvider: KnownAccountsProvider
 
     init(
@@ -18,19 +17,16 @@ public final class RootController {
         deeplinkParser: DeeplinkParser,
         keeperInfoRepository: KeeperInfoRepository,
         mnemonicsRepository: MnemonicsRepository,
-        buySellProvider: BuySellProvider,
         knownAccountsProvider: KnownAccountsProvider
     ) {
         self.configuration = configuration
         self.deeplinkParser = deeplinkParser
         self.keeperInfoRepository = keeperInfoRepository
         self.mnemonicsRepository = mnemonicsRepository
-        self.buySellProvider = buySellProvider
         self.knownAccountsProvider = knownAccountsProvider
     }
 
     public func loadConfigurations() {
-        buySellProvider.load()
         knownAccountsProvider.load()
         Task {
             await configuration.loadConfigurations()
