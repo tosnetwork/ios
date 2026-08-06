@@ -25,6 +25,8 @@
                         <viewLayoutGuide key="safeArea" id="6Tk-OE-BBY"/>
                         <color key="backgroundColor" name="Colors/Background/Page"/>
                         <constraints>
+                            <constraint firstItem="Pf7-uI-VT1" firstAttribute="width" constant="72" id="TOS-logo-width"/>
+                            <constraint firstItem="Pf7-uI-VT1" firstAttribute="height" constant="72" id="TOS-logo-height"/>
                             <constraint firstItem="Pf7-uI-VT1" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="a8H-gb-YeP"/>
                             <constraint firstItem="Pf7-uI-VT1" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="dHo-GT-dKU"/>
                         </constraints>

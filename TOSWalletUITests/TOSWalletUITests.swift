@@ -16,6 +16,11 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Create New Wallet"].exists)
         XCTAssertTrue(app.buttons["Import Existing Wallet"].exists)
         XCTAssertTrue(app.links["Terms of Use"].exists)
+
+        let tosGalaxy = app.images["onboarding.tosGalaxy"]
+        XCTAssertTrue(tosGalaxy.exists)
+        XCTAssertLessThanOrEqual(tosGalaxy.frame.width, 136)
+        XCTAssertTrue(app.windows.firstMatch.frame.contains(tosGalaxy.frame))
     }
 
     func testCreateWalletRequiresPasscodeConfirmationBeforeBackup() {

@@ -95,6 +95,9 @@ private extension OnboardingRootView {
         coverImageView.translatesAutoresizingMaskIntoConstraints = false
 
         coverImageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        coverImageView.accessibilityIdentifier = "onboarding.tosGalaxy"
+        coverImageView.isAccessibilityElement = true
+        coverImageView.accessibilityLabel = "TOS"
 
         NSLayoutConstraint.activate([
             bottomControlsContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -105,9 +108,9 @@ private extension OnboardingRootView {
             titleDescriptionView.leftAnchor.constraint(equalTo: leftAnchor),
             titleDescriptionView.rightAnchor.constraint(equalTo: rightAnchor),
 
-            coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -80),
+            coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -48),
             coverImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            coverImageView.widthAnchor.constraint(equalToConstant: 220),
+            coverImageView.widthAnchor.constraint(equalToConstant: 136),
             coverImageView.heightAnchor.constraint(equalTo: coverImageView.widthAnchor),
         ])
     }
