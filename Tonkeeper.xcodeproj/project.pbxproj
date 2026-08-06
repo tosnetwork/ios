@@ -584,13 +584,10 @@
 				7DB8FB5F2A1BCC92005B4B11 /* Frameworks */,
 				7DB8FB602A1BCC92005B4B11 /* Resources */,
 				7D32F8C02A8CCB58002C130C /* Embed Frameworks */,
-				7D19EB742ABDB58D00BDE7FA /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				7D3F25E62AC19418002DF1B7 /* PBXTargetDependency */,
-				7DDBBFF32ACCA10E00F811A5 /* PBXTargetDependency */,
 			);
 			name = Tonkeeper;
 			packageProductDependencies = (
@@ -836,7 +833,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7D9B767D2CA3E35B002AA2F3 /* RateWidget.intentdefinition in Sources */,
 				7DB8FB662A1BCC92005B4B11 /* AppDelegate.swift in Sources */,
 				7DB8FB682A1BCC92005B4B11 /* SceneDelegate.swift in Sources */,
 			);
@@ -1053,9 +1049,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonkeeper/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";
@@ -1221,9 +1214,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonkeeper/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";
@@ -1444,9 +1434,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonkeeper/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";
@@ -1613,9 +1600,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Tonkeeper/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";
@@ -1804,9 +1788,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Tonkeeper/Resources/Info-Dev.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";
@@ -1973,9 +1954,6 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Tonkeeper/Resources/Info-Dev.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(BUNDLE_DISPLAY_NAME)";
-				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "TOS Wallet uses Bluetooth for compatible hardware wallets";
-				INFOPLIST_KEY_NSCameraUsageDescription = "TOS Wallet uses the camera to scan QR codes";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "TOS Wallet uses biometric authentication to authorize transactions";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				INFOPLIST_KEY_UIMainStoryboardFile = "";

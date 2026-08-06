@@ -433,88 +433,8 @@ final class WalletBalanceViewModelImplementation:
                 }
                 cellConfigurations[item.id] = cellConfiguration
                 sectionItems.append(sectionItem)
-            case let .jetton(item):
-                let isNetworkBadgeVisible = item.jetton.jettonInfo.isTonUSDT && balanceListItems.wallet.isTronTurnOn
-                let cellConfiguration = listMapper.mapJettonItem(
-                    item,
-                    isSecure: balanceListItems.isSecure,
-                    isPinned: balanceListItem.isPinned,
-                    isNetworkBadgeVisible: isNetworkBadgeVisible
-                )
-                let sectionItem = WalletBalance.ListItem(
-                    identifier: item.id
-                ) { [weak self] in
-                    self?.didSelectJetton?(balanceListItems.wallet, item.jetton, !item.price.isZero)
-                }
-                cellConfigurations[item.id] = cellConfiguration
-                sectionItems.append(sectionItem)
-            case let .staking(item):
-                let cellConfiguration = listMapper.mapStakingItem(
-                    item,
-                    isSecure: balanceListItems.isSecure,
-                    isPinned: balanceListItem.isPinned,
-                    isStakingEnable: balanceListItems.wallet.isStakeEnable,
-                    stakingCollectHandler: { [weak self] in
-                        guard let self,
-                              let poolInfo = item.poolInfo else { return }
-                        self.didSelectCollectStakingItem?(balanceListItems.wallet, poolInfo, item.info)
-                    }
-                )
-                let sectionItem = WalletBalance.ListItem(
-                    identifier: item.id
-                ) { [weak self] in
-                    guard let self,
-                          let poolInfo = item.poolInfo else { return }
-                    self.didSelectStakingItem?(balanceListItems.wallet, poolInfo, item.info)
-                }
-                cellConfigurations[item.id] = cellConfiguration
-                sectionItems.append(sectionItem)
-            case let .tronUSDT(item):
-                if
-                    configuration.flag(\.tronDisabled, network: balanceListItems.wallet.network),
-                    item.amount.isZero
-                { continue }
-
-                let cellConfiguration = listMapper.mapTronUSDTItem(
-                    item,
-                    isSecure: balanceListItems.isSecure,
-                    isPinned: balanceListItem.isPinned
-                )
-                let sectionItem = WalletBalance.ListItem(
-                    identifier: item.id
-                ) { [weak self] in
-                    self?.didSelectTronUSDT?(balanceListItems.wallet)
-                }
-                cellConfigurations[item.id] = cellConfiguration
-                sectionItems.append(sectionItem)
-            case let .ethena(item):
-                let cellConfiguration = listMapper.mapEthenaItem(
-                    item,
-                    isSecure: balanceListItems.isSecure,
-                    isPinned: balanceListItem.isPinned
-                )
-
-                var accessory: TKListItemAccessory?
-                if item.amount.isZero {
-                    accessory = .button(
-                        TKListItemButtonAccessoryView.Configuration(
-                            title: TKLocales.Actions.open,
-                            category: .tertiary,
-                            action: { [weak self] in
-                                self?.didSelectEthena?(balanceListItems.wallet)
-                            }
-                        )
-                    )
-                }
-
-                let sectionItem = WalletBalance.ListItem(
-                    identifier: item.id,
-                    accessory: accessory
-                ) { [weak self] in
-                    self?.didSelectEthena?(balanceListItems.wallet)
-                }
-                cellConfigurations[item.id] = cellConfiguration
-                sectionItems.append(sectionItem)
+            case .jetton, .staking, .tronUSDT, .ethena:
+                continue
             }
         }
 
@@ -979,11 +899,7 @@ final class WalletBalanceViewModelImplementation:
     }
 
     func createHeaderButtonsContent(wallet: Wallet) -> BalanceHeaderView.ButtonsContent {
-        if configuration.featureEnabled(.newRampFlow) {
-            return .redesign(createHeaderButtonsRedesignModel(wallet: wallet))
-        } else {
-            return .classic(createHeaderButtonsClassicModel(wallet: wallet))
-        }
+        .classic(createHeaderButtonsClassicModel(wallet: wallet))
     }
 
     func createHeaderButtonsClassicModel(wallet: Wallet) -> WalletBalanceHeaderButtonsView.Model {
@@ -1008,49 +924,13 @@ final class WalletBalanceViewModelImplementation:
             action: { [weak self] in self?.didTapScan?() }
         )
 
-        let swapButton: WalletBalanceHeaderButtonsView.Model.Button? = {
-            guard !configuration.flag(\.isSwapDisable, network: wallet.network) else { return nil }
-            return WalletBalanceHeaderButtonsView.Model.Button(
-                title: TKLocales.WalletButtons.swap,
-                icon: .TKUIKit.Icons.Size28.swapHorizontalOutline,
-                isEnabled: wallet.isSwapEnable,
-                action: { [weak self] in
-                    self?.didTapSwap?(wallet)
-                }
-            )
-        }()
-
-        let buyButton: WalletBalanceHeaderButtonsView.Model.Button? = {
-            guard !configuration.flag(\.exchangeMethodsDisabled, network: wallet.network) else { return nil }
-            return WalletBalanceHeaderButtonsView.Model.Button(
-                title: TKLocales.WalletButtons.buy,
-                icon: .TKUIKit.Icons.Size28.usd,
-                isEnabled: wallet.isBuyEnable,
-                action: { [weak self] in
-                    self?.didTapBuy?(wallet)
-                }
-            )
-        }()
-
-        let stakeButton: WalletBalanceHeaderButtonsView.Model.Button? = {
-            guard !configuration.flag(\.stakingDisabled, network: wallet.network) else { return nil }
-            return WalletBalanceHeaderButtonsView.Model.Button(
-                title: TKLocales.WalletButtons.stake,
-                icon: .TKUIKit.Icons.Size28.stakingOutline,
-                isEnabled: wallet.isStakeEnable,
-                action: { [weak self] in
-                    self?.didTapStake?(wallet)
-                }
-            )
-        }()
-
         return WalletBalanceHeaderButtonsView.Model(
             sendButton: sendButton,
             recieveButton: recieveButton,
             scanButton: scanButton,
-            swapButton: swapButton,
-            buyButton: buyButton,
-            stakeButton: stakeButton
+            swapButton: nil,
+            buyButton: nil,
+            stakeButton: nil
         )
     }
 

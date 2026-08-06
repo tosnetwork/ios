@@ -66,8 +66,14 @@ private extension AddWalletCoordinator {
         _ options: [AddWalletOption],
         configurationAssembly: ConfigurationAssembly
     ) -> [AddWalletOption] {
-        guard !configurationAssembly.configuration.isTetraWalletEnabled else { return options }
-        return options.filter { $0 != .importTetra }
+        options.filter { option in
+            switch option {
+            case .createRegular, .importRegular:
+                return true
+            case .importWatchOnly, .importTestnet, .importTetra, .signer, .keystone, .ledger:
+                return false
+            }
+        }
     }
 
     func openAddWalletOptionPicker() {

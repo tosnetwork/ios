@@ -41,6 +41,7 @@ public enum TOSRPCSettings {
               components.host?.isEmpty == false,
               components.user == nil,
               components.password == nil,
+              components.path.isEmpty,
               components.query == nil,
               components.fragment == nil
         else {

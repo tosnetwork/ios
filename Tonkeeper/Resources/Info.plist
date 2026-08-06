@@ -26,22 +26,6 @@
 				<string>tos-mob</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>tos-tc</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>tos-tc-mob</string>
-			</array>
-		</dict>
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
@@ -52,12 +36,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>BalanceWidgetIntent</string>
-		<string>ChartWidgetIntent</string>
-		<string>RateWidgetIntent</string>
-	</array>
 		<key>OLD_APP_GROUP_IDENTIFIER</key>
 		<string>$(OLD_APP_GROUP_IDENTIFIER)</string>
 		<key>PLATFORM</key>

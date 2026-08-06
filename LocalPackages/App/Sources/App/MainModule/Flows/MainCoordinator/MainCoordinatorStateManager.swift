@@ -50,7 +50,7 @@ final class MainCoordinatorStateManager {
     }
 
     private func createState(activeWallet: Wallet, nfts: [NFT]) -> State {
-        State(tabs: [.wallet])
+        State(tabs: [.wallet, .history])
     }
 
     private func updateState() {

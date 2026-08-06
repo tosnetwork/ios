@@ -112,13 +112,6 @@ final class HistoryV2ViewModelImplementation: HistoryViewModel, HistoryModuleOut
                     self?.historyListModuleInput.filter = .received
                 }
             ),
-            TKTabsView.Item(
-                title: TKLocales.History.Tab.spam,
-                isSelectable: false,
-                action: { [weak self] in
-                    self?.didSelectSpamHistory?()
-                }
-            ),
         ]
         didUpdateTabs?(tabs)
         didUpdateTabViewIsHidden?(true)

@@ -377,9 +377,9 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             case .history:
                 return historyCoordinator
             case .browser:
-                return browserCoordinator
+                return TOSV1Scope.allowsConnectedApps ? browserCoordinator : nil
             case .purchases:
-                return collectiblesCoordinator
+                return TOSV1Scope.allowsNonNativeAssets ? collectiblesCoordinator : nil
             }
         }.map { $0.router.rootViewController }
 
@@ -703,10 +703,12 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     }
 
     func handleTonkeeperDeeplink(_ deeplink: KeeperCore.Deeplink, fromStories: Bool, sendSource: SendAnalyticsSource) -> Bool {
+        guard TOSV1DeeplinkPolicy.allows(deeplink) else { return false }
         switch deeplink {
         case let .transfer(data):
             switch data {
             case let .sendTransfer(sendTransferData):
+                guard sendTransferData.jettonAddress == nil else { return false }
                 openSendDeeplink(
                     recipient: sendTransferData.recipient,
                     amount: sendTransferData.amount,
@@ -718,6 +720,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 )
                 return true
             case let .signRawTransfer(signRawTransferData):
+                guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
                 openSignRawSendDeeplink(
                     recipient: signRawTransferData.recipient,
                     jettonMaster: signRawTransferData.jettonAddress,
@@ -729,24 +732,31 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 return true
             }
         case .buyTon:
+            guard TOSV1Scope.allowsBuySell else { return false }
             openBuyDeeplink()
             return true
         case .staking:
+            guard TOSV1Scope.allowsStaking else { return false }
             openStakingDeeplink()
             return true
         case let .pool(poolAddress):
+            guard TOSV1Scope.allowsStaking else { return false }
             openPoolDetailsDeeplink(poolAddress: poolAddress)
             return true
         case let .exchange(provider):
+            guard TOSV1Scope.allowsBuySell else { return false }
             openExchangeDeeplink(provider: provider)
             return true
         case let .swap(data):
+            guard TOSV1Scope.allowsSwap else { return false }
             openSwapDeeplink(fromToken: data.fromToken, toToken: data.toToken)
             return true
         case let .action(eventId):
+            guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
             openActionDeeplink(eventId: eventId)
             return true
         case let .publish(sign):
+            guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
             if let walletTransferSignCoordinator {
                 walletTransferSignCoordinator.externalSignHandler?(sign)
                 walletTransferSignCoordinator.externalSignHandler = nil
@@ -797,12 +807,16 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             }
             return false
         case let .externalSign(data):
+            guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
             return handleSignerDeeplink(data)
         case let .tonconnect(parameters):
+            guard TOSV1Scope.allowsConnectedApps else { return false }
             return handleTonConnectDeeplink(parameters)
         case let .dapp(dappURL):
+            guard TOSV1Scope.allowsConnectedApps else { return false }
             return handleDappDeeplink(url: dappURL)
         case .browser:
+            guard TOSV1Scope.allowsConnectedApps else { return false }
             openBrowserTabExplore()
             coreAssembly.analyticsProvider.log(
                 eventKey: .openBrowser,
@@ -810,9 +824,11 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             )
             return true
         case let .battery(battery):
+            guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
             handleBatteryDeeplink(battery)
             return true
         case let .story(storyId):
+            guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
             handleStoryDeeplink(storyId: storyId)
             return true
         case .receive:
@@ -1019,7 +1035,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         )
 
         let coordinator = module.createAddWalletCoordinator(
-            options: [.createRegular, .importRegular, .importWatchOnly],
+            options: [.createRegular, .importRegular],
             router: router
         )
         coordinator.didAddWallets = { [weak self, weak coordinator] in

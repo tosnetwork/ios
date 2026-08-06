@@ -109,8 +109,16 @@ struct TOSRPCClient {
         ])
 
         let (data, response) = try await urlSession.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              let envelope = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw Error.invalidResponse
+        }
+        let envelope: [String: Any]
+        do {
+            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw Error.invalidResponse
+            }
+            envelope = object
+        } catch {
             throw Error.invalidResponse
         }
 

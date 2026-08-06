@@ -62,6 +62,39 @@ final class TOSRPCClientTests: XCTestCase {
         }
     }
 
+    func testCallRejectsMalformedJSON() async throws {
+        RPCURLProtocol.handler = { _ in (200, #"{"ok":true,"result": "#) }
+
+        do {
+            _ = try await makeClient().call(method: "getMasterchainInfo")
+            XCTFail("Expected an invalid response error")
+        } catch TOSRPCClient.Error.invalidResponse {
+            // Expected.
+        }
+    }
+
+    func testCallSurfacesTimeout() async throws {
+        RPCURLProtocol.handler = { _ in throw URLError(.timedOut) }
+
+        do {
+            _ = try await makeClient().call(method: "getMasterchainInfo")
+            XCTFail("Expected a timeout")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .timedOut)
+        }
+    }
+
+    func testCallSurfacesUnavailableNode() async throws {
+        RPCURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
+
+        do {
+            _ = try await makeClient().call(method: "getMasterchainInfo")
+            XCTFail("Expected an unavailable-node error")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .cannotConnectToHost)
+        }
+    }
+
     private func makeClient() -> TOSRPCClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RPCURLProtocol.self]

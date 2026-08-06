@@ -53,6 +53,7 @@ final class WalletBalanceHeaderButtonsView: UIView, ConfigurableView {
         sendButton.configuration = buttonConfiguration(model: model.sendButton)
         recieveButton.configuration = buttonConfiguration(model: model.recieveButton)
         scanButton.configuration = buttonConfiguration(model: model.scanButton)
+        scanButton.isHidden = !TOSV1Scope.allowsScanner
 
         bottomRowStackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
 

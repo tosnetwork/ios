@@ -9,6 +9,7 @@ import TKAppInfo
 import TKCore
 import TKFeatureFlags
 import TKLogging
+import Security
 import UIKit
 
 @main
@@ -17,6 +18,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        resetStateForUITestsIfRequested()
         Log.configure()
 
         UNUserNotificationCenter.current().delegate = self
@@ -41,6 +43,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication) {
         clearBadgeCount()
+    }
+}
+
+private extension AppDelegate {
+    func resetStateForUITestsIfRequested() {
+        guard ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] == "1" else { return }
+
+        if let bundleIdentifier = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleIdentifier)
+        }
+        let fileManager = FileManager.default
+        for directory in [FileManager.SearchPathDirectory.documentDirectory, .cachesDirectory] {
+            guard let url = fileManager.urls(for: directory, in: .userDomainMask).first,
+                  let contents = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)
+            else { continue }
+            for item in contents {
+                try? fileManager.removeItem(at: item)
+            }
+        }
+        for itemClass in [
+            kSecClassGenericPassword,
+            kSecClassInternetPassword,
+            kSecClassKey,
+            kSecClassCertificate,
+            kSecClassIdentity,
+        ] {
+            SecItemDelete([kSecClass: itemClass] as CFDictionary)
+        }
     }
 }
 

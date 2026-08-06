@@ -157,19 +157,13 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     private func createState() -> SettingsListState {
         var sections = [SettingsListSection]()
 
-        sections.append(createWalletEditSection())
         if let walletSettingsSection = createWalletSettingsSection(configuration: configuration) {
             sections.append(walletSettingsSection)
-        }
-        if let usdtTronSection = createUSDTTronSection() {
-            sections.append(usdtTronSection)
         }
         if let appSettingsSection = createAppSettingsSection() {
             sections.append(appSettingsSection)
         }
         sections.append(createWalletMaintenanceSection())
-        sections.append(createLogoutSection())
-        sections.append(createAppInformationSection())
 
         return SettingsListState(
             sections: sections
@@ -191,21 +185,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         if let backupItem = createBackupItem() {
             items.append(.listItem(backupItem))
         }
-        items.append(.listItem(createNotificationsItem()))
-        items.append(.listItem(createCurrencyItem()))
-        if let w5Item = createW5Item() {
-            items.append(.listItem(w5Item))
-        }
-        if let v4Item = createV4Item() {
-            items.append(.listItem(v4Item))
-        }
-        if
-            !configuration.flag(\.batteryDisabled, network: wallet.network),
-            let batteryItem = createBatteryItem(isBeta: configuration.isBatteryBeta(network: wallet.network))
-        {
-            items.append(.listItem(batteryItem))
-        }
-        items.append(.listItem(createConnectedAppsItem()))
 
         guard !items.isEmpty else { return nil }
 
@@ -217,13 +196,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     }
 
     private func createAppSettingsSection() -> SettingsListSection? {
-        var items = [SettingsListItem]()
-        if let securityItem = createSecurityItem() {
-            items.append(securityItem)
-        }
-        items.append(createThemeItem())
-        items.append(createSearchItem())
-        items.append(createRPCNodeItem())
+        let items = [createRPCNodeItem()]
 
         guard !items.isEmpty else { return nil }
 

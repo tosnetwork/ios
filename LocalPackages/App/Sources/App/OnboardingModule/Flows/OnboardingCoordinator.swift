@@ -94,7 +94,6 @@ private extension OnboardingCoordinator {
         let coordinator = module.createAddWalletCoordinator(
             options: [
                 .importRegular,
-                .importWatchOnly,
             ],
             router: router
         )
@@ -115,6 +114,7 @@ private extension OnboardingCoordinator {
     }
 
     func handleCoreDeeplink(_ deeplink: KeeperCore.Deeplink) -> Bool {
+        guard !TOSV1Scope.supportsOnlyNativeTOS else { return false }
         switch deeplink {
         case let .externalSign(externalSign):
             if let addWalletCoordinator, addWalletCoordinator.handleDeeplink(deeplink: deeplink) {

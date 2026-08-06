@@ -28,6 +28,9 @@ public final class WalletAddController {
         mnemonicWords: [String],
         setupSettings: WalletSetupSettings = WalletSetupSettings()
     ) async throws {
+        guard TOSV1MnemonicValidator.isValid(mnemonicWords) else {
+            throw Mnemonic.Error.incorrectMnemonicWords
+        }
         let mnemonic = try Mnemonic(mnemonicWords: mnemonicWords)
         let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(
             mnemonicArray: mnemonic.mnemonicWords
@@ -106,6 +109,9 @@ public final class WalletAddController {
         passcode: String,
         network: Network
     ) async throws {
+        guard TOSV1MnemonicValidator.isValid(phrase) else {
+            throw Mnemonic.Error.incorrectMnemonicWords
+        }
         let mnemonic = try Mnemonic(mnemonicWords: phrase)
 
         let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(

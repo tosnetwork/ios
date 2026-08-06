@@ -26,6 +26,12 @@ final class TOSRPCSettingsTests: XCTestCase {
         XCTAssertThrowsError(try TOSRPCSettings.setCustomEndpoint("http://user:password@node.example"))
     }
 
+    func testRejectsQueryFragmentAndUnexpectedPath() {
+        XCTAssertThrowsError(try TOSRPCSettings.setCustomEndpoint("https://node.example?token=secret"))
+        XCTAssertThrowsError(try TOSRPCSettings.setCustomEndpoint("https://node.example#fragment"))
+        XCTAssertThrowsError(try TOSRPCSettings.setCustomEndpoint("https://node.example/not-json-rpc"))
+    }
+
     func testEmptyValueRestoresDefault() throws {
         try TOSRPCSettings.setCustomEndpoint("localhost:18545")
         XCTAssertNil(try TOSRPCSettings.setCustomEndpoint("  "))

@@ -140,6 +140,15 @@ private extension CreateWalletCoordinator {
                     Log.e("Wallet creation failed", extraInfo: [
                         "error": error.localizedDescription,
                     ])
+                    await MainActor.run {
+                        let alert = UIAlertController(
+                            title: "Wallet creation failed",
+                            message: error.localizedDescription,
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
+                        router.present(alert)
+                    }
                     trace.setValue("fail", forAttribute: "result")
                 }
             }

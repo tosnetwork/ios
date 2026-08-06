@@ -1,253 +1,223 @@
-# TOS iOS Wallet V1 Product Test Matrix
+# TOS iOS Wallet V1 Automated Product Test Matrix
 
 - Product: TOS Wallet for iOS
-- Release scope: V1
+- Release scope: V1, native TOS only
 - Baseline date: 2026-08-06
-- Code baseline: `main` at `2fd8ea4`
-- Brand rule: user-facing product, asset, network, links, and copy must use **TOS**, not TON or Tonkeeper
+- Code baseline: `main` at `d663dba` plus the V1 acceptance branch under test
+- Execution boundary: every row must be executable and decidable without a person, a physical iPhone, TestFlight, distribution signing, or an external service
+- Brand rule: supported user-facing product, asset, network, links, and copy must use **TOS**, not TON or Tonkeeper
 
-## V1 product scope
+## Scope and completion rule
 
-V1 is a native-TOS-only wallet. Its supported business capabilities are:
+V1 supports wallet creation, recovery-phrase import, passcode protection, native TOS address and balance, native TOS receive/send/history, and TOS JSON-RPC configuration. TRON/TRC20, Jetton, NFT, Swap, Staking, DNS, Battery, Buy/Sell/Ramp, DApps, TonConnect, hardware wallets, watch-only wallets, widgets, and App Intents are deferred and must be unreachable.
 
-1. Create a native TOS wallet.
-2. Import an existing native TOS wallet with a recovery phrase.
-3. Secure wallet access with an app passcode.
-4. Display the native TOS address and balance.
-5. Receive native TOS.
-6. Send, sign, broadcast, and confirm native TOS transfers.
-7. Display native TOS transaction history and transaction details.
-8. Configure the TOS JSON-RPC endpoint required by the wallet.
+This matrix deliberately excludes tests that require human observation or intervention. Physical-device installation, biometric hardware, manual VoiceOver review, manual visual review, App Store Connect, TestFlight, distribution certificates, and human approval are not part of the automated V1 completion percentage.
 
-TRC20, TRON, Jetton, NFT, Swap, Staking, DNS, Battery, fiat Buy/Sell/Ramp, DApps, TonConnect, hardware wallets, widgets, and other inherited TON/Tonkeeper features are **out of scope for V1**. They must not be presented as supported V1 functionality and are excluded from the V1 completion percentage.
+V1 reaches 100% automated completion only when every row below has a repeatable test, the latest run is `Passed`, and a failure makes the automated test command fail.
 
 ## Status definitions
 
 | Status | Meaning |
 | --- | --- |
-| `Unit: Passed` | A repeatable unit test exists and its latest recorded run passed. |
-| `Integration: Passed` | A repeatable client/process/network test exists and passed. |
-| `UI: Passed` | XCUITest verifies the full behavior described by the row and passed. |
-| `Device: Passed` | A physical-iPhone run records the device, iOS version, build, date, and passing result. |
-| `Partial` | Only an entry point, screen, primitive, or lower-level behavior is covered. |
-| `Not covered` | No traceable evidence exists. This is neither a pass nor a failure. |
-| `Failed` | The test ran and the expected outcome failed, with a linked defect. |
-| `Out of scope (V1)` | Deliberately excluded from V1 and not counted in V1 coverage. |
+| `Passed` | A repeatable automated test covers the full row and its latest run passed. |
+| `Partial` | Automation covers only part of the stated behavior. |
+| `Not covered` | No complete automated test exists yet. |
+| `Failed` | The automated test ran and failed; evidence must identify the defect. |
 
 ## A. Branding and V1 feature gating
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| BRD-01 | App name and onboarding use TOS Wallet | Not covered | UI: Passed | Not covered | Partial | Onboarding title asserted; full-app copy audit missing |
-| BRD-02 | Native asset symbol is TOS | Not covered | Not covered | Not covered | Not covered | Audit balance, receive, send, confirmation, history |
-| BRD-03 | No user-facing TON/Tonkeeper branding | Not covered | Not covered | Not covered | Not covered | P0 static string/resource and screenshot audit |
-| BRD-04 | No user-facing TRON/TRC20 entry points | Not covered | Not covered | Not covered | Not covered | P0 runtime menu/navigation audit |
-| BRD-05 | No Jetton/NFT/Swap/Staking entry points | Not covered | Not covered | Not covered | Not covered | P0 runtime feature-gating audit |
-| BRD-06 | Production links and RPC endpoints use approved TOS domains | Unit: Partial | Not covered | Not covered | Partial | RPC default covered; audit all external URLs |
-| BRD-07 | Legacy modules cannot be opened by deep link or stale state | Not covered | Not covered | Not covered | Not covered | P0 negative navigation tests |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| BRD-01 | App bundle name and onboarding identify TOS Wallet | Static + UI | Passed | UI title plus built `Info.plist` name and identifier assertions |
+| BRD-02 | Native asset symbol is TOS throughout balance, receive, send, confirmation, and history | Unit + UI | Partial | Native symbol and formatter accessory pass; seeded-screen assertions missing |
+| BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Partial | Onboarding and wallet-home UI inventory passes; complete reachable-copy tree scan missing |
+| BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Partial | Import options pass; home, receive, settings, and stale-state gates need full UI assertions |
+| BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Partial | Wallet-home/import negative inventory and deep-link policy pass; remaining screen inventories missing |
+| BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Partial | Remote configuration URL scan and RPC default pass; reachable legal-link scan missing |
+| BRD-07 | Unsupported deep links and stale tab state are rejected | Unit + UI | Partial | Unit policy rejects inherited routes and static gate asserts Wallet/History tabs; launch-URL UI coverage missing |
+| BRD-08 | V1 app bundle embeds no Widget or App Intents extension | Build artifact | Passed | `make compile`; built app has no `PlugIns` directory |
 
-## B. Installation and lifecycle
+## B. Simulator installation, lifecycle, and persistence
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| APP-01 | Fresh install launches to TOS onboarding | Not covered | Partial | Not covered | Partial | Current UI test does not explicitly reset Keychain/UserDefaults |
-| APP-02 | Existing wallet cold-launches to wallet home | Not covered | Not covered | Not covered | Not covered | Seeded wallet fixture required |
-| APP-03 | Force quit preserves wallet and settings | Not covered | Not covered | Not covered | Not covered | P0 persistence test |
-| APP-04 | Backgrounding hides sensitive wallet content | Not covered | Not covered | Not covered | Not covered | P0 lifecycle/device test |
-| APP-05 | Offline launch shows a recoverable state | Not covered | Not covered | Not covered | Not covered | Network fault injection required |
-| APP-06 | Reconnect refreshes balance and history | Not covered | Not covered | Not covered | Not covered | Network recovery test |
-| APP-07 | Upgrade preserves native TOS wallet data | Not covered | Not covered | Not covered | Not covered | Cross-version/TestFlight test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| APP-01 | A reset simulator launches to TOS onboarding | UI | Passed | Every UI test uses the guarded `TOS_UI_TEST_RESET` application-data and Keychain reset path |
+| APP-02 | A seeded wallet cold-launches to wallet home | UI | Partial | Created wallet cold-launch passes after process termination; deterministic seed fixture still missing |
+| APP-03 | Terminate and relaunch preserve wallet and RPC settings | UI | Partial | Wallet and passcode persistence pass; RPC setting persistence assertion missing |
+| APP-04 | Backgrounding adds the privacy shield and foregrounding restores safely | UI | Not covered | Automate lifecycle transitions and view hierarchy assertions |
+| APP-05 | Offline launch shows a recoverable error state | UI + Integration | Not covered | Add local proxy/network fault control |
+| APP-06 | Reconnect refreshes balance and history | UI + Integration | Not covered | Add deterministic disconnect/reconnect fixture |
 
 ## C. Native TOS wallet creation
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| CRT-01 | Create Wallet entry point | Not covered | UI: Passed | Not covered | Pass on simulator | Existing onboarding UI test |
-| CRT-02 | Set and confirm a four-digit passcode | Not covered | UI: Passed | Not covered | Pass on simulator | Happy path `1234` only |
-| CRT-03 | Reject mismatched passcode confirmation | Not covered | Not covered | Not covered | Not covered | Negative UI case required |
-| CRT-04 | Backspace and cancel behave safely | Not covered | Not covered | Not covered | Not covered | Navigation/keypad tests required |
-| CRT-05 | Generate a valid native TOS recovery phrase | Not covered | Not covered | Not covered | Not covered | P0 TOS wallet primitive test |
-| CRT-06 | Display recovery phrase securely | Not covered | Partial | Not covered | Partial | Test stops at backup introduction |
-| CRT-07 | Recovery-phrase confirmation challenge | Not covered | Not covered | Not covered | Not covered | Complete backup flow |
-| CRT-08 | Skip-backup warning and persistent backup state | Not covered | Not covered | Not covered | Not covered | Warning/state tests required |
-| CRT-09 | Complete creation and reach native TOS wallet home | Not covered | Not covered | Not covered | Not covered | P0 end-to-end UI test |
-| CRT-10 | Created address is valid on the TOS network | Not covered | Not covered | Not covered | Not covered | Validate through local TOS JSON-RPC |
-| CRT-11 | Duplicate creation does not overwrite existing wallet | Not covered | Not covered | Not covered | Not covered | P0 data-safety test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| CRT-01 | Create Wallet opens passcode setup | UI | Passed | `testCreateWalletRequiresPasscodeConfirmationBeforeBackup` |
+| CRT-02 | Matching four-digit passcode reaches backup introduction | UI | Passed | `1234` create flow |
+| CRT-03 | Mismatched confirmation is rejected | UI | Passed | UI test verifies return to `Create passcode` after mismatch |
+| CRT-04 | Backspace and cancel do not create partial wallet state | UI | Partial | Backspace behavior passes; cancel and storage assertions missing |
+| CRT-05 | Generated recovery phrase has valid words, count, and checksum | Unit | Passed | 20 generated 24-word phrases validate through TonSwift and CoreComponents |
+| CRT-06 | Recovery phrase is displayed only in the authenticated backup flow | UI | Partial | Backup introduction reached; phrase screen assertion missing |
+| CRT-07 | Recovery-phrase confirmation challenge accepts correct answers and rejects incorrect answers | UI | Not covered | Complete backup flow automation |
+| CRT-08 | Skip-backup warning and backup state persist correctly | UI | Not covered | Add both branches and relaunch assertion |
+| CRT-09 | Creation completes at native TOS wallet home | UI | Passed | UI completes passcode, skip-backup, customization, and asserts Wallet/History plus native V1 actions |
+| CRT-10 | Created address parses and is queryable on the local TOS network | Unit + Integration | Not covered | Connect created fixture to local RPC |
+| CRT-11 | Repeated creation never overwrites an existing wallet | UI + Storage | Not covered | Add two-wallet data-safety test |
 
 ## D. Native TOS wallet import
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| IMP-01 | Import Wallet entry reaches phrase screen | Not covered | UI: Passed | Not covered | Pass on simulator | Existing import UI test |
-| IMP-02 | Import a valid native TOS recovery phrase | Not covered | Not covered | Not covered | Not covered | P0; Tron mnemonic tests are not TOS import evidence |
-| IMP-03 | Paste a recovery phrase | Not covered | Partial | Not covered | Partial | Paste button existence only |
-| IMP-04 | Normalize spaces and word capitalization safely | Not covered | Not covered | Not covered | Not covered | Input normalization tests |
-| IMP-05 | Reject invalid word count | Not covered | Not covered | Not covered | Not covered | Negative test |
-| IMP-06 | Reject unknown words and invalid checksum | Not covered | Not covered | Not covered | Not covered | Negative test |
-| IMP-07 | Imported address matches the expected TOS address | Not covered | Not covered | Not covered | Not covered | Deterministic vector + local RPC |
-| IMP-08 | Imported wallet reaches home with correct balance/history | Not covered | Not covered | Not covered | Not covered | P0 end-to-end UI/integration test |
-| IMP-09 | Import cancellation leaves no partial secret data | Not covered | Not covered | Not covered | Not covered | Keychain/data cleanup assertion |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| IMP-01 | Import Wallet reaches recovery-phrase entry | UI | Passed | `testImportWalletOpensRecoveryPhraseFlow` |
+| IMP-02 | Valid deterministic TOS recovery phrase imports successfully | Unit + UI | Not covered | Add a non-production fixture mnemonic |
+| IMP-03 | Paste imports the exact fixture phrase | UI | Partial | Paste control exists; pasteboard result not asserted |
+| IMP-04 | Spaces and capitalization are normalized safely | Unit + UI | Not covered | Add table-driven normalization cases |
+| IMP-05 | Invalid word count is rejected | Unit + UI | Partial | Unit rejection passes; UI assertion missing |
+| IMP-06 | Unknown words and invalid checksum are rejected | Unit + UI | Partial | Unknown-word unit rejection passes; checksum and UI cases missing |
+| IMP-07 | Imported address matches the deterministic expected TOS address | Unit + Integration | Not covered | Add address vector and local RPC query |
+| IMP-08 | Imported funded wallet reaches home with correct balance and history | UI + Integration | Not covered | Seed local chain fixture |
+| IMP-09 | Cancelled import leaves no partial wallet or secret | UI + Storage | Not covered | Add storage inspection through test support API |
 
 ## E. Passcode and secret protection
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| SEC-01 | Correct passcode unlocks the wallet | Not covered | Not covered | Not covered | Not covered | Existing UI test creates but does not unlock |
-| SEC-02 | Wrong passcode is rejected without data loss | Not covered | Not covered | Not covered | Not covered | P0 negative test |
-| SEC-03 | Retry behavior and lockout policy | Not covered | Not covered | Not covered | Not covered | Product policy and tests required |
-| SEC-04 | Change passcode | Not covered | Not covered | Not covered | Not covered | P1 if exposed in V1 settings |
-| SEC-05 | Recovery phrase requires authentication | Not covered | Not covered | Not covered | Not covered | P0 UI/device test |
-| SEC-06 | Recovery phrase is not logged or leaked to pasteboard | Not covered | Not covered | Not covered | Not covered | P0 security audit |
-| SEC-07 | Secrets persist in Keychain with appropriate protection | Not covered | Not covered | Not covered | Not covered | P0 device/security test |
-| SEC-08 | Screenshot/app-switcher privacy protection | Not covered | Not covered | Not covered | Not covered | P1 physical-device test |
-| SEC-09 | Biometric unlock | Out of scope (V1) | Out of scope (V1) | Out of scope (V1) | Out of scope (V1) | Enable only after an explicit V1 scope decision |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| SEC-01 | Correct passcode unlocks the seeded wallet | UI | Passed | UI terminates and relaunches a created wallet, enters the correct passcode, and reaches wallet home |
+| SEC-02 | Wrong passcode is rejected without changing wallet data | UI + Storage | Not covered | Add before/after data assertions |
+| SEC-03 | Retry and lockout behavior matches the encoded policy | Unit + UI | Not covered | Add policy and boundary cases |
+| SEC-04 | Change passcode invalidates the old passcode and accepts the new one | UI | Not covered | Automate settings flow if retained in V1 |
+| SEC-05 | Recovery phrase requires passcode authentication | UI | Not covered | Add backup authentication test |
+| SEC-06 | Recovery phrase is absent from logs and pasteboard unless explicitly copied | Static + UI | Not covered | Capture process logs and pasteboard around secret flows |
+| SEC-07 | Stored secret uses the expected Keychain accessibility class | Unit + Simulator Keychain | Not covered | Add Keychain attribute inspection test |
 
 ## F. Native TOS wallet home and balance
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| WAL-01 | Display the correct native TOS address | Integration: Partial | Not covered | Not covered | Partial | RPC account query exists; UI value untested |
-| WAL-02 | Display native TOS symbol and balance | Integration: Partial | Not covered | Not covered | Partial | UI formatting and value untested |
-| WAL-03 | Zero-balance and empty-history state | Not covered | Not covered | Not covered | Not covered | Seeded account fixture |
-| WAL-04 | Manual refresh updates balance | Not covered | Not covered | Not covered | Not covered | UI + RPC fixture |
-| WAL-05 | Loading, timeout, malformed response, and retry | Unit: Partial | Not covered | Not covered | Partial | Malformed result covered; timeout/retry missing |
-| WAL-06 | Balance uses correct TOS decimal precision | Not covered | Not covered | Not covered | Not covered | Boundary formatting tests |
-| WAL-07 | Large balance does not overflow or truncate incorrectly | Not covered | Not covered | Not covered | Not covered | Numeric boundary tests |
-| WAL-08 | Only native TOS is shown in the V1 asset list | Not covered | Not covered | Not covered | Not covered | P0 feature-gating UI test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| WAL-01 | Home displays the fixture wallet's exact TOS address | UI + Integration | Not covered | Seeded home fixture missing |
+| WAL-02 | Home displays the exact native TOS symbol and balance | UI + Integration | Not covered | Seeded balance assertion missing |
+| WAL-03 | Zero balance and empty history render correctly | UI | Not covered | Add zero-account fixture |
+| WAL-04 | Refresh updates balance after a local-chain transfer | UI + Integration | Not covered | Add local transfer orchestration |
+| WAL-05 | Loading, timeout, malformed response, and retry are safe | Unit + UI | Partial | Malformed result covered; timeout/retry UI missing |
+| WAL-06 | TOS decimal formatting handles zero, fractions, and maximum supported values | Unit | Passed | Exact, compact, nano, and very-large `BigUInt` formatter tests |
+| WAL-07 | Only native TOS appears in the V1 asset list | Unit + UI | Not covered | Mapper gate implemented; seeded UI assertion missing |
 
 ## G. Receive native TOS
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| RCV-01 | Receive button opens native TOS receive screen | Not covered | Not covered | Not covered | Not covered | P0 UI test |
-| RCV-02 | Receive screen shows the wallet's TOS address | Not covered | Not covered | Not covered | Not covered | Compare with wallet/RPC fixture |
-| RCV-03 | QR code decodes to the same TOS address | Not covered | Not covered | Not covered | Not covered | Decode rendered QR |
-| RCV-04 | Copy address writes the exact TOS address | Not covered | Not covered | Not covered | Not covered | Pasteboard assertion |
-| RCV-05 | Share action contains the correct TOS address/QR | Not covered | Not covered | Not covered | Not covered | Share-sheet assertion |
-| RCV-06 | Incoming native TOS transfer updates balance | Integration: Partial | Not covered | Not covered | Partial | Backend transfer passed; App update untested |
-| RCV-07 | Incoming transfer appears in history | Integration: Partial | Not covered | Not covered | Partial | App history untested |
-| RCV-08 | No TRC20/Jetton/NFT receive options are visible | Not covered | Not covered | Not covered | Not covered | P0 V1 feature-gating test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| RCV-01 | Receive opens the native TOS receive screen | UI | Not covered | Seeded-wallet UI path missing |
+| RCV-02 | Receive shows the exact fixture wallet address | UI | Not covered | Compare to deterministic address |
+| RCV-03 | Rendered QR decodes to the exact TOS address | UI + QR decoder | Not covered | Decode screenshot or generated image |
+| RCV-04 | Copy writes the exact address to simulator pasteboard | UI | Not covered | Add pasteboard assertion |
+| RCV-05 | Share activity payload contains the exact address | UI | Not covered | Inspect activity sheet payload through test hook |
+| RCV-06 | Incoming local-chain transfer refreshes balance and history | UI + Integration | Not covered | Add deterministic sender and polling bound |
+| RCV-07 | Receive exposes no TRC20, Jetton, or NFT option | Unit + UI | Not covered | Native-only filter implemented; UI assertion missing |
 
 ## H. Send native TOS
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| SND-01 | Send button opens native TOS send screen | Not covered | Not covered | Not covered | Not covered | P0 UI test |
-| SND-02 | Enter/paste a valid TOS address | Integration: Partial | Not covered | Not covered | Partial | App form untested |
-| SND-03 | Reject invalid TOS address with clear UI error | Unit: Passed at RPC layer | Not covered | Not covered | Partial | UI error untested |
-| SND-04 | Enter valid whole and fractional TOS amounts | Not covered | Not covered | Not covered | Not covered | Decimal boundary matrix |
-| SND-05 | Reject zero, negative, excessive-precision, and overflow amounts | Not covered | Not covered | Not covered | Not covered | P0 validation tests |
-| SND-06 | Max amount reserves the required fee | Not covered | Not covered | Not covered | Not covered | P0 fee calculation test |
-| SND-07 | Optional native TOS comment is encoded correctly | Not covered | Not covered | Not covered | Not covered | Unit + UI assertion |
-| SND-08 | Confirmation shows recipient, amount, fee, and comment | Not covered | Not covered | Not covered | Not covered | P0 confirmation UI test |
-| SND-09 | Back/cancel returns safely without broadcasting | Not covered | Not covered | Not covered | Not covered | Negative navigation test |
-| SND-10 | Passcode signs the native TOS transfer | Unit: Partial | Not covered | Not covered | Partial | App end-to-end signing missing |
-| SND-11 | Broadcast succeeds against the three-node TOS network | Integration: Partial | Not covered | Not covered | Partial | Existing demo was not initiated by iOS |
-| SND-12 | Confirmed transfer updates balance and history | Integration: Partial | Not covered | Not covered | Partial | P0 end-to-end App test missing |
-| SND-13 | Insufficient TOS balance is handled clearly | Not covered | Not covered | Not covered | Not covered | P0 negative test |
-| SND-14 | Insufficient fee is handled clearly | Not covered | Not covered | Not covered | Not covered | P0 negative test |
-| SND-15 | Node timeout/disconnect supports safe retry | Not covered | Not covered | Not covered | Not covered | Fault injection |
-| SND-16 | Duplicate confirm taps do not double-submit | Not covered | Not covered | Not covered | Not covered | P0 idempotency test |
-| SND-17 | App relaunch resolves pending transaction state | Not covered | Not covered | Not covered | Not covered | Persistence/RPC reconciliation |
-| SND-18 | No token/NFT/TRC20 transfer options are visible | Not covered | Not covered | Not covered | Not covered | P0 V1 feature-gating test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| SND-01 | Send opens the native TOS form | UI | Not covered | Seeded-wallet UI path missing |
+| SND-02 | Valid typed and pasted TOS addresses are accepted | Unit + UI | Partial | RPC address behavior exists; form automation missing |
+| SND-03 | Invalid address is rejected with deterministic UI error | Unit + UI | Partial | RPC rejection passes; UI assertion missing |
+| SND-04 | Whole and fractional TOS amounts are accepted | Unit + UI | Not covered | Add decimal cases |
+| SND-05 | Zero, negative, excessive precision, overflow, and over-balance amounts are rejected | Unit + UI | Not covered | Add boundary table |
+| SND-06 | Max amount reserves the required network fee | Unit + Integration | Not covered | Add deterministic fee fixture |
+| SND-07 | Optional comment is encoded and recovered exactly | Unit + Integration | Not covered | Add UTF-8 and length boundaries |
+| SND-08 | Confirmation shows exact recipient, amount, fee, and comment | UI | Not covered | Add confirmation assertions |
+| SND-09 | Cancel never broadcasts | UI + Integration | Not covered | Assert unchanged account sequence/history |
+| SND-10 | Passcode signs a native TOS transfer | Unit + UI | Partial | Signer primitives pass; app path missing |
+| SND-11 | iOS broadcasts to the local three-node TOS network | UI + Integration | Not covered | App-originated transaction fixture missing |
+| SND-12 | Confirmation updates sender/recipient balances and app history | UI + Integration | Not covered | End-to-end orchestration missing |
+| SND-13 | Insufficient balance and insufficient fee show safe errors | Unit + UI | Not covered | Add funded/underfunded fixtures |
+| SND-14 | Timeout/disconnect retry does not duplicate the transfer | UI + Integration | Not covered | Add fault proxy and idempotency assertion |
+| SND-15 | Relaunch reconciles a pending transaction | UI + Integration | Not covered | Add controlled delayed-confirmation fixture |
+| SND-16 | Send exposes no token, NFT, or TRC20 selector | Unit + UI | Not covered | Add V1 form inventory assertion |
 
 ## I. Native TOS transaction history
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| HIS-01 | Load native TOS transaction history | Not covered | Not covered | Not covered | Not covered | P0 API + UI fixture |
-| HIS-02 | Render incoming and outgoing native TOS transfers | Not covered | Not covered | Not covered | Not covered | Direction, sign, counterparty, amount |
-| HIS-03 | Show pending, confirmed, and failed states accurately | Not covered | Not covered | Not covered | Not covered | Status fixture matrix |
-| HIS-04 | Show timestamp, fee, address, amount, and comment in details | Not covered | Not covered | Not covered | Not covered | P0 details test |
-| HIS-05 | Paginate without duplicates or missing records | Not covered | Not covered | Not covered | Not covered | Pagination integration test |
-| HIS-06 | Empty/loading/error/retry states | Not covered | Not covered | Not covered | Not covered | UI state matrix |
-| HIS-07 | New transfer appears after confirmation | Integration: Partial | Not covered | Not covered | Partial | Local-chain event exists; App UI untested |
-| HIS-08 | History contains no TRON/Jetton/NFT event UI in V1 | Not covered | Not covered | Not covered | Not covered | P0 feature-gating test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| HIS-01 | Load deterministic native TOS history | Integration + UI | Not covered | Add seeded account events |
+| HIS-02 | Render incoming and outgoing directions, counterparties, and amounts | Unit + UI | Not covered | Add mapping fixtures and UI assertions |
+| HIS-03 | Render pending, confirmed, and failed states accurately | Unit + UI | Not covered | Add status fixture matrix |
+| HIS-04 | Details show exact timestamp, fee, address, amount, and comment | Unit + UI | Not covered | Add details fixture |
+| HIS-05 | Pagination has no duplicate or missing records | Unit + Integration | Not covered | Add multi-page local fixture |
+| HIS-06 | Empty, loading, error, and retry states are deterministic | Unit + UI | Not covered | Add controllable repository responses |
+| HIS-07 | Newly confirmed app transfer appears once | UI + Integration | Not covered | Reuse send end-to-end fixture |
+| HIS-08 | V1 history exposes no TRON, Jetton, NFT, DApp, or spam navigation | Unit + UI | Not covered | Spam tab removed; complete event gate test missing |
 
-## J. TOS RPC and local three-node integration
+## J. TOS RPC and local three-node network
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| RPC-01 | Default debug RPC points to local TOS endpoint | Unit: Passed | Not covered | Not covered | Pass at config layer | `TOSRPCSettingsTests` |
-| RPC-02 | Release RPC points to approved TOS endpoint | Unit: Partial | Not covered | Not covered | Partial | Add archive/config assertion |
-| RPC-03 | RPC URL validation and `/json_rpc` normalization | Unit: Passed | Not covered | Not covered | Pass at config layer | Existing settings tests |
-| RPC-04 | Query funded native TOS account | Integration: Passed | Not covered | Not covered | Pass | Live local-network test |
-| RPC-05 | Query advancing masterchain | Integration: Passed | Not covered | Not covered | Pass | Live local-network test |
-| RPC-06 | Structured node error is preserved | Unit: Passed | Not covered | Not covered | Pass at client layer | HTTP 422 regression test |
-| RPC-07 | Timeout, unavailable node, and reconnect | Not covered | Not covered | Not covered | Not covered | Fault injection required |
-| RPC-08 | Malformed JSON/result does not crash the app | Unit: Partial | Not covered | Not covered | Partial | Malformed result covered |
-| RPC-09 | Three validators remain synchronized during transfer | Integration: Partial | Not applicable | Not applicable | Partial | Add explicit per-node convergence assertions |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| RPC-01 | Debug RPC defaults to the configured local TOS endpoint | Unit | Passed | `TOSRPCSettingsTests` |
+| RPC-02 | Release configuration contains the approved TOS RPC endpoint | Static + Build settings | Passed | Automated JSON URL scan requires all configured hosts to end in `tos.network` |
+| RPC-03 | RPC URL validation and `/json_rpc` normalization are correct | Unit | Passed | `TOSRPCSettingsTests` |
+| RPC-04 | Query the funded fixture account | Integration | Passed | `TOSRPCLiveIntegrationTests` |
+| RPC-05 | Masterchain advances within the bounded interval | Integration | Passed | `TOSRPCLiveIntegrationTests` |
+| RPC-06 | Structured node errors are preserved | Unit | Passed | `TOSRPCClientTests` |
+| RPC-07 | Timeout, unavailable node, and reconnect are bounded and recoverable | Unit + Integration | Partial | Timeout and unavailable-node propagation pass; reconnect scenario missing |
+| RPC-08 | Malformed JSON and malformed result never crash | Unit | Passed | Both malformed forms map to stable `invalidResponse` |
+| RPC-09 | All three validators converge before and after a transfer | Integration | Not covered | Add per-node height, balance, and transaction assertions |
 
-## K. Settings required for V1
+## K. V1 settings and destructive actions
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| SET-01 | Open settings and return to wallet | Not covered | Not covered | Not covered | Not covered | Basic navigation test |
-| SET-02 | View recovery phrase after passcode | Not covered | Not covered | Not covered | Not covered | P0 secret flow |
-| SET-03 | Edit, validate, save, and reset RPC endpoint | Unit: Passed at config layer | Not covered | Not covered | Partial | Settings UI untested |
-| SET-04 | Delete wallet with explicit warning | Not covered | Not covered | Not covered | Not covered | P0 destructive-action test |
-| SET-05 | Last-wallet deletion returns to onboarding | Not covered | Not covered | Not covered | Not covered | P0 lifecycle test |
-| SET-06 | Legal/privacy/license pages use TOS branding | Not covered | Not covered | Not covered | Not covered | Copy and link audit |
-| SET-07 | Legacy feature settings are hidden | Not covered | Not covered | Not covered | Not covered | P0 menu inventory test |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| SET-01 | Open settings and return to wallet | UI | Not covered | Add seeded-wallet navigation test |
+| SET-02 | View recovery phrase only after correct passcode | UI | Not covered | Add secret flow |
+| SET-03 | Edit, validate, persist, reset, and use the RPC endpoint | Unit + UI + Integration | Partial | Settings unit tests pass; UI path missing |
+| SET-04 | Delete wallet requires explicit confirmation | UI | Not covered | Add cancel and confirm branches |
+| SET-05 | Deleting the last wallet returns to clean onboarding | UI + Storage | Not covered | Add post-delete storage assertion |
+| SET-06 | Legal/privacy/license links and reachable copy use approved TOS branding | Static + UI | Not covered | Add URL/copy allowlist test |
+| SET-07 | Settings inventory contains only V1 options | Unit + UI | Not covered | Settings gate implemented; UI inventory missing |
 
-## L. Accessibility, compatibility, security, and release
+## L. Automated quality and build checks
 
-| ID | V1 requirement | Unit | UI | Device | Overall | Evidence or missing coverage |
-| --- | --- | --- | --- | --- | --- | --- |
-| QLT-01 | VoiceOver labels/order for every V1 control | Not covered | Partial | Not covered | Partial | Only onboarding/keypad controls partially covered |
-| QLT-02 | Dynamic Type and small/large iPhone layouts | Not covered | Not covered | Not covered | Not covered | Multi-destination visual tests |
-| QLT-03 | Dark mode and color contrast | Not covered | Not covered | Not covered | Not covered | Visual/accessibility audit |
-| QLT-04 | Supported minimum and latest iOS versions | Not covered | Partial on latest simulator | Not covered | Partial | Add CI version matrix |
-| QLT-05 | Launch time, memory, and long-running stability | Not covered | Not covered | Not covered | Not covered | Establish baselines |
-| QLT-06 | No sensitive logs, telemetry, or pasteboard leakage | Not covered | Not covered | Not covered | Not covered | P0 static/runtime audit |
-| QLT-07 | TLS/certificate/proxy failures are safe | Not covered | Not covered | Not covered | Not covered | P0 transport-security tests |
-| REL-01 | Debug simulator build | Not applicable | Not applicable | Not applicable | Pass | GitHub CI run `31071145514` |
-| REL-02 | Release archive and distribution signing | Not covered | Not covered | Not covered | Not covered | P0 archive/export test |
-| REL-03 | Physical-device install and native TOS smoke test | Not covered | Not covered | Not covered | Not covered | P0 release-device test |
-| REL-04 | TestFlight upgrade preserves wallet and history | Not covered | Not covered | Not covered | Not covered | P0 upgrade test |
-| REL-05 | Privacy manifest, entitlements, and permission strings | Not covered | Not covered | Not covered | Not covered | P0 archive audit |
+| ID | Automated requirement | Test layer | Status | Evidence or missing automation |
+| --- | --- | --- | --- | --- |
+| QLT-01 | Every reachable V1 control has a non-empty accessibility identifier or label | Static + UI | Not covered | Add recursive accessibility-tree assertion |
+| QLT-02 | V1 screens do not clip at supported simulator text sizes and screen dimensions installed on this host | Multi-destination UI | Not covered | Add screenshot geometry assertions, not human review |
+| QLT-03 | Light and dark modes preserve readable elements and stable layouts | Snapshot + UI | Not covered | Add pixel/geometry thresholds with stored baselines |
+| QLT-04 | Launch time, memory, and repeated refresh/send flows stay within encoded budgets | XCTMetric | Not covered | Define numeric budgets and performance tests |
+| QLT-05 | Process logs and telemetry contain no fixture secret or passcode | Static + Runtime log scan | Not covered | Add forbidden-value scanner |
+| QLT-06 | TLS, certificate, and proxy failures return safe errors | Unit + Integration | Not covered | Add local TLS/fault fixtures |
+| BLD-01 | Debug simulator build succeeds | Build | Passed | `make compile` |
+| BLD-02 | Unsigned generic-device release build/archive succeeds | Build | Passed | `make archive_v1_release`; signing-disabled `TonkeeperRelease` archive succeeded for generic iOS |
+| BLD-03 | Built V1 app contains required privacy metadata and only approved entitlements/permission strings | Build artifact | Partial | Deferred schemes, activities, permissions, push/App Group entitlements, and extensions are rejected; app privacy-manifest assertion missing |
+| BLD-04 | `make test_all`, `make test_tos_live`, and `make test_ui` all succeed | Test orchestration | Passed | Latest local run passed with zero failures |
 
-## Deferred inherited features — excluded from V1 coverage
+## Excluded human/external validation
 
-The repository still contains inherited TON/Tonkeeper modules. Their presence in source code does not make them supported TOS V1 features. They must remain hidden or disabled until separately specified, rebranded, implemented for TOS, and tested.
+The following activities are intentionally not rows and do not affect the automated completion percentage:
 
-| Deferred area | V1 status | Release requirement |
-| --- | --- | --- |
-| TRON and TRC20 wallets, balances, receive, send, fees | Out of scope (V1) | Must not be visible or reachable |
-| Jetton token list, details, receive, and transfer | Out of scope (V1) | Must not be visible or reachable |
-| NFT list, details, purchases, spam, and transfer | Out of scope (V1) | Must not be visible or reachable |
-| Swap and Web Swap | Out of scope (V1) | Must not be visible or reachable |
-| Staking and Ethena | Out of scope (V1) | Must not be visible or reachable |
-| Buy/Sell, fiat Ramp, and P2P Express | Out of scope (V1) | Must not be visible or reachable |
-| DNS management | Out of scope (V1) | Must not be visible or reachable |
-| Battery and gasless features | Out of scope (V1) | Must not be visible or reachable |
-| DApp browser and TonConnect | Out of scope (V1) | Must not be visible or reachable |
-| Sign Data and Sign Raw external requests | Out of scope (V1) | Must not be reachable by deep link |
-| Ledger, Keystone, and external Signer wallets | Out of scope (V1) | Must not be visible or reachable |
-| Watch-only, testnet, Tetra, and public-key import | Out of scope (V1) | Must not be visible unless separately approved |
-| Balance and rate widgets/App Intents | Out of scope (V1) | Remove from V1 target or explicitly disable |
+- Physical-iPhone installation or smoke testing
+- Biometric hardware behavior
+- Manual VoiceOver, visual, color, or usability review
+- Distribution certificate/provisioning-profile validation
+- App Store Connect or TestFlight upload, review, installation, and upgrade
+- Human approval, observation, or subjective acceptance
+- External production-service availability outside the local three-node TOS environment
 
-## V1 release gate
+## Automated release gate
 
-V1 may be described as fully tested only when:
+The matrix is 100% complete only when every row is `Passed`. The authoritative commands are:
 
-1. Every in-scope `P0` scenario has automated coverage at the appropriate layer and passes.
-2. Create, import, receive, send, and history each have a complete simulator UI path.
-3. A native TOS transfer is created, signed, broadcast, confirmed, and displayed in history by the iOS app against the local three-node network.
-4. Required Keychain, lifecycle, install, upgrade, and security scenarios pass on a physical iPhone.
-5. Branding and feature-gating tests prove that inherited TON/Tonkeeper and deferred token features are not visible or reachable.
-6. Release archive, signing, privacy, and TestFlight checks pass.
-7. Every failure links to a defect and every fix retains a regression test.
+```sh
+make compile
+make test_all
+make test_tos_live
+make test_ui
+```
 
-## Execution record requirements
-
-Each executed case must record: priority, named owner, commit/build, test type, Xcode/iOS/device, network and RPC endpoint, date, result, CI/report link, evidence, and defect ID when failed.
+Additional tests introduced for this matrix must be wired into one of those commands. `make test_v1_acceptance` is the aggregate autonomous gate. Test evidence must record the commit, test command, simulator/runtime, local RPC endpoint, date, result, and defect ID for failures.
 
 ## Current evidence
 
 - UI automation: `TOSWalletUITests/TOSWalletUITests.swift`
 - RPC tests: `LocalPackages/core-swift/Tests/KeeperCoreTests/API/`
 - Other unit tests: `LocalPackages/**/Tests/`
-- Test entry points: `Makefile` targets `test_all`, `test_tos_live`, and `test_ui`
-- Detailed run report: `docs/ios-wallet-test-report-2026-08-06.md`
-- GitHub CI baseline: `https://github.com/tosnetwork/ios/actions/runs/31071145514`
+- Detailed report: `docs/ios-v1-acceptance-test-report.md`
+- Test entry points: `Makefile`

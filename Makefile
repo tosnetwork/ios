@@ -8,10 +8,13 @@ SHELL := /bin/sh
 	setup \
 	tonconnect_generate \
 	compile \
+	archive_v1_release \
 	test \
 	test_all \
 	test_tos_live \
-	test_ui
+	test_ui \
+	test_v1_static \
+	test_v1_acceptance
 
 locale:
 	@scripts/require_tool.sh swiftgen "brew install swiftgen"
@@ -56,6 +59,29 @@ compile:
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
 		build | xcbeautify
 
+archive_v1_release:
+	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
+	@mkdir -p $(BUILD_DIR)/release-archive
+	@echo 'archiving unsigned TOS Wallet release...' && \
+		set -o pipefail; \
+		HOME=$(BUILD_DIR)/codex_home \
+		SWIFTPM_CONFIG_DIR=$(BUILD_DIR)/swiftpm-config \
+		CLANG_MODULE_CACHE_PATH=$(BUILD_DIR)/clang-module-cache \
+		xcodebuild \
+		-project Tonkeeper.xcodeproj \
+		-scheme Tonkeeper \
+		-configuration TonkeeperRelease \
+		-destination 'generic/platform=iOS' \
+		-derivedDataPath $(BUILD_DIR)/DerivedData-release \
+		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
+		-disableAutomaticPackageResolution \
+		-onlyUsePackageVersionsFromResolvedFile \
+		-skipPackageUpdates \
+		CODE_SIGNING_ALLOWED=NO \
+		CODE_SIGNING_REQUIRED=NO \
+		archive \
+		-archivePath $(BUILD_DIR)/release-archive/TOSWallet.xcarchive | xcbeautify
+
 # Test
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
@@ -64,6 +90,11 @@ TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 
 test: test_all
+
+test_v1_static: compile
+	@sh scripts/tests/test_v1_static.sh
+
+test_v1_acceptance: test_v1_static test_all test_tos_live test_ui
 
 test_all:
 	$(MAKE) test_core_swift

@@ -48,7 +48,11 @@ final class ReceiveViewModelImplementation: ReceiveViewModel, ReceiveModuleOutpu
         walletsStore: WalletsStore,
         tokenModuleViewControllerProvider: @escaping (Token) -> ReceiveTabViewController
     ) {
-        self.tokens = tokens
+        self.tokens = tokens.filter {
+            guard TOSV1Scope.supportsOnlyNativeTOS else { return true }
+            if case .ton = $0 { return true }
+            return false
+        }
         self.wallet = wallet
         self.walletsStore = walletsStore
         self.tokenModuleViewControllerProvider = tokenModuleViewControllerProvider
