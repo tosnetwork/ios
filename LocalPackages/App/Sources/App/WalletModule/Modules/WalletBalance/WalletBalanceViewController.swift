@@ -1,3 +1,4 @@
+import KeeperCore
 import TKCoordinator
 import TKUIKit
 import UIKit
@@ -8,6 +9,8 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
     private var balanceItemsConfigurations = [String: WalletBalanceListCell.Configuration]()
 
     private let viewModel: WalletBalanceViewModel
+    private var rpcUnavailableObserver: NSObjectProtocol?
+    private var rpcAvailableObserver: NSObjectProtocol?
     private lazy var tooltipDismissGestureRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(didTapWhileTooltipVisible))
         recognizer.cancelsTouchesInView = false
@@ -31,6 +34,39 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
         setup()
         setupBindings()
         viewModel.viewDidLoad()
+        rpcUnavailableObserver = NotificationCenter.default.addObserver(
+            forName: .tosRPCUnavailable,
+            object: nil,
+            queue: .main
+        ) { _ in
+            ToastPresenter.showToast(configuration: .init(
+                title: "TOS node unavailable. Pull to retry.",
+                dismissRule: .none
+            ))
+        }
+        rpcAvailableObserver = NotificationCenter.default.addObserver(
+            forName: .tosRPCAvailable,
+            object: nil,
+            queue: .main
+        ) { _ in
+            ToastPresenter.hideAll()
+        }
+        if TOSRPCConnectivity.isUnavailable {
+            ToastPresenter.showToast(configuration: .init(
+                title: "TOS node unavailable. Pull to retry.",
+                dismissRule: .none
+            ))
+        }
+        viewModel.reloadData()
+    }
+
+    deinit {
+        if let rpcUnavailableObserver {
+            NotificationCenter.default.removeObserver(rpcUnavailableObserver)
+        }
+        if let rpcAvailableObserver {
+            NotificationCenter.default.removeObserver(rpcAvailableObserver)
+        }
     }
 
     func scrollToTop() {

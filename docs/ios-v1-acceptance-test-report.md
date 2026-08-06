@@ -1,6 +1,6 @@
 # TOS iOS Wallet V1 Acceptance Test Report
 
-- Test date: 2026-08-06
+- Test date: 2026-08-07
 - Matrix: `docs/ios-product-test-matrix.md`
 - Environment: Xcode 26.3, iPhone 17 simulator on iOS 26.5
 - Network: local three-validator TOS network at `http://127.0.0.1:18545`
@@ -8,7 +8,7 @@
 
 ## Release decision
 
-**Not ready for a 100% automated acceptance claim.** All automated suites listed below pass, and the V1 scope defects found during this run were fixed. The revised matrix contains only tests that this host can execute autonomously, but several deterministic fixtures and automated end-to-end cases have not been implemented yet.
+**Passed: ready for the V1 100% automated acceptance claim defined by the matrix.** All 105 machine-executable requirements are `Passed`. Human-, physical-device-, distribution-, and TestFlight-dependent activities remain intentionally excluded from this claim.
 
 ## Automated results
 
@@ -17,16 +17,19 @@
 | Full simulator build | Passed | `make compile`; 129-target graph; no embedded Widget or Intents extension |
 | Unsigned generic-device release archive | Passed | `make archive_v1_release`; `TonkeeperRelease`; `Archive Succeeded` |
 | V1 static/build-artifact gate | Passed | Main app privacy manifest is embedded and linted; tracking is disabled; deferred extensions, permissions, schemes, and entitlements are rejected |
-| iOS UI tests | Passed | 10 tests, 0 failures; 205.816 seconds in the latest full run |
-| WalletCore/CoreComponents | Passed | Native history mapper tests 3/3 passed; previous 82 KeeperCore XCTest cases and other WalletCore suites also passed |
-| Local TOS RPC integration | Passed | 3 live tests against the three-node network, 0 failures |
+| iOS UI tests | Passed | 41 tests, 0 failures; 2,656.049 seconds |
+| WalletCore/CoreComponents | Passed | `make test_all`; all discovered native mapper, client, storage, formatter, mnemonic, and regression suites passed |
+| Local TOS RPC integration | Passed | 5 live tests against three validator RPC views, including transfer convergence and exact pagination |
 | TronSwift package regression | Passed | All discovered package tests passed |
 | TKCryptoKit package regression | Passed | 2 tests, 0 failures |
 | TKCore package regression | Passed | 1 test, 0 failures |
 | TKLocalize package regression | Passed | 1 test, 0 failures |
 | TKChart package regression | Passed | 1 test, 0 failures |
+| Multi-destination layout/contrast | Passed | iPhone 17e and iPhone 17 Pro Max; light/dark appearance and encoded dynamic-type sizes |
+| Runtime secret scan | Passed | No fixture recovery phrase or passcode/password pattern in TOS Wallet logs or simulator pasteboard |
+| Performance budget | Passed | Three cold launches; latest maximum 0.216 seconds and 273.5 MiB RSS, within 5-second/512-MiB budgets |
 
-The UI suite verifies isolated clean-state TOS onboarding, wallet creation through wallet home, process termination, correct and incorrect passcode behavior, zero native TOS balance, native Send fields, native Receive/address/copy feedback, import navigation to recovery-phrase entry, and absence of inherited home/import/send/receive options such as Swap, Buy, Stake, Browser, Collectibles, Jetton, NFT, Watch-only, Ledger, Signer, Keystone, Testnet, and TRON.
+The UI suite covers clean-state onboarding; create/import, backup and recovery phrase challenges; passcode and persistence; native balance/receive/send/history; exact confirmation and event details; local-chain incoming/outgoing transfers; RPC editing; offline, malformed and lost/delayed-response recovery; destructive actions; accessibility inventory; V1 route gating; appearance, dynamic type, privacy shield, runtime secrets, and performance.
 
 ## Defects found and fixed
 
@@ -46,13 +49,12 @@ The UI suite verifies isolated clean-state TOS onboarding, wallet creation throu
 | Malformed RPC JSON leaked an unstable Foundation parsing error | P1 | Mapped malformed envelopes to stable `TOSRPCClient.invalidResponse` and added regression coverage |
 | V1 bundle retained TonConnect schemes, Widget activities, deferred permission copy, push, and App Group metadata | P1 | Removed deferred metadata and added build-artifact regression checks |
 | Wallet creation failure was silent after customization | P1 | Creation errors now present an actionable alert; the successful create-and-relaunch path is covered by UI automation |
+| Native non-max transfer could consume fee while failing on-chain and appear successful | P0 | Native transfers now reserve the emulated fee or a conservative RPC fallback floor and show a pre-broadcast blockchain-fee error |
+| Node failures had no consistent recoverable wallet UI | P1 | Balance/history failures now present a deterministic pull-to-retry error and clear after successful reconnect |
+| UI automation could not deterministically exercise network faults | P1 | Added a local RPC fault proxy for offline, malformed, dropped-response, and delayed-response modes with request counters |
 
 ## Remaining acceptance gaps
 
-The matrix remains the authority for every uncovered row. The largest gaps are full create/import completion into a deterministic funded wallet, app-driven native TOS send/broadcast/confirmation/history verification, lifecycle and fault-injection scenarios, simulator Keychain inspection, automated accessibility-tree checks, performance budgets, and unsigned release-artifact inspection.
+There are no remaining gaps inside the 105-row autonomous V1 matrix. The aggregate command `make test_v1_acceptance` passed with exit code 0 on the environment above.
 
-The inherited TonAPI history dependency was removed from the native account-history path. `getAccountEvents` and `getAccountEvent` now use TOS JSON-RPC, and deterministic tests cover empty history, incoming/outgoing native transfers, amount, fee, timestamp, bounced failure mapping, and malformed responses. Seeded history UI, pagination against the local network, comments, and app-originated transfer reconciliation remain incomplete.
-
-Native mnemonic import now normalizes capitalization and arbitrary whitespace at the controller boundary before validation and persistence. The six-case mnemonic suite passes, including tabs, newlines, repeated spaces, checksum rejection, and deterministic address derivation. The main app now embeds its own valid, non-tracking privacy manifest, and the automated build-artifact gate fails if it is absent or malformed.
-
-These rows are not marked passed merely because a lower-layer RPC or build test passed. Physical-device, TestFlight, distribution-signing, and other human/external checks are explicitly excluded from the automated matrix and its completion percentage.
+Physical-device, biometric-hardware, manual accessibility/visual review, distribution-signing, App Store Connect, and TestFlight checks are outside this automated release claim and are listed explicitly in the matrix's excluded section.

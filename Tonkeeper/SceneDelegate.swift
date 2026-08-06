@@ -28,7 +28,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             remoteConfig: LocalRemoteConfigProvider()
         )
 
-        if let deeplink = connectionOptions.urlContexts.first?.url.absoluteString {
+        let testDeeplink = ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] != nil
+            ? ProcessInfo.processInfo.environment["TOS_UI_TEST_DEEP_LINK"]
+            : nil
+        if let testDeeplink {
+            coordinator.start(deeplink: testDeeplink)
+        } else if let deeplink = connectionOptions.urlContexts.first?.url.absoluteString {
             coordinator.start(deeplink: deeplink)
         } else if let universalLink = connectionOptions.userActivities.first(where: { $0.webpageURL != nil })?.webpageURL {
             coordinator.start(deeplink: universalLink.absoluteString)

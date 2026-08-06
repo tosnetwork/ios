@@ -86,6 +86,7 @@ archive_v1_release:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
+TOS_UI_RPC_URL ?=
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 
@@ -94,7 +95,14 @@ test: test_all
 test_v1_static: compile
 	@sh scripts/tests/test_v1_static.sh
 
-test_v1_acceptance: test_v1_static test_all test_tos_live test_ui
+test_v1_acceptance: test_v1_static test_all test_tos_live test_ui test_ui_layout_matrix
+
+test_ui_layout_matrix:
+	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='platform=iOS Simulator,name=iPhone 17e'
+	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='platform=iOS Simulator,name=iPhone 17 Pro Max'
+
+test_v1_performance:
+	python3 scripts/tests/test_v1_performance.py
 
 test_all:
 	$(MAKE) test_core_swift
@@ -118,6 +126,7 @@ test_project_scheme:
 		HOME=$(TEST_BUILD_ROOT)/codex_home \
 		SWIFTPM_CONFIG_DIR=$(TEST_BUILD_ROOT)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
+		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
 		xcodebuild \
 		-project Tonkeeper.xcodeproj \
 		-scheme $(SCHEME) \
@@ -159,8 +168,15 @@ test_tos_live: TEST_ONLY=KeeperCoreTests/TOSRPCLiveIntegrationTests
 test_tos_live: test_project_scheme
 
 test_ui: SCHEME=TOSWalletUITests
-test_ui: test_project_scheme
-	@sh scripts/tests/test_v1_runtime_secrets.sh
+test_ui:
+	@python3 scripts/tests/tos_rpc_fault_proxy.py & \
+	proxy_pid=$$!; \
+	trap 'kill $$proxy_pid 2>/dev/null || true' EXIT INT TERM; \
+	status=0; \
+	$(MAKE) test_project_scheme SCHEME=$(SCHEME) TEST_ONLY='$(TEST_ONLY)' TOS_UI_RPC_URL=http://127.0.0.1:18645 || status=$$?; \
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	sh scripts/tests/test_v1_runtime_secrets.sh; \
+	$(MAKE) test_v1_performance
 
 test_wallet_core: SCHEME=WalletCore
 test_wallet_core: TEST_ONLY=WalletCoreTests

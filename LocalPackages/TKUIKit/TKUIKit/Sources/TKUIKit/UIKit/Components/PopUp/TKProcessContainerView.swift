@@ -12,19 +12,23 @@ public final class TKProcessContainerView: UIView {
         didSet {
             switch state {
             case .idle:
+                accessibilityIdentifier = "process.state.idle"
                 contentContainer.isHidden = false
                 resultView.isHidden = true
                 loaderView.isHidden = true
             case .process:
+                accessibilityIdentifier = "process.state.processing"
                 contentContainer.isHidden = true
                 resultView.isHidden = true
                 loaderView.isHidden = false
             case .success:
+                accessibilityIdentifier = "process.state.success"
                 contentContainer.isHidden = true
                 loaderView.isHidden = true
                 resultView.isHidden = false
                 resultView.state = .success
             case .failed:
+                accessibilityIdentifier = "process.state.failed"
                 contentContainer.isHidden = true
                 loaderView.isHidden = true
                 resultView.isHidden = false
@@ -68,6 +72,7 @@ public final class TKProcessContainerView: UIView {
     }
 
     private func setup() {
+        accessibilityIdentifier = "process.state.idle"
         resultView.isHidden = true
 
         addSubview(contentContainer)

@@ -54,6 +54,7 @@ public final class TKListContainerItemView: TKPassthroughView, ConfigurableView 
     }
 
     public func configure(model: Model) {
+        accessibilityIdentifier = model.id
         titleLabel.attributedText = model.title.withTextStyle(
             .body1,
             color: .Text.secondary,

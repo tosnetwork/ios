@@ -735,6 +735,7 @@ final class TransactionConfirmationViewModelImplementation: TransactionConfirmat
             ))
         }
         return TKListContainerItemView.Model(
+            id: "confirmation.fee",
             title: isRefund ? TKLocales.EventDetails.refund : TKLocales.EventDetails.fee,
             captionButtonModel: captionButton,
             value: value,

@@ -4,6 +4,31 @@ import OpenAPIRuntime
 import TonAPI
 import TonSwift
 
+public extension Notification.Name {
+    static let tosRPCUnavailable = Notification.Name("tos.rpc.unavailable")
+    static let tosRPCAvailable = Notification.Name("tos.rpc.available")
+}
+
+public enum TOSRPCConnectivity {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var unavailable = false
+
+    public static var isUnavailable: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return unavailable
+    }
+
+    @discardableResult
+    static func setUnavailable(_ value: Bool) -> Bool {
+        lock.lock()
+        let previous = unavailable
+        unavailable = value
+        lock.unlock()
+        return previous
+    }
+}
+
 public enum FetchError: Error {
     case wrongHost
     case unsupportedScheme
@@ -96,9 +121,17 @@ struct TOSRPCClient {
         let attempts = isSafeToRetry(method: method) ? 2 : 1
         for attempt in 1 ... attempts {
             do {
-                return try await callOnce(method: method, params: params)
+                let result = try await callOnce(method: method, params: params)
+                if TOSRPCConnectivity.setUnavailable(false) {
+                    NotificationCenter.default.post(name: .tosRPCAvailable, object: nil)
+                }
+                return result
             } catch let error as URLError where attempt < attempts && isTransient(error) {
                 try await Task.sleep(nanoseconds: 100_000_000)
+            } catch {
+                TOSRPCConnectivity.setUnavailable(true)
+                NotificationCenter.default.post(name: .tosRPCUnavailable, object: nil)
+                throw error
             }
         }
         preconditionFailure("TOS RPC retry loop exhausted without returning or throwing")

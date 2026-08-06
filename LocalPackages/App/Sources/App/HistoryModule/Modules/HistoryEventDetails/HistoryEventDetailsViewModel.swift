@@ -389,6 +389,7 @@ private extension HistoryEventDetailsViewModelImplementation {
             )
         case let .extra(value, isRefund, converted):
             item = TKListContainerItemView.Model(
+                id: "history.details.fee",
                 title: isRefund ? TKLocales.EventDetails.refund : TKLocales.EventDetails.fee,
                 value: .value(
                     TKListContainerItemDefaultValueView.Model(

@@ -26,6 +26,7 @@ private extension WalletBalanceView {
     func setup() {
         backgroundColor = .Background.page
         collectionView.backgroundColor = .Background.page
+        collectionView.accessibilityIdentifier = "wallet.balance.list"
         collectionView.contentInset.bottom = 16
         collectionView.refreshControl = refreshControl
 

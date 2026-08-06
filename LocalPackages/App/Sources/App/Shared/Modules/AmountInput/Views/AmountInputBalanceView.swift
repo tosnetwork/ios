@@ -39,6 +39,7 @@ final class AmountInputBalanceView: UIView {
         stackView.addArrangedSubview(maxButton)
         stackView.addArrangedSubview(balanceLabel)
 
+        maxButton.accessibilityIdentifier = "send.amount.max"
         maxButton.setContentHuggingPriority(.required, for: .horizontal)
         maxButton.setContentCompressionResistancePriority(.required, for: .horizontal)
 

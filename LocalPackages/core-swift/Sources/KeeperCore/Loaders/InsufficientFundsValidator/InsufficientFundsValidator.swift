@@ -40,6 +40,11 @@ public protocol InsufficientFundsValidator: AnyObject {
 }
 
 final class InsufficientFundsValidatorImplementation: InsufficientFundsValidator {
+    /// The native TOS JSON-RPC currently cannot emulate a transfer before broadcast.
+    /// Reserve a conservative floor so a non-max transfer cannot consume the balance
+    /// and then fail on-chain while looking successful in the wallet.
+    private static let nativeTransferFeeFloor: BigUInt = 100_000
+
     private let balanceStore: BalanceStore
     private let apiProvider: APIProvider
 
@@ -127,14 +132,18 @@ final class InsufficientFundsValidatorImplementation: InsufficientFundsValidator
                     )
                 }
 
-                guard case .extra = emulationModel.extraState else {
-                    return
-                }
-
-                let transferAmount: BigUInt = BigUInt(emulationModel.totalFee)
+                let emulatedFee = BigUInt(emulationModel.totalFee)
+                let transferAmount = max(emulatedFee, Self.nativeTransferFeeFloor)
 
                 let requiredAmount = transferAmount + amount
                 guard formattedTonBalance >= requiredAmount else {
+                    if formattedTonBalance >= amount {
+                        throw .blockchainFee(
+                            wallet: wallet,
+                            balance: formattedTonBalance,
+                            amount: transferAmount
+                        )
+                    }
                     throw .insufficientFunds(
                         jettonInfo: nil, balance: formattedTonBalance, requiredAmount: requiredAmount, wallet: wallet, isInternalPurchasing: true
                     )

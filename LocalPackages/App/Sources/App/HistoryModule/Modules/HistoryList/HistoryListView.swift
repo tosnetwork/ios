@@ -23,6 +23,7 @@ private extension HistoryListView {
     func setup() {
         backgroundColor = .Background.page
         collectionView.backgroundColor = .Background.page
+        collectionView.accessibilityIdentifier = "history.list"
         collectionView.showsVerticalScrollIndicator = false
         collectionView.contentInsetAdjustmentBehavior = .never
         collectionView.refreshControl = refreshControl

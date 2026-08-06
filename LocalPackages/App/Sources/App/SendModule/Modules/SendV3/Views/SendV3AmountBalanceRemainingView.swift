@@ -48,6 +48,7 @@ final class SendV3AmountBalanceRemainingView: UIView {
                 }
             )
         )
+        maxButton.accessibilityIdentifier = "send.amount.max"
         setContentHuggingPriority(.required, for: .horizontal)
         maxButton.setContentHuggingPriority(.required, for: .horizontal)
         remainingLabel.setContentHuggingPriority(.required, for: .horizontal)
