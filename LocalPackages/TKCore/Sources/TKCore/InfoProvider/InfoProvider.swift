@@ -20,7 +20,7 @@ public struct InfoProvider {
         case platform = "PLATFORM"
         case termsOfServiceURL = "TermsOfServiceURL"
         case privacyPolicyURL = "PrivacyPolicyURL"
-        case tonkeeperSwapURL = "TonkeeperSwapURL"
+        case toswalletSwapURL = "TosWalletSwapURL"
     }
 
     static func value<T>(key: Keys) -> T? {

@@ -19,7 +19,7 @@ public struct RemoteConfiguration: Codable, Equatable {
     public let mercuryoSecret: String?
     public let supportLink: URL?
     public let directSupportUrl: URL?
-    public let tonkeeperNewsUrl: URL?
+    public let toswalletNewsUrl: URL?
     public let stonfiUrl: URL?
     public let webSwapsUrl: URL?
     public let faqUrl: URL?
@@ -50,7 +50,7 @@ public struct RemoteConfiguration: Codable, Equatable {
     public let tronApiUrl: String?
     public let tronSwapUrl: String
     public let tronSwapTitle: String
-    public let tonkeeperApiUrl: String?
+    public let toswalletApiUrl: String?
     public let multichainHelpUrl: URL?
 
     public struct Flags: Codable, Equatable {
@@ -83,7 +83,7 @@ extension RemoteConfiguration {
             mercuryoSecret: nil,
             supportLink: nil,
             directSupportUrl: nil,
-            tonkeeperNewsUrl: nil,
+            toswalletNewsUrl: nil,
             stonfiUrl: nil,
             webSwapsUrl: nil,
             faqUrl: nil,
@@ -114,7 +114,7 @@ extension RemoteConfiguration {
             tronApiUrl: nil,
             tronSwapUrl: "https://widget.letsexchange.io/en?affiliate_id=ffzymmunvvyxyypo&coin_from=ton&coin_to=USDT-TRC20&is_iframe=true",
             tronSwapTitle: "LetsExchange",
-            tonkeeperApiUrl: nil,
+            toswalletApiUrl: nil,
             multichainHelpUrl: URL(string: "https://tonkeeper.helpscoutdocs.com/article/137-multichain#Transfer-fees-for-USDT-TRC20-tHzDd")
         )
     }

@@ -9,7 +9,7 @@ struct AppInfoURLComponentsBuilder {
 
     func buildURLComponents(for url: URL, additionalQueryItems: [URLQueryItem] = []) async throws -> URLComponents {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            throw TonkeeperAPIError.incorrectUrl
+            throw TosWalletAPIError.incorrectUrl
         }
 
         var queryItems: [URLQueryItem] = [

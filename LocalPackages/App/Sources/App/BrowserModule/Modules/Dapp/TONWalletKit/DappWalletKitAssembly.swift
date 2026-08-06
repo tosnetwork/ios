@@ -28,7 +28,7 @@ struct DappWalletKitAssembly {
             eventsHandler: eventsHandler
         )
 
-        let logger = Logger(subsystem: "com.tonkeeper.dapps", category: "dApps")
+        let logger = Logger(subsystem: "com.toswallet.dapps", category: "dApps")
 
         let viewController = DappViewController(
             viewModel: viewModel,

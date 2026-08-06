@@ -105,7 +105,7 @@ final class BuySellListViewModelImplementation: BuySellListViewModel, BuySellLis
     private let regionStore: RegionStore
     private let appSettings: AppSettings
     private let analyticsProvider: AnalyticsProvider
-    private let tonkeeperAPI: TonkeeperAPI
+    private let toswalletAPI: TosWalletAPI
 
     // MARK: - Init
 
@@ -118,7 +118,7 @@ final class BuySellListViewModelImplementation: BuySellListViewModel, BuySellLis
         configuration: Configuration,
         appSettings: AppSettings,
         analyticsProvider: AnalyticsProvider,
-        tonkeeperAPI: TonkeeperAPI
+        toswalletAPI: TosWalletAPI
     ) {
         self.wallet = wallet
         self.buySellProvider = buySellProvider
@@ -128,7 +128,7 @@ final class BuySellListViewModelImplementation: BuySellListViewModel, BuySellLis
         self.configuration = configuration
         self.appSettings = appSettings
         self.analyticsProvider = analyticsProvider
-        self.tonkeeperAPI = tonkeeperAPI
+        self.toswalletAPI = toswalletAPI
     }
 }
 
@@ -317,7 +317,7 @@ private extension BuySellListViewModelImplementation {
                             currency: currency,
                             mercuryoParameters: FiatMethodItem.MercuryoParameters(
                                 secret: mercuryoSecret,
-                                ipProvider: { [weak self] in try? await self?.tonkeeperAPI.getIP() }
+                                ipProvider: { [weak self] in try? await self?.toswalletAPI.getIP() }
                             )
                         ) else { return }
                         await MainActor.run {

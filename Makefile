@@ -13,6 +13,7 @@ SHELL := /bin/sh
 	test_all \
 	test_tos_live \
 	test_ui \
+	test_brand_boundary \
 	test_v1_static \
 	test_v1_acceptance
 
@@ -43,7 +44,7 @@ BUILD_DIR := ./build
 compile:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
-	echo 'building Tonkeeper...' && \
+	echo 'building TosWallet...' && \
 		set -o pipefail; \
 		HOME=$(BUILD_DIR)/codex_home \
 		SWIFTPM_CACHE_PATH=$(BUILD_DIR)/swiftpm-cache \
@@ -51,9 +52,9 @@ compile:
 		CLANG_MODULE_CACHE_PATH=$(BUILD_DIR)/clang-module-cache \
 		CLONED_SOURCE_PACKAGES_DIR=$(BUILD_DIR)/SourcePackages \
 		xcodebuild \
-		-project Tonkeeper.xcodeproj \
-		-scheme Tonkeeper \
-		-configuration TonkeeperDebug \
+		-project TosWallet.xcodeproj \
+		-scheme TosWallet \
+		-configuration TosWalletDebug \
 		-destination 'generic/platform=iOS Simulator' \
 		-derivedDataPath $(BUILD_DIR)/DerivedData \
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
@@ -68,9 +69,9 @@ archive_v1_release:
 		SWIFTPM_CONFIG_DIR=$(BUILD_DIR)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(BUILD_DIR)/clang-module-cache \
 		xcodebuild \
-		-project Tonkeeper.xcodeproj \
-		-scheme Tonkeeper \
-		-configuration TonkeeperRelease \
+		-project TosWallet.xcodeproj \
+		-scheme TosWallet \
+		-configuration TosWalletRelease \
 		-destination 'generic/platform=iOS' \
 		-derivedDataPath $(BUILD_DIR)/DerivedData-release \
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
@@ -92,7 +93,10 @@ TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 
 test: test_all
 
-test_v1_static: compile
+test_brand_boundary:
+	@sh scripts/tests/test_brand_boundary.sh
+
+test_v1_static: compile test_brand_boundary
 	@sh scripts/tests/test_v1_static.sh
 
 test_v1_acceptance: test_v1_static test_all test_tos_live test_ui test_ui_layout_matrix
@@ -128,7 +132,7 @@ test_project_scheme:
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
 		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
 		xcodebuild \
-		-project Tonkeeper.xcodeproj \
+		-project TosWallet.xcodeproj \
 		-scheme $(SCHEME) \
 		-destination '$(TEST_DESTINATION)' \
 		-disableAutomaticPackageResolution \

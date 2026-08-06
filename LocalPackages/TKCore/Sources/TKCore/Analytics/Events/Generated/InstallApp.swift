@@ -17,7 +17,7 @@ public struct InstallApp: Codable, JSONEncodable, Hashable {
     public var eventName: String = "install_app"
     /** iOS only. The referring app or URL that brought the user to the app store (e.g., 'utm_source=newsletter'). */
     public var referrer: String?
-    /** iOS only. The deep link URL that was used to open the app (e.g., 'tonkeeper://wallet'). */
+    /** iOS only. The deep link URL that was used to open the app (e.g., 'toswallet://wallet'). */
     public var deeplink: String?
     /** Android only. The package name of the app store from which our application was installed. (e.g., 'com.android.vending') */
     public var installerStore: String?

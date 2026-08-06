@@ -19,7 +19,7 @@ struct BuySellListAssembly {
             configuration: keeperCoreMainAssembly.configurationAssembly.configuration,
             appSettings: coreAssembly.appSettings,
             analyticsProvider: coreAssembly.analyticsProvider,
-            tonkeeperAPI: keeperCoreMainAssembly.tonkeeperAPIAssembly.api
+            toswalletAPI: keeperCoreMainAssembly.toswalletAPIAssembly.api
         )
 
         let viewController = BuySellListViewController(viewModel: viewModel)

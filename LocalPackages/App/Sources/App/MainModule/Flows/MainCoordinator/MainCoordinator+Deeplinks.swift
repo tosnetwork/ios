@@ -428,7 +428,7 @@ extension MainCoordinator {
         let walletsStore = keeperCoreMainAssembly.storesAssembly.walletsStore
         let configuration = keeperCoreMainAssembly.configurationAssembly.configuration
         let currencyStore = keeperCoreMainAssembly.storesAssembly.currencyStore
-        let tonkeeperAPI = keeperCoreMainAssembly.tonkeeperAPIAssembly.api
+        let toswalletAPI = keeperCoreMainAssembly.toswalletAPIAssembly.api
 
         let deeplinkHandleTask = Task {
             do {
@@ -444,7 +444,7 @@ extension MainCoordinator {
                           currency: currency,
                           mercuryoParameters: FiatMethodItem.MercuryoParameters(
                               secret: mercuryoSecret,
-                              ipProvider: { try? await tonkeeperAPI.getIP() }
+                              ipProvider: { try? await toswalletAPI.getIP() }
                           )
                       )
                 else {

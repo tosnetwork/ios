@@ -1,6 +1,6 @@
-# Tonkeeper Core Swift
+# TosWallet Core Swift
 
-This is a pure Swift implementation of _Tonkeeper Core_: complete wallet implementation as an embeddable library.
+This is a pure Swift implementation of _TosWallet Core_: complete wallet implementation as an embeddable library.
 The goal of the library is to provide strictly-typed definition of the wallet behaviors that is easier to audit and cover with automated tests.
 
 ### Features

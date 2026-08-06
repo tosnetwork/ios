@@ -10,6 +10,9 @@ let package = Package(
     products: [
         .library(name: "WalletCore", targets: ["KeeperCore"]),
     ],
+    // Compatibility boundary: these upstream product names are protocol and
+    // supply-chain identities, not TOS product branding. See
+    // docs/legacy-ton-compatibility-boundary.md before changing them.
     dependencies: [
         .package(path: "../TKLocalize"),
         .package(path: "../TKKeychain"),

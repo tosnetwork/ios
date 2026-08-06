@@ -4,7 +4,7 @@ import TonSwift
 public final class LoadersAssembly {
     private let servicesAssembly: ServicesAssembly
     private let storesAssembly: StoresAssembly
-    private let tonkeeperAPIAssembly: TonkeeperAPIAssembly
+    private let toswalletAPIAssembly: TosWalletAPIAssembly
     private let apiAssembly: APIAssembly
     private let knownAccountsAssembly: KnownAccountsAssembly
     private let tronAssembly: TronUSDTAssembly
@@ -13,7 +13,7 @@ public final class LoadersAssembly {
     init(
         servicesAssembly: ServicesAssembly,
         storesAssembly: StoresAssembly,
-        tonkeeperAPIAssembly: TonkeeperAPIAssembly,
+        toswalletAPIAssembly: TosWalletAPIAssembly,
         apiAssembly: APIAssembly,
         knownAccountsAssembly: KnownAccountsAssembly,
         tronAssembly: TronUSDTAssembly,
@@ -21,7 +21,7 @@ public final class LoadersAssembly {
     ) {
         self.servicesAssembly = servicesAssembly
         self.storesAssembly = storesAssembly
-        self.tonkeeperAPIAssembly = tonkeeperAPIAssembly
+        self.toswalletAPIAssembly = toswalletAPIAssembly
         self.apiAssembly = apiAssembly
         self.knownAccountsAssembly = knownAccountsAssembly
         self.tronAssembly = tronAssembly
@@ -48,7 +48,7 @@ public final class LoadersAssembly {
             return _storiesLoader
         }
         let loader = StoriesLoader(
-            tonkeeperAPI: tonkeeperAPIAssembly.api,
+            toswalletAPI: toswalletAPIAssembly.api,
             configuration: configurationAssembly.configuration,
             storiesStore: storesAssembly.storiesStore
         )
@@ -62,7 +62,7 @@ public final class LoadersAssembly {
             return _internalNotificationsLoader
         }
         let loader = InternalNotificationsLoader(
-            tonkeeperAPI: tonkeeperAPIAssembly.api,
+            toswalletAPI: toswalletAPIAssembly.api,
             notificationsStore: storesAssembly.internalNotificationsStore
         )
         _internalNotificationsLoader = loader
@@ -182,7 +182,7 @@ public final class LoadersAssembly {
             return loader
         }
 
-        let loader = EthenaStakingLoader(wallet: wallet, api: tonkeeperAPIAssembly.api)
+        let loader = EthenaStakingLoader(wallet: wallet, api: toswalletAPIAssembly.api)
         _ethenaStakingLoaders[wallet] = Weak(value: loader)
         return loader
     }

@@ -1,14 +1,14 @@
 import Foundation
 
 public final class KnownAccountsAssembly {
-    private let tonkeeperApiAssembly: TonkeeperAPIAssembly
+    private let toswalletApiAssembly: TosWalletAPIAssembly
     private let coreAssembly: CoreAssembly
 
     init(
-        tonkeeperApiAssembly: TonkeeperAPIAssembly,
+        toswalletApiAssembly: TosWalletAPIAssembly,
         coreAssembly: CoreAssembly
     ) {
-        self.tonkeeperApiAssembly = tonkeeperApiAssembly
+        self.toswalletApiAssembly = toswalletApiAssembly
         self.coreAssembly = coreAssembly
     }
 

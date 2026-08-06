@@ -33,10 +33,10 @@ DerivedData/
 *.dSYM
 
 ## Firebase config
-Tonkeeper/Resources/Firebase/
+TosWallet/Resources/Firebase/
 
 ## Generated dev plist (from Info.plist)
-Tonkeeper/Resources/Info-Dev.plist
+TosWallet/Resources/Info-Dev.plist
 
 ## Modules
 Modules/Package.resolved

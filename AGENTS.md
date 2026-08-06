@@ -1,17 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `Tonkeeper/` contains the main iOS app source and shared resources.
-- `TonkeeperWidget/` and `TonkeeperIntents/` host extension targets.
+- `TosWallet/` contains the main iOS app source and shared resources.
+- `TosWalletWidget/` and `TosWalletIntents/` host extension targets.
 - `LocalPackages/` contains Swift Package Manager modules (feature modules, shared UI, core libs).
 - `Configurations/` holds `.xcconfig` files for signing and build settings.
-- `Tonkeeper.xcodeproj/` is the primary Xcode project entry point.
+- `TosWallet.xcodeproj/` is the primary Xcode project entry point.
 
 ## Build, Test, and Development Commands
 
 ## Agent Build Instructions
 
-#### Build the Tonkeeper target from the repo root using xcodebuild:
+#### Build the TosWallet target from the repo root using xcodebuild:
 
 ```sh
 make compile
@@ -20,7 +20,7 @@ make compile
 #### Run tests only through `Makefile` from the repo root:
 
 - Use `make` targets; do not run package-local tests via `cd LocalPackages/... && xcodebuild` or `swift test`.
-- Package tests are intentionally routed through `Tonkeeper.xcodeproj`, so they use the app-level SwiftPM lockfile at `Tonkeeper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+- Package tests are intentionally routed through `TosWallet.xcodeproj`, so they use the app-level SwiftPM lockfile at `TosWallet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
 - Some local package `Package.resolved` files were intentionally removed to prevent standalone package resolution paths from becoming the default workflow.
 
 Common commands:
@@ -39,13 +39,13 @@ make test_tkcryptokit
 Run a specific test suite through the generic entrypoint:
 
 ```sh
-make test_project_scheme SCHEME=WalletCore TEST_ONLY=KeeperCoreTests/TonkeeperDeeplinksParserTests
+make test_project_scheme SCHEME=WalletCore TEST_ONLY=KeeperCoreTests/TosWalletDeeplinksParserTests
 ```
 
 Run a single test method:
 
 ```sh
-make test_project_scheme SCHEME=WalletCore TEST_ONLY=KeeperCoreTests/TonkeeperDeeplinksParserTests/testActionParsing
+make test_project_scheme SCHEME=WalletCore TEST_ONLY=KeeperCoreTests/TosWalletDeeplinksParserTests/testActionParsing
 ```
 
 ## Key Decisions

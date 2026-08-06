@@ -3,16 +3,16 @@ import Foundation
 actor StoriesLoader {
     private var taskInProgress: Task<Void, Never>?
 
-    private let tonkeeperAPI: TonkeeperAPI
+    private let toswalletAPI: TosWalletAPI
     private let configuration: Configuration
     private let storiesStore: StoriesStore
 
     init(
-        tonkeeperAPI: TonkeeperAPI,
+        toswalletAPI: TosWalletAPI,
         configuration: Configuration,
         storiesStore: StoriesStore
     ) {
-        self.tonkeeperAPI = tonkeeperAPI
+        self.toswalletAPI = toswalletAPI
         self.configuration = configuration
         self.storiesStore = storiesStore
 
@@ -35,7 +35,7 @@ actor StoriesLoader {
 
         let task = Task {
             guard let storyIds = configuration.value(\.stories),
-                  let stories = try? await tonkeeperAPI.loadStories(
+                  let stories = try? await toswalletAPI.loadStories(
                       storyIds: storyIds
                   )
             else {

@@ -4,7 +4,7 @@ public final class ServicesAssembly {
     private let repositoriesAssembly: RepositoriesAssembly
     private let storesAssembly: StoresAssembly
     private let apiAssembly: APIAssembly
-    private let tonkeeperAPIAssembly: TonkeeperAPIAssembly
+    private let toswalletAPIAssembly: TosWalletAPIAssembly
     private let scamAPIAssembly: ScamAPIAssembly
     private let coreAssembly: CoreAssembly
     private let secureAssembly: SecureAssembly
@@ -19,7 +19,7 @@ public final class ServicesAssembly {
         repositoriesAssembly: RepositoriesAssembly,
         storesAssembly: StoresAssembly,
         apiAssembly: APIAssembly,
-        tonkeeperAPIAssembly: TonkeeperAPIAssembly,
+        toswalletAPIAssembly: TosWalletAPIAssembly,
         scamAPIAssembly: ScamAPIAssembly,
         coreAssembly: CoreAssembly,
         secureAssembly: SecureAssembly,
@@ -33,7 +33,7 @@ public final class ServicesAssembly {
         self.repositoriesAssembly = repositoriesAssembly
         self.storesAssembly = storesAssembly
         self.apiAssembly = apiAssembly
-        self.tonkeeperAPIAssembly = tonkeeperAPIAssembly
+        self.toswalletAPIAssembly = toswalletAPIAssembly
         self.scamAPIAssembly = scamAPIAssembly
         self.coreAssembly = coreAssembly
         self.secureAssembly = secureAssembly
@@ -163,7 +163,7 @@ public final class ServicesAssembly {
 
     public func popularAppsService() -> PopularAppsService {
         PopularAppsServiceImplementation(
-            api: tonkeeperAPIAssembly.api,
+            api: toswalletAPIAssembly.api,
             popularAppsRepository: repositoriesAssembly.popularAppsRepository()
         )
     }

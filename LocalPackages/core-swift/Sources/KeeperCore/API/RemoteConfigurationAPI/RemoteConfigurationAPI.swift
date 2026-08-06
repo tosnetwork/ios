@@ -33,7 +33,7 @@ final class RemoteConfigurationAPIImplementation: RemoteConfigurationAPI {
     private func loadConfiguration(host: URL) async throws -> RemoteConfigurations {
         let url = host.appendingPathComponent("/keys/all")
         let components = try await urlComponentsBuilder.buildURLComponents(for: url)
-        guard let url = components.url else { throw TonkeeperAPIError.incorrectUrl }
+        guard let url = components.url else { throw TosWalletAPIError.incorrectUrl }
         let (data, _) = try await urlSession.data(from: url)
         return try JSONDecoder().decode(RemoteConfigurations.self, from: data)
     }

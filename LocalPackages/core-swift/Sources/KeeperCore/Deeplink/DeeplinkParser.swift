@@ -29,7 +29,7 @@ enum DeeplinkParserError: Swift.Error, LocalizedError {
 }
 
 public struct DeeplinkParser {
-    private let tonkeeperParser = TonkeeperDeeplinkParser()
+    private let toswalletParser = TosWalletDeeplinkParser()
 
     public init() {}
 
@@ -61,7 +61,7 @@ public struct DeeplinkParser {
         let prefixIndex = string.index(string.startIndex, offsetBy: prefix.count)
         let unprefixedString = String(string[prefixIndex...])
 
-        return try tonkeeperParser.parse(string: unprefixedString)
+        return try toswalletParser.parse(string: unprefixedString)
     }
 
     private func parseTonconnectDeeplink(string: String) -> Deeplink? {
@@ -80,7 +80,7 @@ public struct DeeplinkParser {
         guard let url = URL(string: unprefixedString) else { return nil }
 
         do {
-            return try .tonconnect(tonkeeperParser.parseTonconnect(url: url))
+            return try .tonconnect(toswalletParser.parseTonconnect(url: url))
         } catch {
             return nil
         }

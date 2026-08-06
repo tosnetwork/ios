@@ -254,5 +254,5 @@ enum StonfiSwapBridgeFunctionType: String, Codable {
 }
 
 private extension String {
-    static let windowKey = "tonkeeperStonfi"
+    static let windowKey = "toswalletStonfi"
 }

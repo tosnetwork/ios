@@ -3,7 +3,7 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-app_path=${1:-"$project_root/build/DerivedData/Build/Products/TonkeeperDebug-iphonesimulator/TOS Wallet.app"}
+app_path=${1:-"$project_root/build/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app"}
 
 fail() {
     echo "V1 acceptance failure: $1" >&2
@@ -46,7 +46,7 @@ done
 url_schemes=$(plutil -extract CFBundleURLTypes json -o - "$app_path/Info.plist")
 printf '%s' "$url_schemes" | rg -q 'tos-tc' && fail "V1 app registers a deferred TonConnect URL scheme"
 
-entitlements_file="$project_root/Configurations/Entitlements/Tonkeeper.entitlements"
+entitlements_file="$project_root/Configurations/Entitlements/TosWallet.entitlements"
 rg -q 'aps-environment|com.apple.security.application-groups' "$entitlements_file" && fail "V1 app retains deferred push/widget entitlements"
 rg -q 'keychain-access-groups' "$entitlements_file" || fail "V1 app is missing its Keychain access group"
 
@@ -65,7 +65,7 @@ assert_contains "$main_coordinator" 'guard sendTransferData\.jettonAddress == ni
 
 locale_file="$project_root/LocalPackages/TKLocalize/Sources/TKLocalize/Resources/Locales/en.lproj/Localizable.strings"
 legal_copy=$(rg '^"settings\.legal\.' "$locale_file")
-printf '%s\n' "$legal_copy" | rg -q 'TON|Tonkeeper' && fail "reachable legal copy contains inherited branding"
+printf '%s\n' "$legal_copy" | rg -q 'TON|TosWallet' && fail "reachable legal copy contains inherited branding"
 
 state_file="$project_root/LocalPackages/App/Sources/App/MainModule/Flows/MainCoordinator/MainCoordinatorStateManager.swift"
 assert_contains "$state_file" 'State\(tabs: \[\.wallet, \.history\]\)' "V1 tab state is not exactly Wallet and History"
@@ -73,9 +73,9 @@ assert_contains "$state_file" 'State\(tabs: \[\.wallet, \.history\]\)' "V1 tab s
 balance_file="$project_root/LocalPackages/core-swift/Sources/KeeperCore/Entities/Balance/Balance.swift"
 assert_contains "$balance_file" 'static let symbol = "TOS"' "native symbol is not TOS"
 
-project_file="$project_root/Tonkeeper.xcodeproj/project.pbxproj"
-main_target=$(sed -n '/7DB8FB612A1BCC92005B4B11.*Tonkeeper.*= {/,/productType = "com.apple.product-type.application"/p' "$project_file")
-printf '%s\n' "$main_target" | rg -q 'TonkeeperWidgetExtension|TonkeeperIntents' && fail "main target depends on a deferred extension"
+project_file="$project_root/TosWallet.xcodeproj/project.pbxproj"
+main_target=$(sed -n '/7DB8FB612A1BCC92005B4B11.*TosWallet.*= {/,/productType = "com.apple.product-type.application"/p' "$project_file")
+printf '%s\n' "$main_target" | rg -q 'TosWalletWidgetExtension|TosWalletIntents' && fail "main target depends on a deferred extension"
 
 config_file="$project_root/LocalPackages/core-swift/Sources/KeeperCore/PackageResources/DefaultRemoteConfiguration.json"
 python3 - "$config_file" <<'PY'

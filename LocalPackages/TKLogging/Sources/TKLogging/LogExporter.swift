@@ -103,7 +103,7 @@ public enum LogExporter {
         let formatter = ISO8601DateFormatter()
 
         var lines: [String] = [
-            "=== Tonkeeper Log Export ===",
+            "=== TosWallet Log Export ===",
             "Generated at: \(formatter.string(from: Date()))",
             "Subsystem: \(subsystem)",
             "Category: \(category ?? "all categories")",

@@ -46,7 +46,7 @@ public final class BatteryRefillCoordinator: RouterCoordinator<NavigationControl
         openBatteryRefill()
     }
 
-    public func handleTonkeeperPublishDeeplink(sign: Data) -> Bool {
+    public func handleTosWalletPublishDeeplink(sign: Data) -> Bool {
         guard let walletTransferSignCoordinator = walletTransferSignCoordinator else { return false }
         walletTransferSignCoordinator.externalSignHandler?(sign)
         walletTransferSignCoordinator.externalSignHandler = nil

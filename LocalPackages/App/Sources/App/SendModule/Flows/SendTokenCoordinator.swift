@@ -97,7 +97,7 @@ final class SendTokenCoordinator: RouterCoordinator<NavigationControllerRouter> 
         }
     }
 
-    func handleTonkeeperPublishDeeplink(sign: Data) -> Bool {
+    func handleTosWalletPublishDeeplink(sign: Data) -> Bool {
         guard let walletTransferSignCoordinator = walletTransferSignCoordinator else { return false }
         walletTransferSignCoordinator.externalSignHandler?(sign)
         walletTransferSignCoordinator.externalSignHandler = nil

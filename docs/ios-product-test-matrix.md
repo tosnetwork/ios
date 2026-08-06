@@ -5,7 +5,7 @@
 - Baseline date: 2026-08-07
 - Code baseline: `main` at `d663dba` plus the V1 acceptance branch under test
 - Execution boundary: every row must be executable and decidable without a person, a physical iPhone, TestFlight, distribution signing, or an external service
-- Brand rule: supported user-facing product, asset, network, links, and copy must use **TOS**, not TON or Tonkeeper
+- Brand rule: supported user-facing product, asset, network, links, and copy must use **TOS**, not TON or TosWallet
 
 ## Scope and completion rule
 
@@ -30,7 +30,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | --- | --- | --- | --- | --- |
 | BRD-01 | App bundle name and onboarding identify TOS Wallet | Static + UI | Passed | UI title plus built `Info.plist` name and identifier assertions |
 | BRD-02 | Native asset symbol is TOS throughout balance, receive, send, confirmation, and history | Unit + UI | Passed | Native formatter plus zero/funded home, receive, send confirmation, and seeded history UI assertions pass |
-| BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Passed | Recursive reachable-element scan runs across onboarding, creation/import, home, receive, send/confirmation, history, settings, and legal flows |
+| BRD-03 | Reachable V1 screens contain no TON or TosWallet branding | Static + UI | Passed | Recursive reachable-element scan runs across onboarding, creation/import, home, receive, send/confirmation, history, settings, and legal flows |
 | BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory plus import/home/receive/send/settings negative assertions and stale-route gates reject TRON/TRC20 |
 | BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory, production V1 filters, and deep-link policy cover every retained V1 surface |
 | BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Passed | Static gate validates remote configuration, built legal URLs, HTTPS `tos.network` hosts, and RPC defaults |
@@ -185,7 +185,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | QLT-05 | Process logs and telemetry contain no fixture secret or passcode | Static + Runtime log scan | Passed | `test_v1_runtime_secrets.sh`, wired into `make test_ui`, rejects the exact fixture phrase and passcode/password log patterns |
 | QLT-06 | TLS, certificate, and proxy failures return safe errors | Unit + Integration | Passed | Deterministic URL-protocol tests return safe TLS/certificate errors without retry and preserve bounded proxy/network failures |
 | BLD-01 | Debug simulator build succeeds | Build | Passed | `make compile` |
-| BLD-02 | Unsigned generic-device release build/archive succeeds | Build | Passed | `make archive_v1_release`; signing-disabled `TonkeeperRelease` archive succeeded for generic iOS |
+| BLD-02 | Unsigned generic-device release build/archive succeeds | Build | Passed | `make archive_v1_release`; signing-disabled `TosWalletRelease` archive succeeded for generic iOS |
 | BLD-03 | Built V1 app contains required privacy metadata and only approved entitlements/permission strings | Build artifact | Passed | Main app privacy manifest is embedded, valid, and non-tracking; deferred schemes, permissions, entitlements, and extensions are rejected |
 | BLD-04 | `make test_all`, `make test_tos_live`, and `make test_ui` all succeed | Test orchestration | Passed | `make test_v1_acceptance` passed on 2026-08-07; full UI was 41/41 with zero failures and both layout destinations passed |
 

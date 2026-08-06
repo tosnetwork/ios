@@ -8,8 +8,8 @@ extension StackingPoolInfo {
         case .liquidTF: .TKUIKit.Icons.Size44.tonStakersLogo
         case .tf: .TKUIKit.Icons.Size44.tonNominatorsLogo
         case .whales:
-            if name.lowercased().contains("tonkeeper") {
-                .TKUIKit.Icons.Size44.tonkeeperLogo
+            if name.lowercased().contains("toswallet") {
+                .TKUIKit.Icons.Size44.toswalletLogo
             } else {
                 .TKUIKit.Icons.Size44.tonWhalesLogo
             }
@@ -21,8 +21,8 @@ extension StackingPoolInfo {
         case .liquidTF: .App.Images.StakingImplementation.tonstakers
         case .tf: .App.Images.StakingImplementation.tonNominators
         case .whales:
-            if name.lowercased().contains("tonkeeper") {
-                .TKUIKit.Icons.Size44.tonkeeperLogo
+            if name.lowercased().contains("toswallet") {
+                .TKUIKit.Icons.Size44.toswalletLogo
             } else {
                 .App.Images.StakingImplementation.whales
             }

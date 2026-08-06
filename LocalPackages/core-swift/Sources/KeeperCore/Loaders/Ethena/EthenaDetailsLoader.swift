@@ -10,11 +10,11 @@ public actor EthenaStakingLoader {
     private var state: State = .idle
 
     private let wallet: Wallet
-    private let api: TonkeeperAPI
+    private let api: TosWalletAPI
 
     init(
         wallet: Wallet,
-        api: TonkeeperAPI
+        api: TosWalletAPI
     ) {
         self.wallet = wallet
         self.api = api

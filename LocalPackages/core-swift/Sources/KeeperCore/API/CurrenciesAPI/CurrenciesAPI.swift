@@ -33,7 +33,7 @@ final class CurrenciesAPIImplementation: CurrenciesAPI {
     private func loadCurrencies(host: URL) async throws -> [RemoteCurrency] {
         let url = host.appendingPathComponent("currencies")
         let components = try await urlComponentsBuilder.buildURLComponents(for: url)
-        guard let url = components.url else { throw TonkeeperAPIError.incorrectUrl }
+        guard let url = components.url else { throw TosWalletAPIError.incorrectUrl }
         let (data, _) = try await urlSession.data(from: url)
         return try JSONDecoder().decode(CurrenciesResult.self, from: data).currencies
     }

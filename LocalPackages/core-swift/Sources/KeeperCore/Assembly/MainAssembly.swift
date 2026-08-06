@@ -22,7 +22,7 @@ public final class MainAssembly {
     public let loadersAssembly: LoadersAssembly
     public let backgroundUpdateAssembly: BackgroundUpdateAssembly
     public let apiAssembly: APIAssembly
-    public let tonkeeperAPIAssembly: TonkeeperAPIAssembly
+    public let toswalletAPIAssembly: TosWalletAPIAssembly
     public let rnAssembly: RNAssembly
     public let secureAssembly: SecureAssembly
     public let transferAssembly: TransferAssembly
@@ -46,7 +46,7 @@ public final class MainAssembly {
         tonConnectAssembly: TonConnectAssembly,
         tonWalletKitAssembly: TONWalletKitAssembly,
         apiAssembly: APIAssembly,
-        tonkeeperAPIAssembly: TonkeeperAPIAssembly,
+        toswalletAPIAssembly: TosWalletAPIAssembly,
         loadersAssembly: LoadersAssembly,
         backgroundUpdateAssembly: BackgroundUpdateAssembly,
         secureAssembly: SecureAssembly,
@@ -70,7 +70,7 @@ public final class MainAssembly {
         self.tonConnectAssembly = tonConnectAssembly
         self.tonWalletKitAssembly = tonWalletKitAssembly
         self.apiAssembly = apiAssembly
-        self.tonkeeperAPIAssembly = tonkeeperAPIAssembly
+        self.toswalletAPIAssembly = toswalletAPIAssembly
         self.loadersAssembly = loadersAssembly
         self.backgroundUpdateAssembly = backgroundUpdateAssembly
         self.secureAssembly = secureAssembly

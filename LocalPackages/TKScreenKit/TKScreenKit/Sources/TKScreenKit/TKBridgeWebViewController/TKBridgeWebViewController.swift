@@ -183,7 +183,7 @@ open class TKBridgeWebViewController: UIViewController {
             self?.backButton.isHidden = !canGoBack
         }
 
-        let urlRequest = URLRequest(url: updateURLWithTonkeeperUTM(url: url))
+        let urlRequest = URLRequest(url: updateURLWithTosWalletUTM(url: url))
         webView.load(urlRequest)
     }
 
@@ -294,7 +294,7 @@ open class TKBridgeWebViewController: UIViewController {
         )
     }
 
-    private func updateURLWithTonkeeperUTM(url: URL) -> URL {
+    private func updateURLWithTosWalletUTM(url: URL) -> URL {
         guard var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
         var queryItems = urlComponents.queryItems ?? []
         guard !queryItems.contains(where: { $0.name != "utm_source" }) else { return url }

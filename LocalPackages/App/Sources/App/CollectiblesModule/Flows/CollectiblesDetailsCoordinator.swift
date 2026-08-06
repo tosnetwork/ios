@@ -41,17 +41,17 @@ public final class CollectiblesDetailsCoordinator: RouterCoordinator<NavigationC
         openDetails()
     }
 
-    public func handleTonkeeperDeeplink(deeplink: Deeplink) -> Bool {
+    public func handleTosWalletDeeplink(deeplink: Deeplink) -> Bool {
         switch deeplink {
         case let .publish(model):
             if let sendTokenCoordinator = sendTokenCoordinator {
-                return sendTokenCoordinator.handleTonkeeperPublishDeeplink(sign: model)
+                return sendTokenCoordinator.handleTosWalletPublishDeeplink(sign: model)
             }
             if let linkDNSCoordinator = linkDNSCoordinator {
-                return linkDNSCoordinator.handleTonkeeperPublishDeeplink(sign: model)
+                return linkDNSCoordinator.handleTosWalletPublishDeeplink(sign: model)
             }
             if let renewDNSCoordinator = renewDNSCoordinator {
-                return renewDNSCoordinator.handleTonkeeperPublishDeeplink(sign: model)
+                return renewDNSCoordinator.handleTosWalletPublishDeeplink(sign: model)
             }
             return false
         default: return false

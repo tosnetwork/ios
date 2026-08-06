@@ -287,10 +287,10 @@ public enum TKLocales {
             /// Attention
             public static let title = TKLocales.tr("Localizable", "backup.warning.title", fallback: "Attention")
             public enum List {
-                /// Never enter your recovery phrase any other place than Tonkeeper to access your wallet.
-                public static let item1 = TKLocales.tr("Localizable", "backup.warning.list.item1", fallback: "Never enter your recovery phrase any other place than Tonkeeper to access your wallet.")
-                /// Tonkeeper Support never asks for a recovery phrase.
-                public static let item2 = TKLocales.tr("Localizable", "backup.warning.list.item2", fallback: "Tonkeeper Support never asks for a recovery phrase.")
+                /// Never enter your recovery phrase any other place than TosWallet to access your wallet.
+                public static let item1 = TKLocales.tr("Localizable", "backup.warning.list.item1", fallback: "Never enter your recovery phrase any other place than TosWallet to access your wallet.")
+                /// TosWallet Support never asks for a recovery phrase.
+                public static let item2 = TKLocales.tr("Localizable", "backup.warning.list.item2", fallback: "TosWallet Support never asks for a recovery phrase.")
                 /// Anyone with your recovery phrase can use your wallet.
                 public static let item3 = TKLocales.tr("Localizable", "backup.warning.list.item3", fallback: "Anyone with your recovery phrase can use your wallet.")
             }
@@ -355,14 +355,14 @@ public enum TKLocales {
         }
 
         public enum Refill {
-            /// Swap via Tonkeeper, send tokens and unstake TON.
-            public static let emptyCaption = TKLocales.tr("Localizable", "battery.refill.empty_caption", fallback: "Swap via Tonkeeper, send tokens and unstake TON.")
+            /// Swap via TosWallet, send tokens and unstake TON.
+            public static let emptyCaption = TKLocales.tr("Localizable", "battery.refill.empty_caption", fallback: "Swap via TosWallet, send tokens and unstake TON.")
             /// Promo Code
             public static let promocode = TKLocales.tr("Localizable", "battery.refill.promocode", fallback: "Promo Code")
             /// Supported transactions
             public static let supportedTransactions = TKLocales.tr("Localizable", "battery.refill.supported_transactions", fallback: "Supported transactions")
-            /// Tonkeeper Battery
-            public static let title = TKLocales.tr("Localizable", "battery.refill.title", fallback: "Tonkeeper Battery")
+            /// TosWallet Battery
+            public static let title = TKLocales.tr("Localizable", "battery.refill.title", fallback: "TosWallet Battery")
             /// Transactions
             public static let transactions = TKLocales.tr("Localizable", "battery.refill.transactions", fallback: "Transactions")
             public enum Charges {
@@ -444,8 +444,8 @@ public enum TKLocales {
         }
 
         public enum Settings {
-            /// Selected transactions will be paid by Tonkeeper Battery.
-            public static let caption = TKLocales.tr("Localizable", "battery.settings.caption", fallback: "Selected transactions will be paid by Tonkeeper Battery.")
+            /// Selected transactions will be paid by TosWallet Battery.
+            public static let caption = TKLocales.tr("Localizable", "battery.settings.caption", fallback: "Selected transactions will be paid by TosWallet Battery.")
             /// Battery Settings
             public static let title = TKLocales.tr("Localizable", "battery.settings.title", fallback: "Battery Settings")
             public enum Items {
@@ -459,8 +459,8 @@ public enum TKLocales {
                 public enum Swaps {
                     /// per swap
                     public static let caption = TKLocales.tr("Localizable", "battery.settings.items.swaps.caption", fallback: "per swap")
-                    /// Swaps via Tonkeeper
-                    public static let title = TKLocales.tr("Localizable", "battery.settings.items.swaps.title", fallback: "Swaps via Tonkeeper")
+                    /// Swaps via TosWallet
+                    public static let title = TKLocales.tr("Localizable", "battery.settings.items.swaps.title", fallback: "Swaps via TosWallet")
                 }
 
                 public enum Token {
@@ -511,8 +511,8 @@ public enum TKLocales {
 
     public enum Browser {
         public enum ConnectedApps {
-            /// Explore apps and services in Tonkeeper browser.
-            public static let emptyDescription = TKLocales.tr("Localizable", "browser.connected_apps.empty_description", fallback: "Explore apps and services in Tonkeeper browser.")
+            /// Explore apps and services in TosWallet browser.
+            public static let emptyDescription = TKLocales.tr("Localizable", "browser.connected_apps.empty_description", fallback: "Explore apps and services in TosWallet browser.")
             /// Connected apps will be shown here
             public static let emptyTitle = TKLocales.tr("Localizable", "browser.connected_apps.empty_title", fallback: "Connected apps will be shown here")
             public enum Disconnect {
@@ -560,17 +560,17 @@ public enum TKLocales {
     }
 
     public enum BuyListPopup {
-        /// You are opening an external app not operated by Tonkeeper.
-        public static let youAreOpeningExternalApp = TKLocales.tr("Localizable", "buy_list_popup.you_are_opening_external_app", fallback: "You are opening an external app not operated by Tonkeeper.")
+        /// You are opening an external app not operated by TosWallet.
+        public static let youAreOpeningExternalApp = TKLocales.tr("Localizable", "buy_list_popup.you_are_opening_external_app", fallback: "You are opening an external app not operated by TosWallet.")
     }
 
     public enum P2pExpressPopup {
-        /// To purchase crypto with fiat, complete the payment via Wallet in Telegram using P2P, then transfer the funds to your Tonkeeper wallet.
-        public static let caption = TKLocales.tr("Localizable", "p2p_express_popup.caption", fallback: "To purchase crypto with fiat, complete the payment via Wallet in Telegram using P2P, then transfer the funds to your Tonkeeper wallet.")
+        /// To purchase crypto with fiat, complete the payment via Wallet in Telegram using P2P, then transfer the funds to your TosWallet wallet.
+        public static let caption = TKLocales.tr("Localizable", "p2p_express_popup.caption", fallback: "To purchase crypto with fiat, complete the payment via Wallet in Telegram using P2P, then transfer the funds to your TosWallet wallet.")
         /// Don't show again
         public static let doNotShowAgain = TKLocales.tr("Localizable", "p2p_express_popup.do_not_show_again", fallback: "Don't show again")
-        /// You are opening an external app not operated by Tonkeeper.
-        public static let externalWarning = TKLocales.tr("Localizable", "p2p_express_popup.external_warning", fallback: "You are opening an external app not operated by Tonkeeper.")
+        /// You are opening an external app not operated by TosWallet.
+        public static let externalWarning = TKLocales.tr("Localizable", "p2p_express_popup.external_warning", fallback: "You are opening an external app not operated by TosWallet.")
         /// Open
         public static let openButton = TKLocales.tr("Localizable", "p2p_express_popup.open_button", fallback: "Open")
         /// Buy via Wallet P2P
@@ -813,14 +813,14 @@ public enum TKLocales {
         }
 
         public enum OpenWarningPopup {
-            /// You are opening an external app not operated by Tonkeeper. Proceed only if you trust the source.
-            public static let warning = TKLocales.tr("Localizable", "dapp.open_warning_popup.warning", fallback: "You are opening an external app not operated by Tonkeeper. Proceed only if you trust the source.")
+            /// You are opening an external app not operated by TosWallet. Proceed only if you trust the source.
+            public static let warning = TKLocales.tr("Localizable", "dapp.open_warning_popup.warning", fallback: "You are opening an external app not operated by TosWallet. Proceed only if you trust the source.")
         }
 
         public enum SharingPopup {
-            /// This link opens %@ directly in Tonkeeper. You can use it again later or share it if needed.
+            /// This link opens %@ directly in TosWallet. You can use it again later or share it if needed.
             public static func caption(_ p1: Any) -> String {
-                return TKLocales.tr("Localizable", "dapp.sharing_popup.caption", String(describing: p1), fallback: "This link opens %@ directly in Tonkeeper. You can use it again later or share it if needed.")
+                return TKLocales.tr("Localizable", "dapp.sharing_popup.caption", String(describing: p1), fallback: "This link opens %@ directly in TosWallet. You can use it again later or share it if needed.")
             }
 
             /// Share %@
@@ -867,8 +867,8 @@ public enum TKLocales {
     }
 
     public enum Errors {
-        /// Please use Tonkeeper Desktop for Multi-Wallet Account
-        public static let multiaccountError = TKLocales.tr("Localizable", "errors.multiaccount_error", fallback: "Please use Tonkeeper Desktop for Multi-Wallet Account")
+        /// Please use TosWallet Desktop for Multi-Wallet Account
+        public static let multiaccountError = TKLocales.tr("Localizable", "errors.multiaccount_error", fallback: "Please use TosWallet Desktop for Multi-Wallet Account")
         /// Error
         public static let unknown = TKLocales.tr("Localizable", "errors.unknown", fallback: "Error")
     }
@@ -995,8 +995,8 @@ public enum TKLocales {
     }
 
     public enum ExtraType {
-        /// Tonkeeper Battery
-        public static let battery = TKLocales.tr("Localizable", "extra_type.battery", fallback: "Tonkeeper Battery")
+        /// TosWallet Battery
+        public static let battery = TKLocales.tr("Localizable", "extra_type.battery", fallback: "TosWallet Battery")
         /// TON
         public static let ton = TKLocales.tr("Localizable", "extra_type.ton", fallback: "TON")
     }
@@ -1134,8 +1134,8 @@ public enum TKLocales {
         public enum Scan {
             /// About Keystone
             public static let aboutKeystoneButton = TKLocales.tr("Localizable", "keystone.scan.about_keystone_button", fallback: "About Keystone")
-            /// Open Keystone » Connect Software Wallet » Tonkeeper
-            public static let subtitle = TKLocales.tr("Localizable", "keystone.scan.subtitle", fallback: "Open Keystone » Connect Software Wallet » Tonkeeper")
+            /// Open Keystone » Connect Software Wallet » TosWallet
+            public static let subtitle = TKLocales.tr("Localizable", "keystone.scan.subtitle", fallback: "Open Keystone » Connect Software Wallet » TosWallet")
         }
     }
 
@@ -1459,8 +1459,8 @@ public enum TKLocales {
             /// Send only USD₮ TRC20 to this address, or you might lose your funds.
             public static let description = TKLocales.tr("Localizable", "receive.trc20.description", fallback: "Send only USD₮ TRC20 to this address, or you might lose your funds.")
             public enum Popup {
-                /// Use USD₮ TRC20 without TRX. Fees are covered by Tonkeeper Battery.
-                public static let caption = TKLocales.tr("Localizable", "receive.trc20.popup.caption", fallback: "Use USD₮ TRC20 without TRX. Fees are covered by Tonkeeper Battery.")
+                /// Use USD₮ TRC20 without TRX. Fees are covered by TosWallet Battery.
+                public static let caption = TKLocales.tr("Localizable", "receive.trc20.popup.caption", fallback: "Use USD₮ TRC20 without TRX. Fees are covered by TosWallet Battery.")
                 /// USD₮ TRC20
                 public static let title = TKLocales.tr("Localizable", "receive.trc20.popup.title", fallback: "USD₮ TRC20")
                 public enum Buttons {
@@ -1816,8 +1816,8 @@ public enum TKLocales {
             public static let support = TKLocales.tr("Localizable", "settings.items.support", fallback: "Support")
             /// Theme
             public static let theme = TKLocales.tr("Localizable", "settings.items.theme", fallback: "Theme")
-            /// Tonkeeper news
-            public static let tkNews = TKLocales.tr("Localizable", "settings.items.tk_news", fallback: "Tonkeeper news")
+            /// TosWallet news
+            public static let tkNews = TKLocales.tr("Localizable", "settings.items.tk_news", fallback: "TosWallet news")
             /// Wallet v4R2
             public static let walletV4R2 = TKLocales.tr("Localizable", "settings.items.wallet_v4R2", fallback: "Wallet v4R2")
             /// Wallet W5
@@ -1933,8 +1933,8 @@ public enum TKLocales {
         }
 
         public enum Trc20 {
-            /// Use USD₮ TRC20 without TRX. Fees are covered by Tonkeeper Battery.
-            public static let description = TKLocales.tr("Localizable", "settings.trc20.description", fallback: "Use USD₮ TRC20 without TRX. Fees are covered by Tonkeeper Battery.")
+            /// Use USD₮ TRC20 without TRX. Fees are covered by TosWallet Battery.
+            public static let description = TKLocales.tr("Localizable", "settings.trc20.description", fallback: "Use USD₮ TRC20 without TRX. Fees are covered by TosWallet Battery.")
         }
     }
 
@@ -2034,8 +2034,8 @@ public enum TKLocales {
     public enum StakingBalanceDetails {
         /// after the end of the cycle
         public static let afterEndOfCycle = TKLocales.tr("Localizable", "staking_balance_details.after_end_of_cycle", fallback: "after the end of the cycle")
-        /// Staking is based on smart contracts by third parties. Tonkeeper is not responsible for staking experience.
-        public static let description = TKLocales.tr("Localizable", "staking_balance_details.description", fallback: "Staking is based on smart contracts by third parties. Tonkeeper is not responsible for staking experience.")
+        /// Staking is based on smart contracts by third parties. TosWallet is not responsible for staking experience.
+        public static let description = TKLocales.tr("Localizable", "staking_balance_details.description", fallback: "Staking is based on smart contracts by third parties. TosWallet is not responsible for staking experience.")
         /// When you stake TON in a Tonstakers pool, you receive a token called tsTON that represents your share in the pool. As the pool accumulates profits, your tsTON represents larger amount of TON.
         public static let jettonButtonDescription = TKLocales.tr("Localizable", "staking_balance_details.jetton_button_description", fallback: "When you stake TON in a Tonstakers pool, you receive a token called tsTON that represents your share in the pool. As the pool accumulates profits, your tsTON represents larger amount of TON.")
         /// Minimal Deposit
@@ -2110,8 +2110,8 @@ public enum TKLocales {
         public static let apy = TKLocales.tr("Localizable", "staking_pool_details.apy", fallback: "APY")
         /// Choose
         public static let choose = TKLocales.tr("Localizable", "staking_pool_details.choose", fallback: "Choose")
-        /// Staking is based on smart contracts by third parties. Tonkeeper is not responsible for staking experience.
-        public static let description = TKLocales.tr("Localizable", "staking_pool_details.description", fallback: "Staking is based on smart contracts by third parties. Tonkeeper is not responsible for staking experience.")
+        /// Staking is based on smart contracts by third parties. TosWallet is not responsible for staking experience.
+        public static let description = TKLocales.tr("Localizable", "staking_pool_details.description", fallback: "Staking is based on smart contracts by third parties. TosWallet is not responsible for staking experience.")
         /// MAX APY
         public static let maxApy = TKLocales.tr("Localizable", "staking_pool_details.max_apy", fallback: "MAX APY")
         /// Minimal Deposit
@@ -2129,12 +2129,12 @@ public enum TKLocales {
     }
 
     public enum SubscriptionPluginWarning {
-        /// Open Tonkeeper Web
-        public static let button = TKLocales.tr("Localizable", "subscription_plugin_warning.button", fallback: "Open Tonkeeper Web")
-        /// Some of them may continue charging your wallet. Manage them in Tonkeeper Web — sign in with your recovery phrase.
-        public static let captionMany = TKLocales.tr("Localizable", "subscription_plugin_warning.caption_many", fallback: "Some of them may continue charging your wallet. Manage them in Tonkeeper Web — sign in with your recovery phrase.")
-        /// It may continue charging your wallet. Manage it in Tonkeeper Web — sign in with your recovery phrase.
-        public static let captionOne = TKLocales.tr("Localizable", "subscription_plugin_warning.caption_one", fallback: "It may continue charging your wallet. Manage it in Tonkeeper Web — sign in with your recovery phrase.")
+        /// Open TosWallet Web
+        public static let button = TKLocales.tr("Localizable", "subscription_plugin_warning.button", fallback: "Open TosWallet Web")
+        /// Some of them may continue charging your wallet. Manage them in TosWallet Web — sign in with your recovery phrase.
+        public static let captionMany = TKLocales.tr("Localizable", "subscription_plugin_warning.caption_many", fallback: "Some of them may continue charging your wallet. Manage them in TosWallet Web — sign in with your recovery phrase.")
+        /// It may continue charging your wallet. Manage it in TosWallet Web — sign in with your recovery phrase.
+        public static let captionOne = TKLocales.tr("Localizable", "subscription_plugin_warning.caption_one", fallback: "It may continue charging your wallet. Manage it in TosWallet Web — sign in with your recovery phrase.")
         public enum Title {
             /// You have %@ expired subscriptions from @donate
             public static func few(_ p1: Any) -> String {
@@ -2249,8 +2249,8 @@ public enum TKLocales {
                     public static let caption = TKLocales.tr("Localizable", "token_details.trc20.usdt.battery_banner.caption", fallback: "Battery charges are used to cover transaction fees, making transfers simpler and more cost-effective.")
                     /// Charge Battery
                     public static let chargeButton = TKLocales.tr("Localizable", "token_details.trc20.usdt.battery_banner.charge_button", fallback: "Charge Battery")
-                    /// Tonkeeper Battery required for USD₮ TRC20
-                    public static let title = TKLocales.tr("Localizable", "token_details.trc20.usdt.battery_banner.title", fallback: "Tonkeeper Battery required for USD₮ TRC20")
+                    /// TosWallet Battery required for USD₮ TRC20
+                    public static let title = TKLocales.tr("Localizable", "token_details.trc20.usdt.battery_banner.title", fallback: "TosWallet Battery required for USD₮ TRC20")
                 }
             }
         }
@@ -2352,8 +2352,8 @@ public enum TKLocales {
 
             public enum FeeOptions {
                 public enum Caption {
-                    /// Tonkeeper Battery is the easiest way to pay blockchain fees. You can also top up balance with TON and TRX coins directly.
-                    public static let `default` = TKLocales.tr("Localizable", "tron_usdt_fees.common.fee_options.caption.default", fallback: "Tonkeeper Battery is the easiest way to pay blockchain fees. You can also top up balance with TON and TRX coins directly.")
+                    /// TosWallet Battery is the easiest way to pay blockchain fees. You can also top up balance with TON and TRX coins directly.
+                    public static let `default` = TKLocales.tr("Localizable", "tron_usdt_fees.common.fee_options.caption.default", fallback: "TosWallet Battery is the easiest way to pay blockchain fees. You can also top up balance with TON and TRX coins directly.")
                     /// Сhoose a fee payment method and top up.
                     public static let insufficient = TKLocales.tr("Localizable", "tron_usdt_fees.common.fee_options.caption.insufficient", fallback: "Сhoose a fee payment method and top up.")
                 }

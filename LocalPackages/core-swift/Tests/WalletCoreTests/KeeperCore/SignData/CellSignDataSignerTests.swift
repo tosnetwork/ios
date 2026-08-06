@@ -23,7 +23,7 @@ struct CellSignDataSignerDomainEncodingTests {
         arguments: [
             TestParameters(
                 domain: "tonkeeper.com",
-                expected: "com\0tonkeeper\0",
+                expected: "com\0toswallet\0",
                 expectedLength: 14
             ),
             TestParameters(
@@ -33,20 +33,20 @@ struct CellSignDataSignerDomainEncodingTests {
             ),
             TestParameters(
                 domain: "tONkEEpEr.CoM",
-                expected: "com\0tonkeeper\0"
+                expected: "com\0toswallet\0"
             ),
             TestParameters(
                 domain: "tonkeeper.com.",
-                expected: "com\0tonkeeper\0"
+                expected: "com\0toswallet\0"
             ),
             TestParameters(
-                domain: "tonkeeper",
-                expected: "tonkeeper\0",
+                domain: "toswallet",
+                expected: "toswallet\0",
                 expectedLength: 10
             ),
             TestParameters(
-                domain: "tonkeeper.",
-                expected: "tonkeeper\0"
+                domain: "toswallet.",
+                expected: "toswallet\0"
             ),
             TestParameters(
                 domain: ".",

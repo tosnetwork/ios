@@ -662,7 +662,7 @@ private extension SettingsCoordinator {
                     try LogExporter.exportToTemporaryFile(
                         domain: nil,
                         lastHours: 2,
-                        filenamePrefix: "tonkeeper_logs"
+                        filenamePrefix: "toswallet_logs"
                     )
                 }.value
 

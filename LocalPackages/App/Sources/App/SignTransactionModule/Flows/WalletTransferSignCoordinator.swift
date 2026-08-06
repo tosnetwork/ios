@@ -461,7 +461,7 @@ private extension WalletTransferSignCoordinator {
             }
         }
 
-        let tonSignRequest = try TonSignRequest(requestId: nil, signData: transfer, dataType: 1, cryptoKeypath: cryptoKeypath, address: wallet.address.toFriendly(bounceable: false).toString(), origin: "Tonkeeper")
+        let tonSignRequest = try TonSignRequest(requestId: nil, signData: transfer, dataType: 1, cryptoKeypath: cryptoKeypath, address: wallet.address.toFriendly(bounceable: false).toString(), origin: "TosWallet")
 
         return try UR(type: "ton-sign-request", cbor: tonSignRequest.toCBOR())
     }

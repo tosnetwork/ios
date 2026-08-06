@@ -34,7 +34,7 @@ public struct Assembly {
 
     public func storiesService() -> StoriesService {
         StoriesServiceImplementation(
-            api: keeperCoreAssembly.tonkeeperAPIAssembly.api,
+            api: keeperCoreAssembly.toswalletAPIAssembly.api,
             shownStoriesRepository: ShownStoriesRepositoryImplementation(
                 fileSystemVault: keeperCoreAssembly.coreAssembly.fileSystemVault()
             )

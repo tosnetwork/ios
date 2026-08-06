@@ -73,8 +73,8 @@ public final class Configuration {
         configurations.mainnet.directSupportUrl
     }
 
-    public var tonkeeperNewsUrl: URL? {
-        configurations.mainnet.tonkeeperNewsUrl
+    public var toswalletNewsUrl: URL? {
+        configurations.mainnet.toswalletNewsUrl
     }
 
     public var stonfiUrl: URL? {

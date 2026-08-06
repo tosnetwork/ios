@@ -51,11 +51,11 @@ public final class Assembly {
         coreAssembly: coreAssembly
     )
     private lazy var buySellAssembly = BuySellAssembly(
-        tonkeeperApiAssembly: tonkeeperApiAssembly,
+        toswalletApiAssembly: toswalletApiAssembly,
         coreAssembly: coreAssembly
     )
     private lazy var knownAccountsAssembly = KnownAccountsAssembly(
-        tonkeeperApiAssembly: tonkeeperApiAssembly,
+        toswalletApiAssembly: toswalletApiAssembly,
         coreAssembly: coreAssembly
     )
 
@@ -72,7 +72,7 @@ public final class Assembly {
     )
 
     lazy var apiAssembly = APIAssembly(configurationAssembly: configurationAssembly)
-    lazy var tonkeeperApiAssembly = TonkeeperAPIAssembly(
+    lazy var toswalletApiAssembly = TosWalletAPIAssembly(
         appInfoProvider: dependencies.appInfoProvider,
         coreAssembly: coreAssembly
     )
@@ -87,7 +87,7 @@ public final class Assembly {
         repositoriesAssembly: repositoriesAssembly,
         storesAssembly: storesAssembly,
         apiAssembly: apiAssembly,
-        tonkeeperAPIAssembly: tonkeeperApiAssembly,
+        toswalletAPIAssembly: toswalletApiAssembly,
         scamAPIAssembly: scamAPIAssembly,
         coreAssembly: coreAssembly,
         secureAssembly: secureAssembly,
@@ -106,7 +106,7 @@ public final class Assembly {
     private lazy var loadersAssembly = LoadersAssembly(
         servicesAssembly: servicesAssembly,
         storesAssembly: storesAssembly,
-        tonkeeperAPIAssembly: tonkeeperApiAssembly,
+        toswalletAPIAssembly: toswalletApiAssembly,
         apiAssembly: apiAssembly,
         knownAccountsAssembly: knownAccountsAssembly,
         tronAssembly: tronUSDTAssembly,
@@ -161,7 +161,7 @@ public extension Assembly {
             buySellAssembly: buySellAssembly,
             batteryAssembly: batteryAssembly,
             knownAccountsAssembly: knownAccountsAssembly,
-            tonkeeperAPIAssembly: tonkeeperApiAssembly,
+            toswalletAPIAssembly: toswalletApiAssembly,
             apiAssembly: apiAssembly,
             loadersAssembly: loadersAssembly,
             backgroundUpdateAssembly: backgroundUpdateAssembly,

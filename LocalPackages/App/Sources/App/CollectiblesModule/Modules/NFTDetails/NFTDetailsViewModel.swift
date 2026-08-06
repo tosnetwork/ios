@@ -483,7 +483,7 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
 
             let contentColor: UIColor = isPrimary ? .Button.primaryForeground : category.titleColor
 
-            // https://linear.app/tonkeeper/issue/IOS-279
+            // https://linear.app/toswallet/issue/IOS-279
             // Если заголовок у кнопки - "Manage", то брать из локализации
             if label == .manageButtonTitle {
                 label = TKLocales.NftDetails.ManageButton.title

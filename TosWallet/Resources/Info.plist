@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>APP_GROUP_IDENTIFIER</key>
+	<string>$(APP_GROUP_IDENTIFIER)</string>
+	<key>APP_NAME</key>
+	<string>$(APP_NAME)</string>
+	<key>AppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tos</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tos-mob</string>
+			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>KEYCHAIN_ACCESS_GROUP</key>
+	<string>$(KEYCHAIN_ACCESS_GROUP)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+		<key>OLD_APP_GROUP_IDENTIFIER</key>
+		<string>$(OLD_APP_GROUP_IDENTIFIER)</string>
+		<key>PLATFORM</key>
+		<string>$(PLATFORM)</string>
+	<key>PrivacyPolicyURL</key>
+	<string>$(PRIVACY_POLICY_URL)</string>
+	<key>TermsOfServiceURL</key>
+	<string>$(TERMS_OF_SERVICE_URL)</string>
+	<key>TosWalletSwapURL</key>
+	<string>$(TONKEEPER_SWAP_URL)</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIDesignRequiresCompatibility</key>
+	<true/>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+</dict>
+</plist>

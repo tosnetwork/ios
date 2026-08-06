@@ -555,8 +555,8 @@ public extension UIImage {
                     .imageWithName("Icons/44/ic-tonwhales-44")
                 }
 
-                public static var tonkeeperLogo: UIImage {
-                    .imageWithName("Icons/44/ic-tonkeeper-44")
+                public static var toswalletLogo: UIImage {
+                    .imageWithName("Icons/44/ic-toswallet-44")
                 }
             }
 

@@ -1,6 +1,6 @@
 //
 //  QRScannerSwipeDownButton.swift
-//  Tonkeeper
+//  TosWallet
 //
 //  Created by Grigory on 19.7.23..
 //

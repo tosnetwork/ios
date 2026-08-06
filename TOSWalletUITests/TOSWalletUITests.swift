@@ -428,7 +428,7 @@ final class TOSWalletUITests: XCTestCase {
         importFixtureWalletToHome()
         app.terminate()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
-        app.launchEnvironment["TOS_UI_TEST_DEEP_LINK"] = "tonkeeper://swap?from=TON&to=USDT"
+        app.launchEnvironment["TOS_UI_TEST_DEEP_LINK"] = "toswallet://swap?from=TON&to=USDT"
         app.launch()
         XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
         enterPasscode("1234")
@@ -1238,7 +1238,7 @@ final class TOSWalletUITests: XCTestCase {
         let forbiddenCopy = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label MATCHES[c] %@",
-                ".*(^|[^A-Za-z])(TON|Tonkeeper|TRON|TRC20|Jetton|NFT|Swap|Staking|Buy|DApp|TonConnect)([^A-Za-z]|$).*"
+                ".*(^|[^A-Za-z])(TON|TosWallet|TRON|TRC20|Jetton|NFT|Swap|Staking|Buy|DApp|TonConnect)([^A-Za-z]|$).*"
             )
         )
         XCTAssertEqual(

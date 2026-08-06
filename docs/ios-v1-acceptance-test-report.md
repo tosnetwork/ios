@@ -15,7 +15,7 @@
 | Suite | Result | Evidence |
 | --- | --- | --- |
 | Full simulator build | Passed | `make compile`; 129-target graph; no embedded Widget or Intents extension |
-| Unsigned generic-device release archive | Passed | `make archive_v1_release`; `TonkeeperRelease`; `Archive Succeeded` |
+| Unsigned generic-device release archive | Passed | `make archive_v1_release`; `TosWalletRelease`; `Archive Succeeded` |
 | V1 static/build-artifact gate | Passed | Main app privacy manifest is embedded and linted; tracking is disabled; deferred extensions, permissions, schemes, and entitlements are rejected |
 | iOS UI tests | Passed | 41 tests, 0 failures; 2,656.049 seconds |
 | WalletCore/CoreComponents | Passed | `make test_all`; all discovered native mapper, client, storage, formatter, mnemonic, and regression suites passed |

@@ -14,7 +14,7 @@ extension RemoteConfiguration {
         mercuryoSecret = try? container.decodeIfPresent(String.self, forKey: .mercuryoSecret)
         supportLink = try? container.decodeIfPresent(URL.self, forKey: .supportLink)
         directSupportUrl = try? container.decodeIfPresent(URL.self, forKey: .directSupportUrl)
-        tonkeeperNewsUrl = try? container.decodeIfPresent(URL.self, forKey: .tonkeeperNewsUrl)
+        toswalletNewsUrl = try? container.decodeIfPresent(URL.self, forKey: .toswalletNewsUrl)
         stonfiUrl = try? container.decodeIfPresent(URL.self, forKey: .stonfiUrl)
         webSwapsUrl = try? container.decodeIfPresent(URL.self, forKey: .webSwapsUrl)
         faqUrl = try? container.decodeIfPresent(URL.self, forKey: .faqUrl)
@@ -45,7 +45,7 @@ extension RemoteConfiguration {
         tronApiUrl = try? container.decodeIfPresent(String.self, forKey: .tronApiUrl)
         tronSwapUrl = (try? container.decode(String.self, forKey: .tronSwapUrl)) ?? empty.tronSwapUrl
         tronSwapTitle = (try? container.decode(String.self, forKey: .tronSwapTitle)) ?? empty.tronSwapTitle
-        tonkeeperApiUrl = try? container.decodeIfPresent(String.self, forKey: .tonkeeperApiUrl)
+        toswalletApiUrl = try? container.decodeIfPresent(String.self, forKey: .toswalletApiUrl)
         multichainHelpUrl = try? container.decodeIfPresent(URL.self, forKey: .multichainHelpUrl) ?? empty.multichainHelpUrl
     }
 
@@ -59,7 +59,7 @@ extension RemoteConfiguration {
         case mercuryoSecret
         case supportLink
         case directSupportUrl
-        case tonkeeperNewsUrl
+        case toswalletNewsUrl
         case stonfiUrl
         case webSwapsUrl = "web_swaps_url"
         case faqUrl = "faq_url"
@@ -90,7 +90,7 @@ extension RemoteConfiguration {
         case tronApiUrl = "tron_api_url"
         case tronSwapUrl = "tron_swap_url"
         case tronSwapTitle = "tron_swap_title"
-        case tonkeeperApiUrl = "tonkeeper_api_url"
+        case toswalletApiUrl = "toswallet_api_url"
         case multichainHelpUrl = "multichain_help_url"
     }
 }

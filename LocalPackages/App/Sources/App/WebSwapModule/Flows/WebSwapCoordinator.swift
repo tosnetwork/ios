@@ -39,7 +39,7 @@ public final class WebSwapCoordinator: RouterCoordinator<NavigationControllerRou
         openSwap()
     }
 
-    public func handleTonkeeperPublishDeeplink(sign: Data) -> Bool {
+    public func handleTosWalletPublishDeeplink(sign: Data) -> Bool {
         guard let walletTransferSignCoordinator else { return false }
 
         walletTransferSignCoordinator.externalSignHandler?(sign)

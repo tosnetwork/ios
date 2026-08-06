@@ -6,7 +6,7 @@ import XCTest
 final class DeeplinksParserTests: XCTestCase {
     let parser = DeeplinkParser()
 
-    func testTransferTonkeeperDeeplinkParsing() throws {
+    func testTransferTosWalletDeeplinkParsing() throws {
         let address = "EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG21n"
         let text = "just comment"
         let amount = "10000"
@@ -76,7 +76,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testStakingTonkeeperDeeplinkParsing() throws {
+    func testStakingTosWalletDeeplinkParsing() throws {
         let string = "tos://staking"
         let result = Deeplink.staking
 
@@ -85,7 +85,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testStakingTonkeeperUniversalLinkParsing() throws {
+    func testStakingTosWalletUniversalLinkParsing() throws {
         let string = "https://app.tos.network/staking"
         let result = Deeplink.staking
 
@@ -94,7 +94,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testBuyTonkeeperDeeplinkParsing() throws {
+    func testBuyTosWalletDeeplinkParsing() throws {
         let string = "tos://buy-ton"
         let result = Deeplink.buyTon
 
@@ -112,7 +112,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testBuyTonkeeperUniversaLinkParsing() throws {
+    func testBuyTosWalletUniversaLinkParsing() throws {
         let string = "https://app.tos.network/buy-ton"
         let result = Deeplink.buyTon
 
@@ -131,7 +131,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testExchangeTonkeeperDeeplinkParsing() throws {
+    func testExchangeTosWalletDeeplinkParsing() throws {
         let provider = "neocrypto"
         let string = "tos://exchange/neocrypto"
         let result = Deeplink.exchange(provider: provider)
@@ -141,7 +141,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testExchangeTonkeeperUniversalLinkParsing() throws {
+    func testExchangeTosWalletUniversalLinkParsing() throws {
         let provider = "neocrypto"
         let string = "https://app.tos.network/exchange/neocrypto"
         let result = Deeplink.exchange(provider: provider)
@@ -164,7 +164,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testSwapTonkeeperDeeplinkParsing() throws {
+    func testSwapTosWalletDeeplinkParsing() throws {
         let string = "tos://swap?ft=TON&tt=FNZ"
         let swapData = Deeplink.SwapData(
             fromToken: "TON",
@@ -177,7 +177,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testSwapTonkeeperUniversalLinkParsing() throws {
+    func testSwapTosWalletUniversalLinkParsing() throws {
         let string = "https://app.tos.network/swap?ft=TON&tt=FNZ"
         let swapData = Deeplink.SwapData(
             fromToken: "TON",
@@ -199,7 +199,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testActionTonkeeperDeeplinkParsing() throws {
+    func testActionTosWalletDeeplinkParsing() throws {
         let string = "tos://action/f0389f350dd7b6bba35ce0dd12d4e2cf557c2613bca2426d2e0c3055ac105994"
         let result = Deeplink.action(eventId: "f0389f350dd7b6bba35ce0dd12d4e2cf557c2613bca2426d2e0c3055ac105994")
 
@@ -208,7 +208,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testActionTonkeeperUniversalLinkParsing() throws {
+    func testActionTosWalletUniversalLinkParsing() throws {
         let string = "https://app.tos.network/action/f0389f350dd7b6bba35ce0dd12d4e2cf557c2613bca2426d2e0c3055ac105994"
         let result = Deeplink.action(eventId: "f0389f350dd7b6bba35ce0dd12d4e2cf557c2613bca2426d2e0c3055ac105994")
 
@@ -226,7 +226,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testPoolTonkeeperDeeplinkParsing() throws {
+    func testPoolTosWalletDeeplinkParsing() throws {
         let string = "tos://pool/0:a45b17f28409229b78360e3290420f13e4fe20f90d7e2bf8c4ac6703259e22fa"
         let result = try Deeplink.pool(Address.parse("0:a45b17f28409229b78360e3290420f13e4fe20f90d7e2bf8c4ac6703259e22fa"))
 
@@ -235,7 +235,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testPoolTonkeeperUnversalLinkParsing() throws {
+    func testPoolTosWalletUnversalLinkParsing() throws {
         let string = "https://app.tos.network/pool/0:a45b17f28409229b78360e3290420f13e4fe20f90d7e2bf8c4ac6703259e22fa"
         let result = try Deeplink.pool(Address.parse("0:a45b17f28409229b78360e3290420f13e4fe20f90d7e2bf8c4ac6703259e22fa"))
 
@@ -254,7 +254,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testPublishTonkeeperDeeplinkParsing() throws {
+    func testPublishTosWalletDeeplinkParsing() throws {
         let string = "tos://publish?sign=9dfab96f693363f48a641c628ae74168d37f7da1745bfd3cbf1b6013cce1477c03ae59e87c8ebe0146c1d755b797020ac29ff6a1797e7ae7d4b61df89c34540f"
         let data: Data = Data(hex: "9dfab96f693363f48a641c628ae74168d37f7da1745bfd3cbf1b6013cce1477c03ae59e87c8ebe0146c1d755b797020ac29ff6a1797e7ae7d4b61df89c34540f")
         let result = Deeplink.publish(sign: data)
@@ -264,7 +264,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testPublishTonkeeperUniversalLinkParsing() throws {
+    func testPublishTosWalletUniversalLinkParsing() throws {
         let string = "https://app.tos.network/publish?sign=9dfab96f693363f48a641c628ae74168d37f7da1745bfd3cbf1b6013cce1477c03ae59e87c8ebe0146c1d755b797020ac29ff6a1797e7ae7d4b61df89c34540f"
         let data: Data = Data(hex: "9dfab96f693363f48a641c628ae74168d37f7da1745bfd3cbf1b6013cce1477c03ae59e87c8ebe0146c1d755b797020ac29ff6a1797e7ae7d4b61df89c34540f")
         let result = Deeplink.publish(sign: data)
@@ -291,7 +291,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testSignerLinkTonkeeperDeeplinkParsing() throws {
+    func testSignerLinkTosWalletDeeplinkParsing() throws {
         let pk = "db642e022c80911fe61f19eb4f22d7fb95c1ea0b589c0f74ecf0cbf6db746c13"
         let name = "MyKey"
         let publicKey = TonSwift.PublicKey(data: Data(hex: pk))
@@ -308,7 +308,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testSignerLinkTonkeeperUniversalLinkParsing() throws {
+    func testSignerLinkTosWalletUniversalLinkParsing() throws {
         let pk = "db642e022c80911fe61f19eb4f22d7fb95c1ea0b589c0f74ecf0cbf6db746c13"
         let name = "MyKey"
         let publicKey = TonSwift.PublicKey(data: Data(hex: pk))
@@ -325,7 +325,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testReceiveTonkeeperDeeplinkParsing() throws {
+    func testReceiveTosWalletDeeplinkParsing() throws {
         let string = "tos://receive"
         let result = Deeplink.receive
 
@@ -343,7 +343,7 @@ final class DeeplinksParserTests: XCTestCase {
         XCTAssertEqual(parsedDeeplink, result)
     }
 
-    func testBackupTonkeeperDeeplinkParsing() throws {
+    func testBackupTosWalletDeeplinkParsing() throws {
         let string = "tos://backup"
         let result = Deeplink.backup
 

@@ -39,8 +39,8 @@ public final class NativeSwapCoordinator: RouterCoordinator<NavigationController
         openSwap()
     }
 
-    public func handleTonkeeperPublishDeeplink(sign: Data) -> Bool {
-        confirmationCoordinator?.handleTonkeeperPublishDeeplink(sign: sign) ?? false
+    public func handleTosWalletPublishDeeplink(sign: Data) -> Bool {
+        confirmationCoordinator?.handleTosWalletPublishDeeplink(sign: sign) ?? false
     }
 
     override public func didMoveTo(toParent parent: Coordinator?) {

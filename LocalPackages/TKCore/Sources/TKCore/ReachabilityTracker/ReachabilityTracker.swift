@@ -1,6 +1,6 @@
 //
 //  ReachabilityTracker.swift
-//  Tonkeeper
+//  TosWallet
 //
 //  Created by Grigory on 20.9.23..
 //

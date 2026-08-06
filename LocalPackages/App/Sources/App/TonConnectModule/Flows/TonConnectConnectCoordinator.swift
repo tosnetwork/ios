@@ -395,7 +395,7 @@ private extension TonConnectConnectCoordinator {
                         }
                     }
 
-                    let tonSignRequest = try TonSignRequest(requestId: nil, signData: signatureData.data(), dataType: 2, cryptoKeypath: cryptoKeypath, address: wallet.address.toFriendly(bounceable: false).toString(), origin: "Tonkeeper")
+                    let tonSignRequest = try TonSignRequest(requestId: nil, signData: signatureData.data(), dataType: 2, cryptoKeypath: cryptoKeypath, address: wallet.address.toFriendly(bounceable: false).toString(), origin: "TosWallet")
 
                     let ur = try UR(type: "ton-sign-request", cbor: tonSignRequest.toCBOR())
 

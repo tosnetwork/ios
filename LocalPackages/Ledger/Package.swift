@@ -11,6 +11,8 @@ let package = Package(
     products: [
         .library(name: "TonTransport", targets: ["TonTransport"]),
     ],
+    // Compatibility boundary: retain upstream package and module identities.
+    // First-party application branding is owned by the TosWallet targets.
     dependencies: [
         .package(url: "https://github.com/tonkeeper/hw-transport-ios-ble", from: "2.0.0"),
         .package(url: "https://github.com/tonkeeper/ton-swift", revision: "991959e784ce55b65f5a6f66647d149af6eaf362"),

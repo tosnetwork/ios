@@ -7,11 +7,11 @@ public protocol PopularAppsService {
 }
 
 final class PopularAppsServiceImplementation: PopularAppsService {
-    private let api: TonkeeperAPI
+    private let api: TosWalletAPI
     private let popularAppsRepository: PopularAppsRepository
 
     init(
-        api: TonkeeperAPI,
+        api: TosWalletAPI,
         popularAppsRepository: PopularAppsRepository
     ) {
         self.api = api
