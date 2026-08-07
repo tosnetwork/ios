@@ -128,6 +128,20 @@ struct TOSRPCClient {
                 return result
             } catch let error as URLError where attempt < attempts && isTransient(error) {
                 try await Task.sleep(nanoseconds: 100_000_000)
+            } catch let error as Error {
+                // A well-formed JSON-RPC error proves that the node is reachable. It may
+                // reject an address-specific operation (for example, wallet information
+                // for an uninitialized recipient), but that must not put the whole wallet
+                // into its offline state.
+                if case .server = error {
+                    if TOSRPCConnectivity.setUnavailable(false) {
+                        NotificationCenter.default.post(name: .tosRPCAvailable, object: nil)
+                    }
+                } else {
+                    TOSRPCConnectivity.setUnavailable(true)
+                    NotificationCenter.default.post(name: .tosRPCUnavailable, object: nil)
+                }
+                throw error
             } catch {
                 TOSRPCConnectivity.setUnavailable(true)
                 NotificationCenter.default.post(name: .tosRPCUnavailable, object: nil)

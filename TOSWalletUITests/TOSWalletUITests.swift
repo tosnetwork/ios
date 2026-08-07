@@ -578,6 +578,10 @@ final class TOSWalletUITests: XCTestCase {
             object: invalidError
         )
         XCTAssertEqual(XCTWaiter.wait(for: [errorRemoved], timeout: 10), .completed)
+        XCTAssertFalse(
+            app.staticTexts["TOS node unavailable. Pull to retry."].exists,
+            "Recipient validation must not mark a reachable node as unavailable"
+        )
     }
 
     func testSendPasteButtonsUseExactRecipientAndComment() {
