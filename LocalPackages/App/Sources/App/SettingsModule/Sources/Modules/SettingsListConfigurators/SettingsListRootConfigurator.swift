@@ -157,6 +157,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     private func createState() -> SettingsListState {
         var sections = [SettingsListSection]()
 
+        sections.append(createWalletEditSection())
         if let walletSettingsSection = createWalletSettingsSection(configuration: configuration) {
             sections.append(walletSettingsSection)
         }
@@ -164,6 +165,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             sections.append(appSettingsSection)
         }
         sections.append(createWalletMaintenanceSection())
+        sections.append(createLogoutSection())
+        sections.append(createAppInformationSection())
 
         return SettingsListState(
             sections: sections
@@ -185,6 +188,9 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         if let backupItem = createBackupItem() {
             items.append(.listItem(backupItem))
         }
+        if let securityItem = createSecurityItem() {
+            items.append(.listItem(securityItem))
+        }
 
         guard !items.isEmpty else { return nil }
 
@@ -196,7 +202,13 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     }
 
     private func createAppSettingsSection() -> SettingsListSection? {
-        let items = [createRPCNodeItem()]
+        let items = [
+            createNotificationsItem(),
+            createCurrencyItem(),
+            createRPCNodeItem(),
+            createLanguageItem(),
+            createThemeItem(),
+        ]
 
         guard !items.isEmpty else { return nil }
 
@@ -208,11 +220,10 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     }
 
     private func createWalletMaintenanceSection() -> SettingsListSection {
-        var items = [SettingsListItem]()
-        if let deleteItem = createDeleteWalletItem() {
-            items.append(deleteItem)
-        }
-        items.append(createLegalItem())
+        let items = [
+            createRateItem(),
+            createLegalItem(),
+        ]
         return SettingsListSection.listItems(
             SettingsListItemsSection(
                 items: items.map(SettingsListItemsSectionItem.listItem)
@@ -486,6 +497,36 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         )
     }
 
+    private func createLanguageItem() -> SettingsListItem {
+        let languageCode = Locale.preferredLanguages.first
+            .flatMap { Locale(identifier: $0).languageCode }
+        let language = languageCode
+            .flatMap { Locale.current.localizedString(forLanguageCode: $0) }
+            ?? TKLocales.language
+        let cellConfiguration = TKListItemCell.Configuration(
+            listItemContentViewConfiguration: TKListItemContentView.Configuration(
+                textContentViewConfiguration: TKListItemTextContentView.Configuration(
+                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.language)
+                )
+            )
+        )
+        return SettingsListItem(
+            id: .languageItemIdentifier,
+            cellConfiguration: cellConfiguration,
+            accessory: .text(
+                TKListItemTextAccessoryView.Configuration(
+                    text: language.capitalized,
+                    color: .Accent.blue,
+                    textStyle: .label1
+                )
+            ),
+            onSelection: { [weak self] _ in
+                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                self?.didOpenURL?(url)
+            }
+        )
+    }
+
     private func createThemeItem() -> SettingsListItem {
         let cellConfiguration = TKListItemCell.Configuration(
             listItemContentViewConfiguration: TKListItemContentView.Configuration(
@@ -543,6 +584,27 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             onSelection: {
                 [weak self] _ in
                 self?.didTapLegal?()
+            }
+        )
+    }
+
+    private func createRateItem() -> SettingsListItem {
+        let cellConfiguration = TKListItemCell.Configuration(
+            listItemContentViewConfiguration: TKListItemContentView.Configuration(
+                textContentViewConfiguration: TKListItemTextContentView.Configuration(
+                    titleViewConfiguration: TKListItemTitleView.Configuration(title: "Rate TosWallet")
+                )
+            )
+        )
+        return SettingsListItem(
+            id: .rateItemIdentifier,
+            cellConfiguration: cellConfiguration,
+            accessory: .icon(TKListItemIconAccessoryView.Configuration(
+                icon: .TKUIKit.Icons.Size28.star,
+                tintColor: .Icon.secondary
+            )),
+            onSelection: { [weak self] _ in
+                self?.appStoreReviewer.requestReview()
             }
         )
     }
@@ -821,7 +883,9 @@ private extension String {
     static let walletW5ItemIdentifier = "walletW5ItemIdentifier"
     static let walletV4ItemIdentifier = "walletV4ItemIdentifier"
     static let searchItemIdentifier = "SearchItem"
+    static let languageItemIdentifier = "LanguageItem"
     static let themeItemIdentifier = "ThemeItem"
+    static let rateItemIdentifier = "RateItem"
     static let legalItemIdentifier = "LegalItem"
     static let signOutIdentifier = "SignOutIdentifier"
     static let deleteAccountIdentifier = "DeleteAccountItem"

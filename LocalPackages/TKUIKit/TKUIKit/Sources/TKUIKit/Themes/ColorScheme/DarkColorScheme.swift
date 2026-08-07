@@ -2,15 +2,15 @@ import UIKit
 
 struct DarkColorScheme: ColorScheme {
     var backgroundContentAttention: UIColor {
-        return UIColor(hex: "#2F2F33")
+        return UIColor(hex: "#253142")
     }
 
     var backgroundContentTint: UIColor {
-        return UIColor(hex: "#272729")
+        return UIColor(hex: "#192331")
     }
 
     var backgroundContent: UIColor {
-        return UIColor(hex: "#17171A")
+        return UIColor(hex: "#111923")
     }
 
     var backgroundHighlighted: UIColor {
@@ -18,23 +18,23 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var backgroundOverlayExtraLight: UIColor {
-        return UIColor(hex: "#141414", alpha: 0.24)
+        return UIColor(hex: "#02060B", alpha: 0.28)
     }
 
     var backgroundOverlayLight: UIColor {
-        return UIColor(hex: "#141414", alpha: 0.48)
+        return UIColor(hex: "#02060B", alpha: 0.52)
     }
 
     var backgroundOverlayStrong: UIColor {
-        return UIColor(hex: "#141414", alpha: 0.72)
+        return UIColor(hex: "#02060B", alpha: 0.76)
     }
 
     var backgroundPage: UIColor {
-        return UIColor(hex: "#000000")
+        return UIColor(hex: "#080D14")
     }
 
     var backgroundTransparent: UIColor {
-        return UIColor(hex: "#000000", alpha: 0.96)
+        return UIColor(hex: "#080D14", alpha: 0.96)
     }
 
     var backgroundContentPlaceholder: UIColor {
@@ -42,51 +42,51 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var buttonPrimaryBackgroundDisabled: UIColor {
-        return UIColor(hex: "#378AC2")
+        return UIColor(hex: "#765D31")
     }
 
     var buttonPrimaryBackgroundHighlighted: UIColor {
-        return UIColor(hex: "#5BB8F6")
+        return UIColor(hex: "#FFD479")
     }
 
     var buttonPrimaryBackground: UIColor {
-        return UIColor(hex: "#45AEF5")
+        return UIColor(hex: "#EAB953")
     }
 
     var buttonPrimaryForeground: UIColor {
-        return UIColor(hex: "#FFFFFF")
+        return UIColor(hex: "#101722")
     }
 
     var buttonSecondaryBackgroundDisabled: UIColor {
-        return UIColor(hex: "#0E0E0F")
+        return UIColor(hex: "#0D141E")
     }
 
     var buttonSecondaryBackgroundHighlighted: UIColor {
-        return UIColor(hex: "#242429")
+        return UIColor(hex: "#243143")
     }
 
     var buttonSecondaryBackground: UIColor {
-        return UIColor(hex: "#1B1B1F")
+        return UIColor(hex: "#192331")
     }
 
     var buttonSecondaryForeground: UIColor {
-        return UIColor(hex: "#EBEBEB")
+        return UIColor(hex: "#F4F6F8")
     }
 
     var buttonTertiaryBackgroundDisabled: UIColor {
-        return UIColor(hex: "#18181A")
+        return UIColor(hex: "#111923")
     }
 
     var buttonTertiaryBackgroundHighlighted: UIColor {
-        return UIColor(hex: "#353538")
+        return UIColor(hex: "#2A384B")
     }
 
     var buttonTertiaryBackground: UIColor {
-        return UIColor(hex: "#2B2B2E")
+        return UIColor(hex: "#202C3B")
     }
 
     var buttonTertiaryForeground: UIColor {
-        return UIColor(hex: "#EBEBEB")
+        return UIColor(hex: "#F4F6F8")
     }
 
     var buttonPrimaryBackgroundGreen: UIColor {
@@ -102,11 +102,11 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var fieldActiveBorder: UIColor {
-        return UIColor(hex: "#45AEF5")
+        return UIColor(hex: "#EAB953")
     }
 
     var fieldBackground: UIColor {
-        return UIColor(hex: "#17171A")
+        return UIColor(hex: "#111923")
     }
 
     var fieldErrorBackground: UIColor {
@@ -122,15 +122,15 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var iconPrimary: UIColor {
-        return UIColor(hex: "#EBEBEB")
+        return UIColor(hex: "#F4F6F8")
     }
 
     var iconSecondary: UIColor {
-        return UIColor(hex: "#8D8D93")
+        return UIColor(hex: "#A9B3C1")
     }
 
     var iconTertiary: UIColor {
-        return UIColor(hex: "#4E4E52")
+        return UIColor(hex: "#6F7C8D")
     }
 
     var separatorAlternate: UIColor {
@@ -142,15 +142,15 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var tabBarActiveIcon: UIColor {
-        return UIColor(hex: "#45AEF5")
+        return UIColor(hex: "#EAB953")
     }
 
     var tabBarInactiveIcon: UIColor {
-        return UIColor(hex: "#8D8D93")
+        return UIColor(hex: "#8996A8")
     }
 
     var textAccent: UIColor {
-        return UIColor(hex: "#45AEF5")
+        return UIColor(hex: "#EAB953")
     }
 
     var textPrimaryAlternate: UIColor {
@@ -158,27 +158,27 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var textPrimary: UIColor {
-        return UIColor(hex: "#D9D9D9")
+        return UIColor(hex: "#F4F6F8")
     }
 
     var textSecondary: UIColor {
-        return UIColor(hex: "#8D8D93")
+        return UIColor(hex: "#A9B3C1")
     }
 
     var textTertiary: UIColor {
-        return UIColor(hex: "#4E4E52")
+        return UIColor(hex: "#6F7C8D")
     }
 
     var bubbleBackground: UIColor {
-        return UIColor(hex: "#272729")
+        return UIColor(hex: "#192331")
     }
 
     var bubbleForeground: UIColor {
-        return UIColor(hex: "#D9D9D9")
+        return UIColor(hex: "#F4F6F8")
     }
 
     var accentBlue: UIColor {
-        return UIColor(hex: "#45AEF5")
+        return UIColor(hex: "#EAB953")
     }
 
     var accentGreen: UIColor {
@@ -198,7 +198,7 @@ struct DarkColorScheme: ColorScheme {
     }
 
     var constantTonBlue: UIColor {
-        return UIColor(hex: "#0088CC")
+        return UIColor(hex: "#EAB953")
     }
 
     var constantWhite: UIColor {

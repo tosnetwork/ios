@@ -82,7 +82,9 @@ private extension TKBottomSheetViewController {
         dimmingView.prepareForPresentationTransition()
 
         containerView.backgroundColor = .Background.page
-        containerView.layer.cornerRadius = 16
+        containerView.layer.cornerRadius = 24
+        containerView.layer.cornerCurve = .continuous
+        containerView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         containerView.layer.masksToBounds = true
 
         view.addSubview(dimmingView)

@@ -30,7 +30,7 @@ final class LaunchScreenViewController: UIViewController {
 }
 
 private final class TOSGalaxyView: UIView {
-    private let markView = UIImageView(image: UIImage(resource: .icLogo128))
+    private let markView = UIImageView(image: UIImage(resource: .tosLaunchLogo))
     private let haloView = UIView()
 
     override init(frame: CGRect) {
@@ -38,8 +38,8 @@ private final class TOSGalaxyView: UIView {
         isUserInteractionEnabled = false
         accessibilityIdentifier = "launch.tosGalaxy"
 
-        haloView.backgroundColor = UIColor.Accent.blue.withAlphaComponent(0.18)
-        haloView.layer.shadowColor = UIColor.Accent.blue.cgColor
+        haloView.backgroundColor = UIColor.Button.primaryBackground.withAlphaComponent(0.18)
+        haloView.layer.shadowColor = UIColor.Button.primaryBackground.cgColor
         haloView.layer.shadowOpacity = 0.65
         haloView.layer.shadowRadius = 34
         haloView.layer.shadowOffset = .zero
