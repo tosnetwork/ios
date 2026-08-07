@@ -23,9 +23,10 @@ if rg -n --hidden \
     -g '!build/**' \
     -g '!worktrees/**' \
     -g '!.git/**' \
-    'github\.com/(toswallet|tos-wallet)/(ton-swift|ton-api-swift|kit-ios|CryptoSwift|URKit|battery-api-swift|hw-transport-ios-ble)' \
+    -g '!.codex/**' \
+    '(github\.com[/:]|raw\.githubusercontent\.com/)(toswallet|tos-wallet)/' \
     .; then
-    fail "an upstream dependency was rewritten to a fictional TOS repository"
+    fail "an external source was rewritten to a fictional TOS GitHub organization"
 fi
 
 rg -q 'github\.com/tonkeeper/ton-swift' LocalPackages/core-swift/Package.swift \

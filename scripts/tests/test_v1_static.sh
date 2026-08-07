@@ -65,7 +65,7 @@ assert_contains "$main_coordinator" 'guard sendTransferData\.jettonAddress == ni
 
 locale_file="$project_root/LocalPackages/TKLocalize/Sources/TKLocalize/Resources/Locales/en.lproj/Localizable.strings"
 legal_copy=$(rg '^"settings\.legal\.' "$locale_file")
-printf '%s\n' "$legal_copy" | rg -q 'TON|TosWallet' && fail "reachable legal copy contains inherited branding"
+printf '%s\n' "$legal_copy" | rg -q 'TON|Tonkeeper' && fail "reachable legal copy contains inherited branding"
 
 state_file="$project_root/LocalPackages/App/Sources/App/MainModule/Flows/MainCoordinator/MainCoordinatorStateManager.swift"
 assert_contains "$state_file" 'State\(tabs: \[\.wallet, \.history\]\)' "V1 tab state is not exactly Wallet and History"

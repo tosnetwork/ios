@@ -31,9 +31,22 @@ final class MnemonicValidationTests: XCTestCase {
         }
     }
 
-    func testInvalidWordCountIsRejected() {
-        let words = Array(TonSwift.Mnemonic.mnemonicNew().prefix(23))
-        XCTAssertThrowsError(try CoreComponents.Mnemonic(mnemonicWords: words))
+    func testInvalidNativeWordCountsAreRejected() {
+        let validWords = TonSwift.Mnemonic.mnemonicNew()
+
+        XCTAssertThrowsError(try CoreComponents.Mnemonic(mnemonicWords: Array(validWords.prefix(23))))
+        XCTAssertThrowsError(try CoreComponents.Mnemonic(mnemonicWords: validWords + [validWords[0]]))
+    }
+
+    func testTruncatedNativeMnemonicIsDeterministicallyRejected() {
+        let validWords = TonSwift.Mnemonic.mnemonicNew()
+        let truncatedWords = Array(validWords.prefix(23))
+
+        for offset in 0 ..< 1_024 {
+            let rotation = offset % truncatedWords.count
+            let candidate = Array(truncatedWords[rotation...] + truncatedWords[..<rotation])
+            XCTAssertThrowsError(try CoreComponents.Mnemonic(mnemonicWords: candidate))
+        }
     }
 
     func testUnknownWordIsRejected() {

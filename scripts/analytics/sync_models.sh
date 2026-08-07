@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
 
-ANALYTICS_SCHEMAS_REPO_URL=${ANALYTICS_SCHEMAS_REPO_URL:-git@github.com:toswallet/analytics-schemas.git}
+ANALYTICS_SCHEMAS_REPO_URL=${ANALYTICS_SCHEMAS_REPO_URL:-git@github.com:tonkeeper/analytics-schemas.git}
 ANALYTICS_SCHEMAS_ROOT=${ANALYTICS_SCHEMAS_ROOT:-"$REPO_ROOT/.context/analytics-schemas"}
 SRC_DIR="$ANALYTICS_SCHEMAS_ROOT/generated/openapi-swift/TosWalletAnalytics/Classes/OpenAPIs/Models"
 DEST_DIR="$REPO_ROOT/LocalPackages/TKCore/Sources/TKCore/Analytics/Events/Generated"

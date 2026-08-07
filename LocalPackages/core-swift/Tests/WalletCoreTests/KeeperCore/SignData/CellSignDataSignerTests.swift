@@ -22,9 +22,9 @@ struct CellSignDataSignerDomainEncodingTests {
         "Valid domain",
         arguments: [
             TestParameters(
-                domain: "tonkeeper.com",
-                expected: "com\0toswallet\0",
-                expectedLength: 14
+                domain: "example.com",
+                expected: "com\0example\0",
+                expectedLength: 12
             ),
             TestParameters(
                 domain: "ton-connect.github.io",
@@ -32,12 +32,12 @@ struct CellSignDataSignerDomainEncodingTests {
                 expectedLength: 22
             ),
             TestParameters(
-                domain: "tONkEEpEr.CoM",
-                expected: "com\0toswallet\0"
+                domain: "eXamPLe.CoM",
+                expected: "com\0example\0"
             ),
             TestParameters(
-                domain: "tonkeeper.com.",
-                expected: "com\0toswallet\0"
+                domain: "example.com.",
+                expected: "com\0example\0"
             ),
             TestParameters(
                 domain: "toswallet",

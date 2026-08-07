@@ -9,7 +9,11 @@ public struct Mnemonic: Equatable, Codable {
     public var mnemonicWords: [String]
 
     public init(mnemonicWords: [String]) throws {
-        if !TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: mnemonicWords), !MnemonicLegacy.isValidBip39Mnemonic(mnemonicArray: mnemonicWords) {
+        let isNativeMnemonicValid = mnemonicWords.count == 24
+            && TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: mnemonicWords)
+        let isLegacyMnemonicValid = MnemonicLegacy.isValidBip39Mnemonic(mnemonicArray: mnemonicWords)
+
+        if !isNativeMnemonicValid, !isLegacyMnemonicValid {
             throw Error.incorrectMnemonicWords
         }
         self.mnemonicWords = mnemonicWords

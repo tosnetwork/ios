@@ -14,7 +14,9 @@ extension RemoteConfiguration {
         mercuryoSecret = try? container.decodeIfPresent(String.self, forKey: .mercuryoSecret)
         supportLink = try? container.decodeIfPresent(URL.self, forKey: .supportLink)
         directSupportUrl = try? container.decodeIfPresent(URL.self, forKey: .directSupportUrl)
-        toswalletNewsUrl = try? container.decodeIfPresent(URL.self, forKey: .toswalletNewsUrl)
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        toswalletNewsUrl = (try? container.decodeIfPresent(URL.self, forKey: .toswalletNewsUrl))
+            ?? (try? legacyContainer.decodeIfPresent(URL.self, forKey: .tonkeeperNewsUrl))
         stonfiUrl = try? container.decodeIfPresent(URL.self, forKey: .stonfiUrl)
         webSwapsUrl = try? container.decodeIfPresent(URL.self, forKey: .webSwapsUrl)
         faqUrl = try? container.decodeIfPresent(URL.self, forKey: .faqUrl)
@@ -45,7 +47,8 @@ extension RemoteConfiguration {
         tronApiUrl = try? container.decodeIfPresent(String.self, forKey: .tronApiUrl)
         tronSwapUrl = (try? container.decode(String.self, forKey: .tronSwapUrl)) ?? empty.tronSwapUrl
         tronSwapTitle = (try? container.decode(String.self, forKey: .tronSwapTitle)) ?? empty.tronSwapTitle
-        toswalletApiUrl = try? container.decodeIfPresent(String.self, forKey: .toswalletApiUrl)
+        toswalletApiUrl = (try? container.decodeIfPresent(String.self, forKey: .toswalletApiUrl))
+            ?? (try? legacyContainer.decodeIfPresent(String.self, forKey: .tonkeeperApiUrl))
         multichainHelpUrl = try? container.decodeIfPresent(URL.self, forKey: .multichainHelpUrl) ?? empty.multichainHelpUrl
     }
 
@@ -92,6 +95,11 @@ extension RemoteConfiguration {
         case tronSwapTitle = "tron_swap_title"
         case toswalletApiUrl = "toswallet_api_url"
         case multichainHelpUrl = "multichain_help_url"
+    }
+
+    enum LegacyCodingKeys: String, CodingKey {
+        case tonkeeperNewsUrl
+        case tonkeeperApiUrl = "tonkeeper_api_url"
     }
 }
 

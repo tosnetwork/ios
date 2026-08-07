@@ -30,7 +30,7 @@ V1 reaches 100% automated completion only when every row below has a repeatable 
 | --- | --- | --- | --- | --- |
 | BRD-01 | App bundle name and onboarding identify TOS Wallet | Static + UI | Passed | UI title plus built `Info.plist` name and identifier assertions |
 | BRD-02 | Native asset symbol is TOS throughout balance, receive, send, confirmation, and history | Unit + UI | Passed | Native formatter plus zero/funded home, receive, send confirmation, and seeded history UI assertions pass |
-| BRD-03 | Reachable V1 screens contain no TON or TosWallet branding | Static + UI | Passed | Recursive reachable-element scan runs across onboarding, creation/import, home, receive, send/confirmation, history, settings, and legal flows |
+| BRD-03 | Reachable V1 screens contain no TON or Tonkeeper branding | Static + UI | Passed | Recursive reachable-element scan runs across onboarding, creation/import, home, receive, send/confirmation, history, settings, and legal flows |
 | BRD-04 | No TRON/TRC20 entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory plus import/home/receive/send/settings negative assertions and stale-route gates reject TRON/TRC20 |
 | BRD-05 | No Jetton/NFT/Swap/Staking/Buy/DApp/TonConnect entry point is reachable | Unit + UI | Passed | Recursive full-element UI inventory, production V1 filters, and deep-link policy cover every retained V1 surface |
 | BRD-06 | Supported links and RPC defaults use approved TOS schemes and domains | Static + Unit | Passed | Static gate validates remote configuration, built legal URLs, HTTPS `tos.network` hosts, and RPC defaults |
