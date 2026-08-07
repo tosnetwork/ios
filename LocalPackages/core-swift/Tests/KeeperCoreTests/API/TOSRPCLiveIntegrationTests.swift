@@ -121,9 +121,15 @@ final class TOSRPCLiveIntegrationTests: XCTestCase {
             components.port = startPort + offset
             let validatorURL = try XCTUnwrap(components.url?.absoluteString)
             let readyURL = try XCTUnwrap(URL(string: validatorURL + "/readyz"))
-            let (_, response) = try await URLSession.shared.data(from: readyURL)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                throw XCTSkip("Validator RPC is not healthy at \(validatorURL)")
+            do {
+                let (_, response) = try await URLSession.shared.data(from: readyURL)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                    throw XCTSkip("Validator RPC is not healthy at \(validatorURL)")
+                }
+            } catch let skip as XCTSkip {
+                throw skip
+            } catch {
+                throw XCTSkip("No validator RPC at \(validatorURL): \(error.localizedDescription)")
             }
             return TOSRPCClient(basePath: { validatorURL }, urlSession: .shared)
         }
