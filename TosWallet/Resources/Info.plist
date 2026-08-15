@@ -36,6 +36,8 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>TOS Wallet uses the camera to scan wallet addresses and payment QR codes.</string>
 		<key>OLD_APP_GROUP_IDENTIFIER</key>
 		<string>$(OLD_APP_GROUP_IDENTIFIER)</string>
 		<key>PLATFORM</key>

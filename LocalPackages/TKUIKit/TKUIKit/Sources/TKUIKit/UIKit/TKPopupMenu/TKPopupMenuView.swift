@@ -13,7 +13,8 @@ final class TKPopupMenuView: UIView {
     private let backgroundView: UIView = {
         let view = UIView()
         view.backgroundColor = .Background.contentTint
-        view.layer.cornerRadius = 16
+        view.layer.cornerRadius = 20
+        view.layer.cornerCurve = .continuous
         view.layer.masksToBounds = true
         return view
     }()

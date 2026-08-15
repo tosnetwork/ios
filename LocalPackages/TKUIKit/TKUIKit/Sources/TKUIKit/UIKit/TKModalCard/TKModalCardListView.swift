@@ -13,7 +13,8 @@ public final class TKModalCardListView: UIView, ConfigurableView {
         let view = UIView()
         view.backgroundColor = .Background.content
         view.layer.masksToBounds = true
-        view.layer.cornerRadius = 16
+        view.layer.cornerRadius = 20
+        view.layer.cornerCurve = .continuous
         return view
     }()
 

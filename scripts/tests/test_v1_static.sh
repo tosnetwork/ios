@@ -37,7 +37,11 @@ plutil -lint "$app_path/PrivacyInfo.xcprivacy" >/dev/null || fail "V1 privacy ma
 tracking=$(plutil -extract NSPrivacyTracking raw "$app_path/PrivacyInfo.xcprivacy")
 test "$tracking" = "false" || fail "V1 privacy manifest enables tracking"
 
-for forbidden_key in NSBluetoothAlwaysUsageDescription NSCameraUsageDescription NSFaceIDUsageDescription NSUserActivityTypes; do
+camera_usage=$(plutil -extract NSCameraUsageDescription raw "$app_path/Info.plist")
+test "$camera_usage" = "TOS Wallet uses the camera to scan wallet addresses and payment QR codes." \
+    || fail "NSCameraUsageDescription is missing or does not describe Send QR scanning"
+
+for forbidden_key in NSBluetoothAlwaysUsageDescription NSFaceIDUsageDescription NSUserActivityTypes; do
     if plutil -extract "$forbidden_key" raw "$app_path/Info.plist" >/dev/null 2>&1; then
         fail "V1 app declares deferred metadata key $forbidden_key"
     fi

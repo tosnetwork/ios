@@ -63,21 +63,10 @@ final class HistoryV2ViewModelImplementation: HistoryViewModel, HistoryModuleOut
 
     func viewDidLoad() {
         setupTabs()
-
-        backgroundUpdate.addStateObserver(self) { observer, wallet, state in
-            DispatchQueue.main.async {
-                guard wallet == observer.wallet else { return }
-                observer.didUpdateIsConnecting?(observer.isConnecting(state))
-            }
-        }
-        didUpdateIsConnecting?(isConnecting(backgroundUpdate.getState(wallet: wallet)))
-    }
-
-    private func isConnecting(_ backgroundUpdateState: BackgroundUpdateConnectionState) -> Bool {
-        switch backgroundUpdateState {
-        case .connected: return false
-        default: return true
-        }
+        // V1 history is loaded through native TOS JSON-RPC. The legacy streaming
+        // connection is not part of that request and must not keep the title in
+        // a perpetual loading state when the stream endpoint is unavailable.
+        didUpdateIsConnecting?(false)
     }
 
     private func setupTabs() {

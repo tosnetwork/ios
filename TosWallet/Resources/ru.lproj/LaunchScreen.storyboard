@@ -17,7 +17,7 @@
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="ic-logo-128" translatesAutoresizingMaskIntoConstraints="NO" id="Pf7-uI-VT1">
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="tos-launch-logo" translatesAutoresizingMaskIntoConstraints="NO" id="Pf7-uI-VT1">
                                 <rect key="frame" x="132.66666666666666" y="362" width="127.99999999999997" height="128"/>
                                 <color key="tintColor" name="Colors/Text/Accent"/>
                             </imageView>
@@ -38,7 +38,7 @@
         </scene>
     </scenes>
     <resources>
-        <image name="ic-logo-128" width="128" height="128"/>
+        <image name="tos-launch-logo" width="512" height="512"/>
         <namedColor name="Colors/Background/Page">
             <color red="0.062745098039215685" green="0.086274509803921567" blue="0.12156862745098039" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
         </namedColor>

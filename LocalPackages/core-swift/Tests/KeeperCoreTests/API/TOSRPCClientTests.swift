@@ -4,6 +4,7 @@ import XCTest
 final class TOSRPCClientTests: XCTestCase {
     override func tearDown() {
         RPCURLProtocol.handler = nil
+        TOSRPCConnectivity.setUnavailable(false)
         super.tearDown()
     }
 
@@ -38,6 +39,7 @@ final class TOSRPCClientTests: XCTestCase {
     }
 
     func testCallSurfacesNodeError() async throws {
+        TOSRPCConnectivity.setUnavailable(true)
         RPCURLProtocol.handler = { _ in
             (422, #"{"ok":false,"code":-32602,"error":"invalid address"}"#)
         }
@@ -48,6 +50,10 @@ final class TOSRPCClientTests: XCTestCase {
         } catch let TOSRPCClient.Error.server(code, message) {
             XCTAssertEqual(code, -32602)
             XCTAssertEqual(message, "invalid address")
+            XCTAssertFalse(
+                TOSRPCConnectivity.isUnavailable,
+                "A valid JSON-RPC error must prove the node is reachable"
+            )
         }
     }
 
@@ -97,6 +103,7 @@ final class TOSRPCClientTests: XCTestCase {
         } catch let error as URLError {
             XCTAssertEqual(error.code, .cannotConnectToHost)
             XCTAssertEqual(attempts, 2)
+            XCTAssertTrue(TOSRPCConnectivity.isUnavailable)
         }
     }
 

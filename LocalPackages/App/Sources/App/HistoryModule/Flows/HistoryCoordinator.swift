@@ -49,7 +49,7 @@ private extension HistoryCoordinator {
         module.output.didChangeWallet = { [weak self, keeperCoreMainAssembly] wallet in
             let listModule = HistoryListAssembly.module(
                 wallet: wallet,
-                paginationLoader: keeperCoreMainAssembly.loadersAssembly.historyAllEventsPaginationLoader(
+                paginationLoader: keeperCoreMainAssembly.loadersAssembly.historyTonEventsPaginationLoader(
                     wallet: wallet
                 ),
                 cacheProvider: HistoryListAllEventsCacheProvider(historyService: keeperCoreMainAssembly.servicesAssembly.historyService()),
@@ -132,7 +132,7 @@ private extension HistoryCoordinator {
     func openSpamHistory(wallet: Wallet) {
         let spamListModule = SpamHistoryListAssembly.module(
             wallet: wallet,
-            paginationLoader: keeperCoreMainAssembly.loadersAssembly.historyAllEventsPaginationLoader(
+            paginationLoader: keeperCoreMainAssembly.loadersAssembly.historyTonEventsPaginationLoader(
                 wallet: wallet
             ),
             cacheProvider: HistoryListAllEventsCacheProvider(historyService: keeperCoreMainAssembly.servicesAssembly.historyService()),

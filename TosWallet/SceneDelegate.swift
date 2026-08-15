@@ -76,7 +76,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         shield.isAccessibilityElement = true
         shield.accessibilityLabel = "TOS Wallet protected"
 
-        let logo = UIImageView(image: UIImage(resource: .icLogo128))
+        let logo = UIImageView(image: UIImage(resource: .tosLaunchLogo))
         logo.contentMode = .scaleAspectFit
         logo.translatesAutoresizingMaskIntoConstraints = false
         shield.addSubview(logo)
