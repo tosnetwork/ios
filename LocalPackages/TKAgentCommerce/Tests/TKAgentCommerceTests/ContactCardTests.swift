@@ -57,7 +57,7 @@ final class ContactCardTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let vectors = try decoder.decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertEqual(vectors.schema, "atos.native.mobile-buyer-contact-card.v1")
+        XCTAssertEqual(vectors.schema, "tos.service.mobile-buyer-contact-card.v1")
 
         let network = NetworkTuple(networkID: vectors.network.networkId,
                                    genesisRoot: vectors.network.genesisRoot,

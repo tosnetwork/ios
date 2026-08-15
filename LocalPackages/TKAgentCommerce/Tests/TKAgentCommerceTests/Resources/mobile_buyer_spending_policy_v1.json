@@ -1,6 +1,6 @@
 {
-  "schema": "atos.native.mobile-buyer-spending-policy.v1",
-  "note": "Owner spending-policy authorization, enforced locally before every purchase, shared by the iOS and Android owner-controlled clients. Checks run in a fixed order for a deterministic reason. Verified against the Go atosbridge.PolicyEngine. Amounts are decimal atomic strings; the manual mode defers to explicit owner confirmation rather than auto-approving.",
+  "schema": "tos.service.mobile-buyer-spending-policy.v1",
+  "note": "Owner spending-policy authorization, enforced locally before every purchase, shared by the iOS and Android owner-controlled clients. Checks run in a fixed order for a deterministic reason. Verified against the Go servicebridge.PolicyEngine. Amounts are decimal atomic strings; the manual mode defers to explicit owner confirmation rather than auto-approving.",
   "now_unix": 1786800000,
   "policy_base": {
     "asset_master": "0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

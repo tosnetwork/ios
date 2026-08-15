@@ -1,5 +1,5 @@
 {
-  "schema": "atos.native.mobile-buyer-quote-review.v1",
+  "schema": "tos.service.mobile-buyer-quote-review.v1",
   "note": "Canonical Accepted Quote facts the buyer must validate before approval, shared by the iOS and Android confirmation screens. Checks run in a fixed order for a deterministic reason. A Gateway response or a friendly asset ticker never substitutes for a commitment: a missing or malformed commitment is a rejection. Verified against the Go QuoteReview reference.",
   "now_unix": 1786800000,
   "cases": [

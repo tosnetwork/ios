@@ -13,7 +13,7 @@ public enum ResumeAction: String, Sendable {
 }
 
 /// PurchasePhase is the crash-safe purchase-journal phase machine. It mirrors the
-/// atosbridge phase functions so a mobile client resumes a purchase after process
+/// servicebridge phase functions so a mobile client resumes a purchase after process
 /// death with exactly the same safety decision as the buyer engine.
 public enum PurchasePhase {
 

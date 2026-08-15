@@ -52,7 +52,7 @@ final class EscrowProjectionTests: XCTestCase {
 
     func testProjectionMatchesSharedVectors() throws {
         let vectors = try loadVectors()
-        XCTAssertEqual(vectors.schema, "atos.native.mobile-buyer-escrow-projection.v1")
+        XCTAssertEqual(vectors.schema, "tos.service.mobile-buyer-escrow-projection.v1")
         XCTAssertFalse(vectors.cases.isEmpty)
 
         for testCase in vectors.cases {

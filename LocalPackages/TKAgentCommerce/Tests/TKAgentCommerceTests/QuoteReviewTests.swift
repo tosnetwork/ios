@@ -37,7 +37,7 @@ final class QuoteReviewTests: XCTestCase {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let vectors = try decoder.decode(Vectors.self, from: Data(contentsOf: url))
 
-        XCTAssertEqual(vectors.schema, "atos.native.mobile-buyer-quote-review.v1")
+        XCTAssertEqual(vectors.schema, "tos.service.mobile-buyer-quote-review.v1")
         XCTAssertFalse(vectors.cases.isEmpty)
 
         for testCase in vectors.cases {

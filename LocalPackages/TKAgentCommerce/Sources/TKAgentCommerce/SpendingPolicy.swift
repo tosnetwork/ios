@@ -4,7 +4,7 @@ import Foundation
 /// owner's spending policy. `.ok` means the buyer may proceed automatically;
 /// `.manualConfirmation` means it is within policy but needs explicit owner
 /// approval; anything else blocks the spend. Raw values match the shared vectors
-/// and the Go atosbridge.PolicyEngine.
+/// and the Go servicebridge.PolicyEngine.
 public enum PolicyReason: String, Sendable {
     case ok
     case policyInvalid = "policy_invalid"

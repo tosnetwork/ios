@@ -1,5 +1,5 @@
 {
-  "schema": "atos.native.mobile-buyer-escrow-projection.v1",
+  "schema": "tos.service.mobile-buyer-escrow-projection.v1",
   "note": "Buyer-facing projection of finalized escrow runtime state, shared by the iOS and Android Native clients. 'released' is true ONLY in the escrow decoder's release-pending status (settled == funded, receipt bound); 'refunded' only in refund-pending. A gateway response or HTTP success is never payment evidence. A not-found escrow reads as unfunded/awaiting, never funded. Amounts are decimal atomic strings; a value that does not fit an unsigned 64-bit integer must be rejected, never wrapped. iOS and Android must decode these identically.",
   "escrow_status": {
     "awaiting_funding": 0,

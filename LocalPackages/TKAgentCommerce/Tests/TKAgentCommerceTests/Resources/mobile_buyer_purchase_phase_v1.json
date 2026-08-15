@@ -1,6 +1,6 @@
 {
-  "schema": "atos.native.mobile-buyer-purchase-phase.v1",
-  "note": "Crash-safe purchase phase rules shared by the iOS and Android clients so a purchase resumed after process death never re-pays. Only Prepared may take the single funding lease; transitions are strictly forward; and at or after the funding lease, recovery is read-only and never refunds. Verified against the Go atosbridge phase functions.",
+  "schema": "tos.service.mobile-buyer-purchase-phase.v1",
+  "note": "Crash-safe purchase phase rules shared by the iOS and Android clients so a purchase resumed after process death never re-pays. Only Prepared may take the single funding lease; transitions are strictly forward; and at or after the funding lease, recovery is read-only and never refunds. Verified against the Go servicebridge phase functions.",
   "resume": [
     { "phase": "intent", "can_acquire_lease": false, "resume_action": "may_fund" },
     { "phase": "prepared", "can_acquire_lease": true, "resume_action": "may_fund" },

@@ -86,7 +86,7 @@ public enum ContactCard {
     /// contactBytes builds the ed25519 signing preimage. It must be byte-for-byte
     /// identical to the canonical issuer, or every signature check fails.
     public static func contactBytes(_ card: ContactCardFacts) -> [UInt8] {
-        var out = [UInt8]("atos.agent.contact.v1\u{0}".utf8)
+        var out = [UInt8]("tos.service.agent.contact.v1\u{0}".utf8)
         func text(_ value: String) {
             let bytes = [UInt8](value.utf8)
             out.append(contentsOf: bigEndian32(UInt32(bytes.count)))

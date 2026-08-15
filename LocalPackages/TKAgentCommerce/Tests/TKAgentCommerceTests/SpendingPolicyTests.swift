@@ -1,7 +1,7 @@
 import XCTest
 @testable import TKAgentCommerce
 
-/// Decodes the SAME shared spending-policy vector the Go atosbridge.PolicyEngine
+/// Decodes the SAME shared spending-policy vector the Go servicebridge.PolicyEngine
 /// is verified against, so the Swift owner-authorization is proven identical to
 /// the canonical engine and to the Android client.
 final class SpendingPolicyTests: XCTestCase {
@@ -69,7 +69,7 @@ final class SpendingPolicyTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let vectors = try decoder.decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertEqual(vectors.schema, "atos.native.mobile-buyer-spending-policy.v1")
+        XCTAssertEqual(vectors.schema, "tos.service.mobile-buyer-spending-policy.v1")
 
         for testCase in vectors.cases {
             let policy = try resolvePolicy(vectors.policyBase, testCase.policy)

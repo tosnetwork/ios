@@ -1,7 +1,7 @@
 import XCTest
 @testable import TKAgentCommerce
 
-/// Decodes the SAME shared purchase-phase vector the Go atosbridge phase
+/// Decodes the SAME shared purchase-phase vector the Go servicebridge phase
 /// functions are verified against, so the Swift crash-safe resume logic — the
 /// at-most-once payment invariant — is proven identical to the reference and to
 /// the Android client.
@@ -29,7 +29,7 @@ final class PurchasePhaseTests: XCTestCase {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let vectors = try decoder.decode(Vectors.self, from: Data(contentsOf: url))
-        XCTAssertEqual(vectors.schema, "atos.native.mobile-buyer-purchase-phase.v1")
+        XCTAssertEqual(vectors.schema, "tos.service.mobile-buyer-purchase-phase.v1")
 
         for resume in vectors.resume {
             XCTAssertEqual(PurchasePhase.canAcquireFundingLease(resume.phase), resume.canAcquireLease, resume.phase)
