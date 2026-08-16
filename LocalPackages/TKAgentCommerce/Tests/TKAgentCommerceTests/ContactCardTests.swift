@@ -76,6 +76,16 @@ final class ContactCardTests: XCTestCase {
                            "contactBytes mismatch for \(testCase.name)")
             XCTAssertEqual(ContactCard.validateStateless(facts, network: network, nowUnix: vectors.nowUnix).rawValue,
                            testCase.expect, testCase.name)
+            if testCase.expect == ContactReason.ok.rawValue {
+                XCTAssertTrue(ContactCard.verifySignature(facts), testCase.name)
+                let tampered = ContactCardFacts(
+                    agentID: facts.agentID, networkID: facts.networkID,
+                    genesisRoot: facts.genesisRoot, genesisFile: facts.genesisFile,
+                    endpoint: facts.endpoint + "/tampered", capabilities: facts.capabilities,
+                    expiresAtUnix: facts.expiresAtUnix, publicKey: facts.publicKey,
+                    signature: facts.signature)
+                XCTAssertFalse(ContactCard.verifySignature(tampered), testCase.name)
+            }
         }
     }
 }

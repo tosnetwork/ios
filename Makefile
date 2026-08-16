@@ -115,6 +115,7 @@ test_all:
 	$(MAKE) test_tkcore_package
 	$(MAKE) test_tklocalize_package
 	$(MAKE) test_tkchart_package
+	$(MAKE) test_tkagentcommerce
 
 test_project_scheme:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
@@ -158,6 +159,9 @@ test_tklocalize_package: test_project_scheme
 
 test_tkchart_package: SCHEME=TKChart
 test_tkchart_package: test_project_scheme
+
+test_tkagentcommerce: SCHEME=TKAgentCommerce
+test_tkagentcommerce: test_project_scheme
 
 test_core_components: SCHEME=WalletCore
 test_core_components: TEST_ONLY=CoreComponentsTests

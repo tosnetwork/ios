@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// NetworkTuple is the caller's configured TOS network a Contact Card must bind
 /// to. A locator for another network is refused before any connection.
@@ -102,6 +103,16 @@ public enum ContactCard {
         out.append(contentsOf: bigEndian64(card.expiresAtUnix))
         out.append(contentsOf: card.publicKey)
         return out
+    }
+
+    /// verifySignature performs the platform-crypto step that follows the
+    /// stateless checks. It verifies the exact canonical bytes above; malformed
+    /// keys or signatures fail closed.
+    public static func verifySignature(_ card: ContactCardFacts) -> Bool {
+        guard card.publicKey.count == 32, card.signature.count == 64,
+              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: Data(card.publicKey))
+        else { return false }
+        return key.isValidSignature(Data(card.signature), for: Data(contactBytes(card)))
     }
 }
 

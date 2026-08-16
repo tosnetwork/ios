@@ -60,6 +60,7 @@
 		7DCE736C2CE269FE00FD4C72 /* WalletCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7DCE736B2CE269FE00FD4C72 /* WalletCore */; };
 		7DCE736E2CE26A0800FD4C72 /* TKCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7DCE736D2CE26A0800FD4C72 /* TKCore */; };
 		7DCE73702CE26A0C00FD4C72 /* WalletCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7DCE736F2CE26A0C00FD4C72 /* WalletCore */; };
+		5AA83F97C86E4D4B9F2A6172 /* TKAgentCommerce in Frameworks */ = {isa = PBXBuildFile; productRef = 5AA83F97C86E4D4B9F2A6171 /* TKAgentCommerce */; };
 		7DDBBFED2ACCA10E00F811A5 /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7DDBBFEC2ACCA10E00F811A5 /* Intents.framework */; };
 		7DDBBFF02ACCA10E00F811A5 /* IntentHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDBBFEF2ACCA10E00F811A5 /* IntentHandler.swift */; };
 		7DDBBFF42ACCA10E00F811A5 /* TosWalletIntents.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7DDBBFEB2ACCA10E00F811A5 /* TosWalletIntents.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -245,6 +246,7 @@
 		CC97C21DC2D99B3C4747F794 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		E142312F17B4899B64AE4E41 /* TOSWalletUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TOSWalletUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E66F82AA2C2F2BB00009E7C2 /* Ledger */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = Ledger; sourceTree = "<group>"; };
+		5AA83F97C86E4D4B9F2A6173 /* TKAgentCommerce */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = TKAgentCommerce; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -276,6 +278,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5AA83F97C86E4D4B9F2A6172 /* TKAgentCommerce in Frameworks */,
 				7DCE73662CE269EC00FD4C72 /* TKCore in Frameworks */,
 				7DF339922CB400F2003D689D /* TKStories in Frameworks */,
 				7DCE73682CE269EF00FD4C72 /* WalletCore in Frameworks */,
@@ -518,6 +521,7 @@
 		C313EC0A2B50138D009DF825 /* LocalPackages */ = {
 			isa = PBXGroup;
 			children = (
+				5AA83F97C86E4D4B9F2A6173 /* TKAgentCommerce */,
 				84623DF42F3E010C00DFABEE /* TKLogging */,
 				C3D1EF422D537E260075CDAF /* TKAppInfo */,
 				C34E05A82D4BEA3C00EB2B35 /* TKLottieWebView */,
@@ -594,6 +598,7 @@
 			);
 			name = TosWallet;
 			packageProductDependencies = (
+				5AA83F97C86E4D4B9F2A6171 /* TKAgentCommerce */,
 				7DB17F342A4B2F07007C6154 /* AnyFormatKit */,
 				7D143C352A4EC0D300B5FCC0 /* Lottie */,
 				7D5A18112A5406CB00793769 /* Kingfisher */,
@@ -704,6 +709,7 @@
 				EA091DBCED0E4135950F3AB6 /* XCLocalSwiftPackageReference "core-swift" */,
 				D1EB183B90014E6A9D2F1483 /* XCLocalSwiftPackageReference "TKStories" */,
 				615B2E21B5EC48E088884629 /* XCLocalSwiftPackageReference "TKChart" */,
+				5AA83F97C86E4D4B9F2A6170 /* XCLocalSwiftPackageReference "TKAgentCommerce" */,
 				D7BFCA43DDF04845A6D2348C /* XCLocalSwiftPackageReference "App" */,
 				529F5C356D354FF68B293DBD /* XCLocalSwiftPackageReference "TKCoordinator" */,
 				71FC81BC9BB240B583160552 /* XCLocalSwiftPackageReference "TKScreenKit" */,
@@ -2140,6 +2146,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LocalPackages/TKChart;
 		};
+		5AA83F97C86E4D4B9F2A6170 /* XCLocalSwiftPackageReference "TKAgentCommerce" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = LocalPackages/TKAgentCommerce;
+		};
 		71FC81BC9BB240B583160552 /* XCLocalSwiftPackageReference "TKScreenKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = LocalPackages/TKScreenKit;
@@ -2198,6 +2208,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		5AA83F97C86E4D4B9F2A6171 /* TKAgentCommerce */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5AA83F97C86E4D4B9F2A6170 /* XCLocalSwiftPackageReference "TKAgentCommerce" */;
+			productName = TKAgentCommerce;
+		};
 		50C356512BE39C0500539266 /* TKLocalize */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 2251CC574A8D4141B8A9E897 /* XCLocalSwiftPackageReference "TKLocalize" */;
