@@ -1,8 +1,55 @@
+import BigInt
 import Foundation
 @testable import KeeperCore
 import XCTest
 
 final class TOSDNSRulesTests: XCTestCase {
+    private struct TIP1Corpus: Decodable {
+        struct Category: Decodable { let sha256: String }
+        struct NameVector: Decodable {
+            let input: String
+            let encodedHex: String?
+            let result: String
+
+            enum CodingKeys: String, CodingKey {
+                case input, result
+                case encodedHex = "encoded_hex"
+            }
+        }
+        struct Lifecycle: Decodable { let renewalIntervalSeconds: UInt64
+            enum CodingKeys: String, CodingKey { case renewalIntervalSeconds = "renewal_interval_seconds" }
+        }
+        struct ResolverPolicy: Decodable { let maximumContacts: Int
+            enum CodingKeys: String, CodingKey { case maximumContacts = "maximum_contacts" }
+        }
+
+        let schema: String
+        let categories: [String: Category]
+        let nameEncoding: [NameVector]
+        let lifecycle: Lifecycle
+        let resolverPolicy: ResolverPolicy
+
+        enum CodingKeys: String, CodingKey {
+            case schema, categories, lifecycle
+            case nameEncoding = "name_encoding"
+            case resolverPolicy = "resolver_policy"
+        }
+    }
+
+    func testConsumesCanonicalTIP1CorpusWithoutSemanticCopies() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "tip-1-dns-v1", withExtension: "json"))
+        let corpus = try JSONDecoder().decode(TIP1Corpus.self, from: Data(contentsOf: url))
+        XCTAssertEqual(corpus.schema, "tos.tip-1.dns-v1.v1")
+        XCTAssertEqual(corpus.lifecycle.renewalIntervalSeconds, 31_622_400)
+        XCTAssertEqual(corpus.resolverPolicy.maximumContacts, TOSDNSRules.maximumContacts)
+        XCTAssertEqual(corpus.categories["wallet"]?.sha256, String(BigUInt(TOSDNSRules.walletCategory)!, radix: 16))
+        for vector in corpus.nameEncoding where vector.result == "accept" {
+            let encoded = TOSDNSRules.encode(try TOSDNSRules.canonicalName(vector.input))
+                .map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(encoded, vector.encodedHex)
+        }
+    }
+
     func testConsumesTIP1NameEncodingVectors() throws {
         let canonical = try TOSDNSRules.canonicalName("translate.alice.tos")
         XCTAssertEqual(canonical, "translate.alice.tos")

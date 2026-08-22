@@ -85,6 +85,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
+            resources: [.copy("TestData/tip-1-dns-v1.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),
