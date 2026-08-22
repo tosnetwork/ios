@@ -7,7 +7,6 @@ import UIKit
 
 final class RegisterDNSCoordinator: RouterCoordinator<WindowRouter> {
     var didCancel: (() -> Void)?
-    var didFinish: ((RegisterDNSCoordinator) -> Void)?
 
     private weak var walletTransferSignCoordinator: WalletTransferSignCoordinator?
     private let name: String

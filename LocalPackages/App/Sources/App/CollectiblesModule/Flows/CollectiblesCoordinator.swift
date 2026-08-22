@@ -165,7 +165,7 @@ private extension CollectiblesCoordinator {
         alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
         alert.addAction(UIAlertAction(title: TKLocales.Actions.continueAction, style: .default) { [weak self, weak alert] _ in
             guard let self, let name = alert?.textFields?.first?.text, !name.isEmpty else { return }
-            Task { await inspectDomainRegistration(wallet: wallet, name: name) }
+            Task { await self.inspectDomainRegistration(wallet: wallet, name: name) }
         })
         router.rootViewController.present(alert, animated: true)
     }
@@ -230,7 +230,7 @@ private extension CollectiblesCoordinator {
         alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
         alert.addAction(UIAlertAction(title: TKLocales.Actions.continueAction, style: .default) { [weak self, weak alert] _ in
             guard let self, let name = alert?.textFields?.first?.text, !name.isEmpty else { return }
-            Task { await inspectDomainManagement(wallet: wallet, name: name) }
+            Task { await self.inspectDomainManagement(wallet: wallet, name: name) }
         })
         router.rootViewController.present(alert, animated: true)
     }
