@@ -178,6 +178,18 @@ public struct TransferData {
         case renew(RenewDNS)
     }
 
+    public struct DomainOperation {
+        public let target: Address
+        public let amount: BigUInt
+        public let operation: TOSDNSOperation
+
+        public init(target: Address, amount: BigUInt, operation: TOSDNSOperation) {
+            self.target = target
+            self.amount = amount
+            self.operation = operation
+        }
+    }
+
     public enum Stake {
         case deposit(StakeDeposit)
         case withdraw(StakeWithdraw)
@@ -205,6 +217,7 @@ public struct TransferData {
         case tonConnect(TonConnect)
         case stonfiSwap(TonConnect)
         case changeDNSRecord(ChangeDNSRecord)
+        case domainOperation(DomainOperation)
         case stake(Stake)
     }
 

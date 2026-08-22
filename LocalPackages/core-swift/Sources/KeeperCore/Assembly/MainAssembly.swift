@@ -286,7 +286,8 @@ public final class MainAssembly {
         LinkDNSController(
             wallet: wallet,
             nft: nft,
-            sendService: servicesAssembly.sendService()
+            sendService: servicesAssembly.sendService(),
+            dnsService: servicesAssembly.dnsService()
         )
     }
 

@@ -8,6 +8,7 @@ import UIKit
 @MainActor
 protocol CollectiblesModuleOutput: AnyObject {
     var didTapCollectiblesSettings: ((_ isSpam: Bool) -> Void)? { get set }
+    var didTapRegisterDomain: (() -> Void)? { get set }
 }
 
 @MainActor
@@ -26,6 +27,7 @@ final class CollectiblesViewModelImplementation: CollectiblesViewModel, Collecti
     // MARK: - CollectiblesModuleOutput
 
     var didTapCollectiblesSettings: ((_ isSpam: Bool) -> Void)?
+    var didTapRegisterDomain: (() -> Void)?
 
     // MARK: - CollectiblesModuleInput
 
@@ -116,6 +118,13 @@ private extension CollectiblesViewModelImplementation {
             }
         )
         buttonItems.append(settingsButton)
+
+        if wallet.kind != .watchonly {
+            buttonItems.append(CollectiblesNavigationBar.ButtonItem(
+                content: .icon(.TKUIKit.Icons.Size16.plus),
+                action: { [weak self] in self?.didTapRegisterDomain?() }
+            ))
+        }
 
         didUpdateNavigationBarButtons?(buttonItems)
     }

@@ -33,6 +33,22 @@ struct DNSModule {
             coreAssembly: dependencies.coreAssembly
         )
     }
+
+    func createManageDNSCoordinator(
+        window: UIWindow,
+        wallet: Wallet,
+        nft: NFT,
+        action: TOSDNSManagementAction
+    ) -> ManageDNSCoordinator {
+        ManageDNSCoordinator(
+            router: WindowRouter(window: window),
+            nft: nft,
+            action: action,
+            wallet: wallet,
+            keeperCoreMainAssembly: dependencies.keeperCoreMainAssembly,
+            coreAssembly: dependencies.coreAssembly
+        )
+    }
 }
 
 extension DNSModule {

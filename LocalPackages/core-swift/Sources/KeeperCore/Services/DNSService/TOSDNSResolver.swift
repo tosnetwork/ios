@@ -35,6 +35,7 @@ enum TOSDNSRules {
     static let maximumContacts = 8
     static let maximumCheckpointAge: UInt64 = 120
     static let walletCategory = "105311596331855300602201538317979276640056460191511695660591596829410056223515"
+    static let nextResolverCategory = "11732114750494247458678882651681748623800183221773167493832867265755123357695"
 
     static func canonicalName(_ input: String) throws -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -89,6 +90,122 @@ private struct DNSCheckpoint: Equatable {
 private struct TOSDNSResolver {
     typealias Call = (String, [String: Any]) async throws -> [String: Any]
     let call: Call
+
+    func inspectDomain(_ input: String) async throws -> TOSDNSDomainState {
+        let name = try TOSDNSRules.canonicalName(input)
+        let labels = name.split(separator: ".")
+        guard labels.count == 2 else { throw TOSDNSError.invalidName("only second-level .tos names can be managed") }
+        let label = String(labels[0])
+        _ = try TOSDNSOperation.register(label: label).body()
+        let consensus = try await call("getConsensusBlock", [:])
+        let sequence = uint(consensus["consensus_block"])
+        let observedAt = uint(consensus["last_block_utime"])
+        guard sequence > 0, observedAt > 0 else { throw TOSDNSError.invalidResponse("invalid finalized checkpoint") }
+        let now = UInt64(Date().timeIntervalSince1970)
+        try TOSDNSRules.validateCheckpointTime(observedAt, now: now)
+        let rootString = try configRoot(try await call("getConfigParam", ["param": 4, "seqno": sequence]))
+        let root = try Address.parse(rootString)
+
+        let suffix = try Builder().store(data: Data("tos\0".utf8)).endCell()
+        let rootResult = try await runGetter(
+            address: rootString,
+            method: "dnsresolve",
+            stack: [
+                ["slice", ["bytes": try suffix.toBoc().base64EncodedString()]],
+                ["num", TOSDNSRules.nextResolverCategory],
+            ],
+            sequence: sequence
+        )
+        let checkpoint = try bindCheckpoint(rootResult, expected: nil, sequence: sequence)
+        let rootStack = try resultStack(rootResult, count: 2)
+        guard try stackUInt(rootStack[1]) == 32, let collectionRecord = try stackCell(rootStack[0])
+        else { throw TOSDNSError.invalidResponse("DNS root did not expose the .tos Collection") }
+        let collectionString = try parseAddressRecord(collectionRecord, expectedTag: 0xBA93, flags: false)
+        let collection = try Address.parse(collectionString)
+        let labelCell = try Builder().store(data: Data(label.utf8)).endCell()
+        let index = BigUInt(labelCell.hash())
+        let mapped = try await runGetter(
+            address: collectionString,
+            method: "get_nft_address_by_index",
+            stack: [["num", index.description]],
+            sequence: sequence
+        )
+        _ = try bindCheckpoint(mapped, expected: checkpoint, sequence: sequence)
+        guard let itemCell = try stackCell(try resultStack(mapped, count: 1)[0])
+        else { throw TOSDNSError.invalidResponse("Collection omitted the Domain Item address") }
+        let itemString = try parseBareAddress(itemCell)
+        let item = try Address.parse(itemString)
+
+        let account = try await call("getAddressInformation", ["address": itemString, "seqno": sequence])
+        guard account["@type"] as? String == "raw.fullAccountState" else {
+            throw TOSDNSError.invalidResponse("Domain Item account response is invalid")
+        }
+        _ = try bindCheckpoint(account, expected: checkpoint, sequence: sequence)
+        let accountState = account["state"] as? String
+        if accountState == "uninitialized" || accountState == "uninit" || accountState == "nonexist" {
+            return TOSDNSDomainState(
+                canonicalName: name, label: label, rootAddress: root, collectionAddress: collection,
+                itemAddress: item, lifecycle: .available, ownerAddress: nil, maximumBid: 0,
+                auctionEndTime: 0, renewalDeadline: nil, masterchainSequence: sequence,
+                checkpointRootHash: checkpoint.rootHash, checkpointFileHash: checkpoint.fileHash,
+                observedAt: observedAt
+            )
+        }
+        guard accountState == "active" else {
+            throw TOSDNSError.invalidResponse("Domain Item account is not active")
+        }
+
+        let identity = try await call("runGetMethod", [
+            "address": itemString, "method": "get_nft_data", "stack": [], "seqno": sequence,
+        ])
+        guard identity["@type"] as? String == "smc.runResult" else {
+            throw TOSDNSError.invalidResponse("get_nft_data returned an invalid response")
+        }
+        _ = try bindCheckpoint(identity, expected: checkpoint, sequence: sequence)
+        guard int(identity["exit_code"]) == 0 else {
+            throw TOSDNSError.invalidResponse("get_nft_data failed for an active Domain Item")
+        }
+        let identityStack = try resultStack(identity, count: 5)
+        guard try stackBigUInt(identityStack[3]) == index,
+              let actualCollection = try stackCell(identityStack[2]),
+              try parseBareAddress(actualCollection) == collectionString
+        else { throw TOSDNSError.invalidResponse("Domain Item identity mismatch") }
+        let owner: Address?
+        if let ownerCell = try stackCell(identityStack[1]) {
+            owner = try Address.parse(parseBareAddress(ownerCell))
+        } else {
+            owner = nil
+        }
+
+        let auction = try await runGetter(address: itemString, method: "get_auction_info", stack: [], sequence: sequence)
+        _ = try bindCheckpoint(auction, expected: checkpoint, sequence: sequence)
+        let auctionStack = try resultStack(auction, count: 3)
+        let auctionEnd = try stackUInt(auctionStack[0])
+        let maximumBid = try stackBigUInt(auctionStack[1])
+        if auctionEnd != 0 {
+            return TOSDNSDomainState(
+                canonicalName: name, label: label, rootAddress: root, collectionAddress: collection,
+                itemAddress: item, lifecycle: now > auctionEnd ? .auctionEnded : .auction,
+                ownerAddress: owner, maximumBid: maximumBid, auctionEndTime: auctionEnd,
+                renewalDeadline: nil, masterchainSequence: sequence,
+                checkpointRootHash: checkpoint.rootHash, checkpointFileHash: checkpoint.fileHash,
+                observedAt: observedAt
+            )
+        }
+        let fill = try await runGetter(address: itemString, method: "get_last_fill_up_time", stack: [], sequence: sequence)
+        _ = try bindCheckpoint(fill, expected: checkpoint, sequence: sequence)
+        let lastFill = try stackUInt(try resultStack(fill, count: 1)[0])
+        guard lastFill > 0, lastFill <= UInt64.max - TOSDNSAuctionRules.leaseSeconds
+        else { throw TOSDNSError.invalidResponse("invalid renewal clock") }
+        let deadline = lastFill + TOSDNSAuctionRules.leaseSeconds
+        return TOSDNSDomainState(
+            canonicalName: name, label: label, rootAddress: root, collectionAddress: collection,
+            itemAddress: item, lifecycle: now <= deadline ? .leased : .releasable,
+            ownerAddress: owner, maximumBid: 0, auctionEndTime: 0, renewalDeadline: deadline,
+            masterchainSequence: sequence, checkpointRootHash: checkpoint.rootHash,
+            checkpointFileHash: checkpoint.fileHash, observedAt: observedAt
+        )
+    }
 
     func resolveWallet(_ input: String) async throws -> TOSDNSResolutionEvidence {
         let name = try TOSDNSRules.canonicalName(input)
@@ -193,8 +310,10 @@ private struct TOSDNSResolver {
     private func bindCheckpoint(_ result: [String: Any], expected: DNSCheckpoint?, sequence: UInt64) throws -> DNSCheckpoint {
         guard let block = result["block_id"] as? [String: Any], int(block["workchain"]) == -1,
               uint(block["seqno"]) == sequence,
-              let root = block["root_hash"] as? String, !root.isEmpty,
-              let file = block["file_hash"] as? String, !file.isEmpty
+              let root = block["root_hash"] as? String,
+              Data(base64Encoded: root)?.count == 32,
+              let file = block["file_hash"] as? String,
+              Data(base64Encoded: file)?.count == 32
         else { throw TOSDNSError.invalidResponse("getter omitted its full block identity") }
         let checkpoint = DNSCheckpoint(sequence: sequence, rootHash: root, fileHash: file)
         if let expected, expected != checkpoint { throw TOSDNSError.invalidResponse("getter checkpoint changed") }
@@ -294,5 +413,11 @@ extension API {
         try await TOSDNSResolver { method, params in
             try await tosRPCCall(method: method, params: params)
         }.resolveWallet(name)
+    }
+
+    func inspectTOSDomain(_ name: String) async throws -> TOSDNSDomainState {
+        try await TOSDNSResolver { method, params in
+            try await tosRPCCall(method: method, params: params)
+        }.inspectDomain(name)
     }
 }

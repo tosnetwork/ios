@@ -17,6 +17,7 @@ public final class CollectiblesDetailsCoordinator: RouterCoordinator<NavigationC
     private weak var sendTokenCoordinator: SendTokenCoordinator?
     private weak var linkDNSCoordinator: LinkDNSCoordinator?
     private weak var renewDNSCoordinator: RenewDNSCoordinator?
+    private weak var manageDNSCoordinator: ManageDNSCoordinator?
 
     private let nft: NFT
     private let wallet: Wallet
@@ -52,6 +53,9 @@ public final class CollectiblesDetailsCoordinator: RouterCoordinator<NavigationC
             }
             if let renewDNSCoordinator = renewDNSCoordinator {
                 return renewDNSCoordinator.handleTosWalletPublishDeeplink(sign: model)
+            }
+            if let manageDNSCoordinator = manageDNSCoordinator {
+                return manageDNSCoordinator.handleTosWalletPublishDeeplink(sign: model)
             }
             return false
         default: return false
@@ -96,6 +100,10 @@ private extension CollectiblesDetailsCoordinator {
 
         module.output.didTapRenewDomain = { [weak self] wallet, nft in
             self?.openRenewDomain(wallet: wallet, nft: nft)
+        }
+
+        module.output.didTapManageDomain = { [weak self] wallet, nft, action in
+            self?.openManageDomain(wallet: wallet, nft: nft, action: action)
         }
 
         module.output.didTapProgrammaticButton = { [weak self] url in
@@ -426,6 +434,29 @@ private extension CollectiblesDetailsCoordinator {
 
         renewDNSCoordinator = coordinator
 
+        addChild(coordinator)
+        coordinator.start()
+    }
+
+    func openManageDomain(wallet: Wallet, nft: NFT, action: TOSDNSManagementAction) {
+        guard let windowScene = UIApplication.keyWindowScene else { return }
+        let window = TKWindow(windowScene: windowScene)
+        let coordinator = DNSModule(
+            dependencies: DNSModule.Dependencies(
+                coreAssembly: coreAssembly,
+                keeperCoreMainAssembly: keeperCoreMainAssembly
+            )
+        ).createManageDNSCoordinator(window: window, wallet: wallet, nft: nft, action: action)
+        coordinator.didCancel = { [weak self, weak coordinator] in
+            guard let coordinator else { return }
+            self?.removeChild(coordinator)
+        }
+        coordinator.didFinish = { [weak self] coordinator in
+            self?.didPerformTransaction?()
+            self?.router.dismiss()
+            self?.removeChild(coordinator)
+        }
+        manageDNSCoordinator = coordinator
         addChild(coordinator)
         coordinator.start()
     }

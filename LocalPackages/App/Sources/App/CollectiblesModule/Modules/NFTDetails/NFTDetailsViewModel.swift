@@ -11,6 +11,7 @@ protocol NFTDetailsModuleOutput: AnyObject {
     var didTapLinkDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)? { get set }
     var didTapUnlinkDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)? { get set }
     var didTapRenewDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)? { get set }
+    var didTapManageDomain: ((_ wallet: Wallet, _ nft: NFT, _ action: TOSDNSManagementAction) -> Void)? { get set }
     var didTapProgrammaticButton: ((_ url: URL) -> Void)? { get set }
     var didTapOpenInTonviewer: ((TonviewerURLBuilder.URLContent) -> Void)? { get set }
     var didHideNFT: (() -> Void)? { get set }
@@ -60,6 +61,10 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
         }
     }
 
+    private var dnsDomainState: TOSDNSDomainState? {
+        didSet { update() }
+    }
+
     private let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "dd MMM yyyy"
@@ -103,6 +108,7 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
     var didTapLinkDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)?
     var didTapUnlinkDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)?
     var didTapRenewDomain: ((_ wallet: Wallet, _ nft: NFT) -> Void)?
+    var didTapManageDomain: ((_ wallet: Wallet, _ nft: NFT, _ action: TOSDNSManagementAction) -> Void)?
     var didTapProgrammaticButton: ((_ url: URL) -> Void)?
     var didTapOpenInTonviewer: ((TonviewerURLBuilder.URLContent) -> Void)?
     var didHideNFT: (() -> Void)?
@@ -130,6 +136,7 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
     func viewDidLoad() {
         resolveDNS()
         getDNSExpiringDate()
+        inspectDomain()
 
         walletNftManagementStore.addObserver(self) { observer, event in
             switch event {
@@ -408,10 +415,13 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
         }
 
         buttonsConfigurations.append(contentsOf: createLinkButtons())
+        buttonsConfigurations.append(contentsOf: createDomainLifecycleButtons())
 
         switch dnsExpiringDateState {
         case let .resolved(result):
-            buttonsConfigurations.append(createRenewButton(result: result))
+            if dnsDomainState?.lifecycle == .leased {
+                buttonsConfigurations.append(createRenewButton(result: result))
+            }
         case .loading:
             buttonsConfigurations.append(createLoadingButton())
         default:
@@ -425,6 +435,35 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
         }
 
         return NFTDetailsButtonsView.Model(buttonViewModels: buttonsConfigurations)
+    }
+
+    private func createDomainLifecycleButtons() -> [NFTDetailsButtonView.Model] {
+        guard let state = dnsDomainState, wallet.kind != .watchonly else { return [] }
+        let title: String
+        let action: TOSDNSManagementAction
+        switch state.lifecycle {
+        case .auction:
+            title = "Place minimum valid bid"
+            action = .bid(amount: TOSDNSAuctionRules.minimumNextBid(state.maximumBid))
+        case .auctionEnded:
+            title = "Finalize domain auction"
+            action = .finishAuction
+        case .releasable:
+            guard let amount = try? TOSDNSAuctionRules.minimumPrice(
+                labelBytes: state.label.utf8.count,
+                now: UInt64(Date().timeIntervalSince1970)
+            ) else { return [] }
+            title = "Release and re-auction domain"
+            action = .release(bid: amount)
+        case .available, .leased:
+            return []
+        }
+        var configuration = TKButton.Configuration.actionButtonConfiguration(category: .secondary, size: .large)
+        configuration.content = .init(title: .plainString(title))
+        configuration.action = { [weak self, wallet, nft] in
+            self?.didTapManageDomain?(wallet, nft, action)
+        }
+        return [.init(buttonConfiguration: configuration, description: nil)]
     }
 
     private func createTransferButtonConfiguration() -> NFTDetailsButtonView.Model? {
@@ -635,6 +674,14 @@ final class NFTDetailsViewModelImplementation: NFTDetailsViewModel, NFTDetailsMo
                     )
                 )
             }
+        }
+    }
+
+    private func inspectDomain() {
+        guard let dns = nft.dns, !dns.contains(".t.me") else { return }
+        Task {
+            let state = try? await dnsService.inspectDomain(dns, network: wallet.network)
+            await MainActor.run { dnsDomainState = state }
         }
     }
 

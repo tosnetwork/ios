@@ -84,6 +84,7 @@ public struct TransferService {
     private let balanceService: BalanceService
     private let sendService: SendService
     private let accountService: AccountService
+    private let dnsService: DNSService
     private let configuration: Configuration
     private let currencyStore: CurrencyStore
 
@@ -93,6 +94,7 @@ public struct TransferService {
         balanceService: BalanceService,
         sendService: SendService,
         accountService: AccountService,
+        dnsService: DNSService,
         configuration: Configuration,
         settingsRepository: SettingsRepository,
         currencyStore: CurrencyStore
@@ -102,6 +104,7 @@ public struct TransferService {
         self.balanceService = balanceService
         self.sendService = sendService
         self.accountService = accountService
+        self.dnsService = dnsService
         self.configuration = configuration
         self.currencyStore = currencyStore
     }
@@ -440,7 +443,7 @@ public struct TransferService {
             return wallet.isBatteryEnable && wallet.batterySettings.isSwapTransactionEnable && isBalanceAvailable
         case let .signRaw(_, isForceRelayer):
             return isForceRelayer
-        case .renewDNS:
+        case .renewDNS, .manageDNS, .manageDNSName, .registerDNS:
             return false
         case .nativeSwap:
             let isBalanceAvailable = await isBalanceAvailable()
@@ -712,6 +715,19 @@ public struct TransferService {
                 timeout: safelyTimeout
             )
         case let .nft(nft, transferAmount, recipient, comment):
+            if let domainName = nft.dns, domainName.hasSuffix(".tos") {
+                do {
+                    let state = try await dnsService.inspectDomain(domainName, network: wallet.network)
+                    guard state.itemAddress == nft.address,
+                          state.ownerAddress == wallet.address,
+                          state.lifecycle == .leased || state.lifecycle == .releasable
+                    else { throw TOSDNSManagementError.actionNotAllowed }
+                } catch {
+                    throw .failedToCreateTransferData(
+                        message: "DNS transfer preflight failed: \(error.localizedDescription)"
+                    )
+                }
+            }
             var commentCell: Cell?
             if let comment {
                 do {
@@ -788,20 +804,108 @@ public struct TransferService {
             }
             return transferData
         case let .renewDNS(nft):
+            guard let domainName = nft.dns else {
+                throw .failedToCreateTransferData(message: "DNS NFT has no canonical .tos name")
+            }
+            let operation: TransferData.DomainOperation
+            do {
+                let state = try await dnsService.inspectDomain(domainName, network: wallet.network)
+                guard state.itemAddress == nft.address else {
+                    throw TOSDNSManagementError.actionNotAllowed
+                }
+                operation = try TOSDNSManagementPlanner.operation(
+                    state: state,
+                    walletAddress: wallet.address,
+                    action: .renew(amount: TOSDNSAuctionRules.oneTOS),
+                    now: UInt64(Date().timeIntervalSince1970),
+                    queryId: UInt64(UnsignedTransferBuilder.newWalletQueryId())
+                )
+            } catch {
+                throw .failedToCreateTransferData(
+                    message: "DNS renewal preflight failed: \(error.localizedDescription)"
+                )
+            }
             return TransferData(
-                transfer: TransferData.Transfer.changeDNSRecord(
-                    .renew(
-                        TransferData.ChangeDNSRecord.RenewDNS(
-                            nftAddress: nft.address,
-                            linkAmount: OP_AMOUNT.CHANGE_DNS_RECORD
-                        )
-                    )
+                transfer: TransferData.Transfer.domainOperation(
+                    operation
                 ),
                 wallet: wallet,
                 messageType: messageType,
                 seqno: seqno,
                 timeout: safelyTimeout
             )
+        case let .manageDNS(nft, action):
+            guard let domainName = nft.dns else {
+                throw .failedToCreateTransferData(message: "DNS NFT has no canonical .tos name")
+            }
+            do {
+                let state = try await dnsService.inspectDomain(domainName, network: wallet.network)
+                guard state.itemAddress == nft.address else { throw TOSDNSManagementError.actionNotAllowed }
+                let operation = try TOSDNSManagementPlanner.operation(
+                    state: state,
+                    walletAddress: wallet.address,
+                    action: action,
+                    now: UInt64(Date().timeIntervalSince1970),
+                    queryId: UInt64(UnsignedTransferBuilder.newWalletQueryId())
+                )
+                return TransferData(
+                    transfer: .domainOperation(operation),
+                    wallet: wallet,
+                    messageType: messageType,
+                    seqno: seqno,
+                    timeout: safelyTimeout
+                )
+            } catch {
+                throw .failedToCreateTransferData(
+                    message: "DNS management preflight failed: \(error.localizedDescription)"
+                )
+            }
+        case let .manageDNSName(name, action):
+            do {
+                let now = UInt64(Date().timeIntervalSince1970)
+                let state = try await dnsService.inspectDomain(name, network: wallet.network)
+                guard state.canonicalName == name else { throw TOSDNSManagementError.actionNotAllowed }
+                let operation = try TOSDNSManagementPlanner.operation(
+                    state: state,
+                    walletAddress: wallet.address,
+                    action: action,
+                    now: now,
+                    queryId: UInt64(UnsignedTransferBuilder.newWalletQueryId())
+                )
+                return TransferData(
+                    transfer: .domainOperation(operation), wallet: wallet,
+                    messageType: messageType, seqno: seqno, timeout: safelyTimeout
+                )
+            } catch {
+                throw .failedToCreateTransferData(
+                    message: "DNS auction preflight failed: \(error.localizedDescription)"
+                )
+            }
+        case let .registerDNS(name):
+            do {
+                let now = UInt64(Date().timeIntervalSince1970)
+                let state = try await dnsService.inspectDomain(name, network: wallet.network)
+                guard state.canonicalName == name else { throw TOSDNSManagementError.actionNotAllowed }
+                let minimum = try TOSDNSAuctionRules.minimumPrice(
+                    labelBytes: state.label.utf8.count,
+                    now: now
+                )
+                let operation = try TOSDNSManagementPlanner.operation(
+                    state: state,
+                    walletAddress: wallet.address,
+                    action: .register(bid: minimum),
+                    now: now,
+                    queryId: UInt64(UnsignedTransferBuilder.newWalletQueryId())
+                )
+                return TransferData(
+                    transfer: .domainOperation(operation), wallet: wallet,
+                    messageType: messageType, seqno: seqno, timeout: safelyTimeout
+                )
+            } catch {
+                throw .failedToCreateTransferData(
+                    message: "DNS registration preflight failed: \(error.localizedDescription)"
+                )
+            }
         case let .nativeSwap(model):
             let payloads = model.messages.map { message in
                 TransferData.TonConnect.Payload(

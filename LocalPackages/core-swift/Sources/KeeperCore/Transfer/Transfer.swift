@@ -11,6 +11,9 @@ public enum Transfer {
     case nativeSwap(SwapConfirmation)
     case signRaw(SignRawRequest, forceRelayer: Bool)
     case renewDNS(nft: NFT)
+    case manageDNS(nft: NFT, action: TOSDNSManagementAction)
+    case manageDNSName(name: String, action: TOSDNSManagementAction)
+    case registerDNS(name: String)
 
     public var messagesCount: Int {
         switch self {
@@ -20,7 +23,7 @@ public enum Transfer {
             return request.messages.count
         case let .nativeSwap(request):
             return request.messages.count
-        case .renewDNS:
+        case .renewDNS, .manageDNS, .manageDNSName, .registerDNS:
             return 1
         case .ton, .jetton, .nft:
             return 1

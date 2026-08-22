@@ -122,6 +122,16 @@ public struct UnsignedTransferBuilder {
                     messageType: transferData.messageType
                 )
             }
+        case let .domainOperation(domainOperation):
+            return try TOSDNSOperationTransferBuilder.createWalletTransfer(
+                wallet: wallet,
+                seqno: transferData.seqno,
+                target: domainOperation.target,
+                amount: domainOperation.amount,
+                operation: domainOperation.operation,
+                timeout: transferData.timeout,
+                messageType: transferData.messageType
+            )
         case let .stake(stake):
             switch stake {
             case let .deposit(stakeDeposit):

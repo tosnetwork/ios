@@ -11,15 +11,18 @@ public final class LinkDNSController {
     private let wallet: Wallet
     private let nft: NFT
     private let sendService: SendService
+    private let dnsService: DNSService
 
     init(
         wallet: Wallet,
         nft: NFT,
-        sendService: SendService
+        sendService: SendService,
+        dnsService: DNSService
     ) {
         self.wallet = wallet
         self.nft = nft
         self.sendService = sendService
+        self.dnsService = dnsService
     }
 
     public func emulate(dnsLink: DNSLink) async throws -> SendTransactionModel {
@@ -88,7 +91,6 @@ private extension LinkDNSController {
     func createSignedTransactions(dnsLink: DNSLink, signClosure: (TransferData) async throws -> SignedTransactions) async throws -> SignedTransactions {
         let seqno = try await sendService.loadSeqno(wallet: wallet)
         let timeout = await sendService.getTimeoutSafely(wallet: wallet, TTL: DEFAULT_TTL)
-        let linkAmount = OP_AMOUNT.CHANGE_DNS_RECORD
         let linkAddress: Address?
         switch dnsLink {
         case let .link(address):
@@ -97,8 +99,33 @@ private extension LinkDNSController {
             linkAddress = nil
         }
 
+        guard let domainName = nft.dns else { throw TOSDNSManagementError.actionNotAllowed }
+        let state = try await dnsService.inspectDomain(domainName, network: wallet.network)
+        guard state.itemAddress == nft.address else { throw TOSDNSManagementError.actionNotAllowed }
+        let value: Cell?
+        if let linkAddress {
+            value = try Builder()
+                .store(uint: 0x9fd3, bits: 16)
+                .store(AnyAddress(linkAddress))
+                .store(uint: 0, bits: 8)
+                .endCell()
+        } else {
+            value = nil
+        }
+        let walletCategory = BigUInt(
+            "e8d44050873dba865aa7c170ab4cce64d90839a34dcfd6cf71d14e0205443b1b",
+            radix: 16
+        ) ?? 0
+        let operation = try TOSDNSManagementPlanner.operation(
+            state: state,
+            walletAddress: wallet.address,
+            action: .changeRecord(category: walletCategory, value: value),
+            now: UInt64(Date().timeIntervalSince1970),
+            queryId: UInt64(UnsignedTransferBuilder.newWalletQueryId())
+        )
+
         let transferData = TransferData(
-            transfer: .changeDNSRecord(TransferData.ChangeDNSRecord.link(TransferData.ChangeDNSRecord.LinkDNS(nftAddress: nft.address, linkAddress: linkAddress, linkAmount: linkAmount))),
+            transfer: .domainOperation(operation),
             wallet: wallet,
             messageType: .ext,
             seqno: seqno,
@@ -110,5 +137,5 @@ private extension LinkDNSController {
 }
 
 public enum OP_AMOUNT {
-    public static var CHANGE_DNS_RECORD = BigUInt(stringLiteral: "020000000")
+    public static var CHANGE_DNS_RECORD = TOSDNSAuctionRules.contractActionValue
 }

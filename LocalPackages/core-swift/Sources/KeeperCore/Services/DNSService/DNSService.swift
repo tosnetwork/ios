@@ -5,6 +5,7 @@ import TonSwift
 public protocol DNSService {
     func resolveDomainName(_ domainName: String, addTonPostfix: Bool, network: Network) async throws -> Domain
     func loadDomainExpirationDate(_ domainName: String, network: Network) async throws -> Date?
+    func inspectDomain(_ domainName: String, network: Network) async throws -> TOSDNSDomainState
 }
 
 public extension DNSService {
@@ -51,6 +52,10 @@ final class DNSServiceImplementation: DNSService {
     func loadDomainExpirationDate(_ domainName: String, network: Network) async throws -> Date? {
         let evidence = try await apiProvider.api(network).resolveTOSDomain(domainName)
         return Date(timeIntervalSince1970: TimeInterval(evidence.renewalDeadline))
+    }
+
+    func inspectDomain(_ domainName: String, network: Network) async throws -> TOSDNSDomainState {
+        try await apiProvider.api(network).inspectTOSDomain(domainName)
     }
 }
 

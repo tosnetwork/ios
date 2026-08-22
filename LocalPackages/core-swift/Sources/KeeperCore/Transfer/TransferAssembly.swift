@@ -28,6 +28,7 @@ public final class TransferAssembly {
             balanceService: servicesAssembly.balanceService(),
             sendService: servicesAssembly.sendService(),
             accountService: servicesAssembly.accountService(),
+            dnsService: servicesAssembly.dnsService(),
             configuration: configurationAssembly.configuration,
             settingsRepository: repositoriesAssembly.settingsRepository(),
             currencyStore: storesAssembly.currencyStore
