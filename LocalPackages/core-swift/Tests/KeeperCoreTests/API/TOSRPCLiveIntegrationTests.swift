@@ -75,11 +75,21 @@ final class TOSRPCLiveIntegrationTests: XCTestCase {
 
     func testAccountEventPaginationHasNoDuplicatesOrGaps() async throws {
         let client = try await makeLiveClient()
-        let complete = try await client.call(
-            method: "getAccountEvents",
-            params: ["address": Self.deterministicWalletAddress, "limit": 100]
-        )
-        let completeRows = try XCTUnwrap(complete["events"] as? [[String: Any]])
+        // A fresh local chain legitimately has no history for this address.
+        // Create the fixture here instead of relying on test execution order.
+        _ = try await requestLocalnetTransfer(amount: 0.01)
+        let deadline = Date().addingTimeInterval(30)
+        var completeRows = [[String: Any]]()
+        repeat {
+            let complete = try await client.call(
+                method: "getAccountEvents",
+                params: ["address": Self.deterministicWalletAddress, "limit": 100]
+            )
+            completeRows = try XCTUnwrap(complete["events"] as? [[String: Any]])
+            if completeRows.isEmpty {
+                try await Task.sleep(nanoseconds: 500_000_000)
+            }
+        } while completeRows.isEmpty && Date() < deadline
         let expected = completeRows.compactMap { $0["event_id"] as? String }
         XCTAssertFalse(expected.isEmpty)
 

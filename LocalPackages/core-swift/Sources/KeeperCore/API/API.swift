@@ -354,27 +354,29 @@ extension API {
     }
 
     func getAccountJettonsBalances(address: Address, currencies: [Currency]) async throws -> [JettonBalance] {
-        let request = try await createRequest {
-            AccountsAPI.getAccountJettonsBalancesWithRequestBuilder(
-                accountId: address.toRaw(),
-                currencies: currencies.map { $0.code },
-                supportedExtensions: ["custom_payload"]
-            )
+        let response = try await tosRPCCall(
+            method: "getAccountJettons",
+            params: ["address": address.toRaw(), "limit": 1_000]
+        )
+        guard let entries = response["jettons"] as? [[String: Any]] else {
+            throw TOSRPCClient.Error.invalidResponse
         }
-        let response = try await performRequest(request: request).body
-        return response.balances
-            .compactMap { jetton in
-                do {
-                    let quantity = BigUInt(jetton.balance) ?? 0
-                    let walletAddress = try Address.parse(jetton.walletAddress.address)
-                    let rates = mapJettonRates(rates: jetton.price)
-                    let jettonInfo = try JettonInfo(jettonPreview: jetton.jetton, extensions: jetton.extensions)
-                    let jettonItem = JettonItem(jettonInfo: jettonInfo, walletAddress: walletAddress)
-                    return JettonBalance(item: jettonItem, quantity: quantity, rates: rates)
-                } catch {
-                    return nil
-                }
-            }
+        var balances = [JettonBalance]()
+        for entry in entries {
+            guard let walletRaw = entry["jetton_wallet"] as? String,
+                  let masterRaw = entry["jetton_master"] as? String,
+                  let walletAddress = try? Address.parse(walletRaw),
+                  let masterAddress = try? Address.parse(masterRaw)
+            else { continue }
+            guard let quantity = try? await tosJettonWalletBalance(walletRaw), quantity > 0,
+                  let info = try? await tosJettonInfo(masterAddress) else { continue }
+            balances.append(JettonBalance(
+                item: JettonItem(jettonInfo: info, walletAddress: walletAddress),
+                quantity: quantity,
+                rates: [:]
+            ))
+        }
+        return balances
     }
 
     private func mapJettonRates(rates: TokenRates?) -> [Currency: Rates.Rate] {
@@ -525,35 +527,35 @@ extension API {
         offset: Int?,
         isIndirectOwnership: Bool
     ) async throws -> [NFT] {
-        let request = try await createRequest {
-            AccountsAPI.getAccountNftItemsWithRequestBuilder(
-                accountId: address.toRaw(),
-                collection: collectionAddress?.toRaw(),
-                limit: limit,
-                offset: offset,
-                indirectOwnership: isIndirectOwnership
-            )
+        let requestedLimit = max(0, limit ?? 1_000)
+        let requestedOffset = max(0, offset ?? 0)
+        let response = try await tosRPCCall(
+            method: "getAccountNfts",
+            params: ["address": address.toRaw(), "limit": requestedLimit + requestedOffset]
+        )
+        guard let entries = response["nfts"] as? [[String: Any]] else {
+            throw TOSRPCClient.Error.invalidResponse
         }
-
-        let response = try await performRequest(request: request).body
-        return response.nftItems.compactMap {
-            try? NFT(nftItem: $0)
+        var result = [NFT]()
+        for entry in entries.dropFirst(requestedOffset) {
+            guard result.count < requestedLimit,
+                  let raw = entry["nft_item"] as? String,
+                  let nft = try? await tosNFT(raw)
+            else { continue }
+            if let collectionAddress, nft.collection?.address != collectionAddress { continue }
+            result.append(nft)
         }
+        return result
     }
 
     func getNftItemsByAddresses(_ addresses: [Address]) async throws -> [NFT] {
-        let request = try await createRequest {
-            NFTAPI.getNftItemsByAddressesWithRequestBuilder(
-                getAccountsRequest: GetAccountsRequest(
-                    accountIds: addresses.map { $0.toRaw() }
-                )
-            )
+        var result = [NFT]()
+        for address in addresses {
+            if let nft = try? await tosNFT(address.toRaw()) {
+                result.append(nft)
+            }
         }
-
-        let response = try await performRequest(request: request).body
-        return response.nftItems.compactMap {
-            try? NFT(nftItem: $0)
-        }
+        return result
     }
 }
 
@@ -561,50 +563,148 @@ extension API {
 
 extension API {
     func resolveJetton(address: Address) async throws -> JettonInfo {
-        let request = try await createRequest {
-            JettonsAPI.getJettonInfoWithRequestBuilder(accountId: address.toRaw())
+        try await tosJettonInfo(address)
+    }
+}
+
+// MARK: - Native TOS token mapping
+
+private extension API {
+    func tosJettonInfo(_ address: Address) async throws -> JettonInfo {
+        let data = try await tosRPCCall(method: "getTokenData", params: ["address": address.toRaw()])
+        guard data["@type"] as? String == "ext.tokens.jettonMasterData" else {
+            throw TOSRPCClient.Error.invalidResponse
         }
-        let response = try await performRequest(request: request).body
-
-        let verification: JettonInfo.Verification
-        switch response.verification {
-        case ._none:
-            verification = .none
-        case .blacklist:
-            verification = .blacklist
-        case .whitelist:
-            verification = .whitelist
-        case .unknownDefaultOpenApi:
-            verification = .none
-        case .graylist:
-            verification = .graylist
-        }
-
-        let numerator: BigUInt? = {
-            guard let numerator = response.scaledUi?.numerator else { return nil }
-
-            return BigUInt(numerator)
-        }()
-
-        let denomenator: BigUInt? = {
-            guard let denomenator = response.scaledUi?.denominator else { return nil }
-
-            return BigUInt(denomenator)
-        }()
-
-        return try JettonInfo(
+        let offchain = await tosOffchainMetadata(data["jetton_metadata_uri"] as? String)
+        let name = (data["jetton_name"] as? String)?.nilIfEmpty
+            ?? (offchain?["name"] as? String)?.nilIfEmpty
+            ?? "Jetton \(address.toRaw().suffix(6))"
+        let symbol = (data["jetton_symbol"] as? String)?.nilIfEmpty
+            ?? (offchain?["symbol"] as? String)?.nilIfEmpty
+        let decimals = Int((data["jetton_decimals"] as? String)?.nilIfEmpty
+            ?? (offchain?["decimals"] as? String)?.nilIfEmpty ?? "") ?? 9
+        let image = (data["jetton_image"] as? String)?.nilIfEmpty
+            ?? (offchain?["image"] as? String)?.nilIfEmpty
+        return JettonInfo(
             isTransferable: true,
             hasCustomPayload: false,
-            address: Address.parse(response.metadata.address),
-            fractionDigits: Int(response.metadata.decimals) ?? 0,
-            name: response.metadata.name,
-            symbol: response.metadata.symbol,
-            verification: verification,
-            imageURL: URL(string: response.preview),
-            numerator: numerator,
-            denomenator: denomenator
+            address: address,
+            fractionDigits: decimals,
+            name: name,
+            symbol: symbol,
+            verification: .none,
+            imageURL: image.flatMap(URL.init(string:))
         )
     }
+
+    func tosJettonWalletBalance(_ address: String) async throws -> BigUInt {
+        let result = try await tosRPCCall(
+            method: "runGetMethod",
+            params: ["address": address, "method": "get_wallet_data", "stack": []]
+        )
+        guard integer(result["exit_code"]) == 0,
+              let stack = result["stack"] as? [Any], stack.count >= 4
+        else { throw TOSRPCClient.Error.invalidResponse }
+        return try tosStackBigUInt(stack[stack.count - 1])
+    }
+
+    func tosNFT(_ rawAddress: String) async throws -> NFT {
+        let address = try Address.parse(rawAddress)
+        let data = try await tosRPCCall(method: "getTokenData", params: ["address": rawAddress])
+        guard data["@type"] as? String == "ext.tokens.nftItemData" else {
+            throw TOSRPCClient.Error.invalidResponse
+        }
+        let collectionRaw = (data["collection_address"] as? String)?.nilIfEmpty
+        let collectionAddress = collectionRaw.flatMap { try? Address.parse($0) }
+        let collectionData: [String: Any]? = if let collectionRaw {
+            try? await tosRPCCall(method: "getTokenData", params: ["address": collectionRaw])
+        } else {
+            nil
+        }
+        let itemOffchain = await tosOffchainMetadata(data["nft_metadata_uri"] as? String)
+        let collectionOffchain = await tosOffchainMetadata(collectionData?["collection_metadata_uri"] as? String)
+        let image = ((data["nft_image"] as? String)?.nilIfEmpty
+            ?? (itemOffchain?["image"] as? String)?.nilIfEmpty
+            ?? (collectionData?["collection_image"] as? String)?.nilIfEmpty
+            ?? (collectionOffchain?["image"] as? String)?.nilIfEmpty).flatMap(URL.init(string:))
+        let owner = (data["owner_address"] as? String)?.nilIfEmpty.flatMap { raw in
+            (try? Address.parse(raw)).map { WalletAccount(address: $0, name: nil, isScam: false, isWallet: true) }
+        }
+        let collection = collectionAddress.map {
+            NFTCollection(
+                address: $0,
+                name: (collectionData?["collection_name"] as? String)?.nilIfEmpty
+                    ?? (collectionOffchain?["name"] as? String)?.nilIfEmpty,
+                description: (collectionData?["collection_description"] as? String)?.nilIfEmpty
+                    ?? (collectionOffchain?["description"] as? String)?.nilIfEmpty
+            )
+        }
+        let attributes: [NFT.Attribute] = (itemOffchain?["attributes"] as? [[String: Any]] ?? []).compactMap { row -> NFT.Attribute? in
+            guard let key = (row["trait_type"] as? String)?.nilIfEmpty
+                    ?? (row["key"] as? String)?.nilIfEmpty,
+                  let rawValue = row["value"]
+            else { return nil }
+            let value = (rawValue as? String) ?? (rawValue as? NSNumber)?.stringValue
+            return value.map { NFT.Attribute(key: key, value: $0) }
+        }
+        return NFT(
+            address: address,
+            owner: owner,
+            name: (data["nft_name"] as? String)?.nilIfEmpty
+                ?? (itemOffchain?["name"] as? String)?.nilIfEmpty
+                ?? (collectionData?["collection_name"] as? String)?.nilIfEmpty,
+            imageURL: image,
+            preview: NFT.Preview(size5: image, size100: image, size500: image, size1500: image),
+            description: (data["nft_description"] as? String)?.nilIfEmpty
+                ?? (itemOffchain?["description"] as? String)?.nilIfEmpty
+                ?? (collectionData?["collection_description"] as? String)?.nilIfEmpty,
+            attributes: attributes,
+            collection: collection,
+            programmaticButtons: nil,
+            dns: nil,
+            sale: nil,
+            trust: .none,
+            renderType: nil,
+            lottieURL: nil
+        )
+    }
+
+    func tosStackBigUInt(_ entry: Any) throws -> BigUInt {
+        guard let pair = entry as? [Any], pair.count == 2,
+              pair[0] as? String == "num", let text = pair[1] as? String,
+              let value = text.hasPrefix("0x")
+                ? BigUInt(String(text.dropFirst(2)), radix: 16)
+                : BigUInt(text)
+        else { throw TOSRPCClient.Error.invalidResponse }
+        return value
+    }
+
+    func tosOffchainMetadata(_ rawURI: String?) async -> [String: Any]? {
+        guard let rawURI = rawURI?.nilIfEmpty else { return nil }
+        let value: String
+        if rawURI.hasPrefix("ipfs://") {
+            value = "https://ipfs.io/ipfs/" + String(rawURI.dropFirst("ipfs://".count))
+        } else {
+            value = rawURI
+        }
+        guard let url = URL(string: value), url.scheme == "https" || url.scheme == "http" else { return nil }
+        var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 10)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+            guard data.count <= 2_000_000,
+                  let status = (response as? HTTPURLResponse)?.statusCode,
+                  (200..<300).contains(status)
+            else { return nil }
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        } catch {
+            return nil
+        }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Rates
