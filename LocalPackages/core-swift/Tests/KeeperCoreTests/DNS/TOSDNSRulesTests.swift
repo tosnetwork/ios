@@ -13,7 +13,7 @@ final class TOSDNSRulesTests: XCTestCase {
     }
 
     func testRejectsNonCanonicalRegistrationSpellings() {
-        XCTAssertThrowsError(try TOSDNSRules.canonicalName("Alice.tos"))
+        XCTAssertEqual(try? TOSDNSRules.canonicalName("Alice.tos"), "alice.tos")
         XCTAssertThrowsError(try TOSDNSRules.canonicalName("alice.tos."))
         XCTAssertThrowsError(try TOSDNSRules.canonicalName("alice..tos"))
         XCTAssertThrowsError(try TOSDNSRules.canonicalName("alice.ton"))

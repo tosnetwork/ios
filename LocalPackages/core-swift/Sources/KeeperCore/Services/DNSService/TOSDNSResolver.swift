@@ -38,16 +38,18 @@ enum TOSDNSRules {
 
     static func canonicalName(_ input: String) throws -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.utf8.count <= 126, !trimmed.hasSuffix("."), !trimmed.hasPrefix("."),
-              trimmed == trimmed.lowercased(), trimmed.hasSuffix(".tos")
-        else { throw TOSDNSError.invalidName("use lowercase ASCII without a trailing dot") }
-        let labels = trimmed.split(separator: ".", omittingEmptySubsequences: false)
+        let canonical = trimmed.lowercased()
+        guard trimmed == input, !canonical.hasSuffix("."), !canonical.hasPrefix("."), canonical.hasSuffix(".tos")
+        else { throw TOSDNSError.invalidName("use ASCII without whitespace or a trailing dot") }
+        let labels = canonical.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2, labels.allSatisfy({ label in
-            !label.isEmpty && label.utf8.allSatisfy { byte in
+            !label.isEmpty && label.utf8.count <= 126 && label.utf8.allSatisfy { byte in
                 byte >= 0x61 && byte <= 0x7A || byte >= 0x30 && byte <= 0x39 || byte == 0x2D
             }
-        }) else { throw TOSDNSError.invalidName("labels may contain only a-z, 0-9, and hyphen") }
-        return trimmed
+        }), encode(canonical).count <= 127 else {
+            throw TOSDNSError.invalidName("labels may contain only ASCII a-z, 0-9, and hyphen")
+        }
+        return canonical
     }
 
     static func encode(_ canonical: String) -> Data {
@@ -93,7 +95,7 @@ private struct TOSDNSResolver {
         let label = String(name.split(separator: ".")[name.split(separator: ".").count - 2])
         let consensus = try await call("getConsensusBlock", [:])
         let sequence = uint(consensus["consensus_block"])
-        let observedAt = uint(consensus["timestamp"])
+        let observedAt = uint(consensus["last_block_utime"])
         guard sequence > 0, observedAt > 0 else { throw TOSDNSError.invalidResponse("invalid finalized checkpoint") }
         let now = UInt64(Date().timeIntervalSince1970)
         try TOSDNSRules.validateCheckpointTime(observedAt, now: now)
@@ -122,7 +124,8 @@ private struct TOSDNSResolver {
             )
             checkpoint = try bindCheckpoint(result, expected: checkpoint, sequence: sequence)
             let stack = try resultStack(result, count: 2)
-            let consumedBits = try stackUInt(stack[0])
+            // TOS HTTP JSON-RPC is TVM-top-first: (int, cell) => [cell, int].
+            let consumedBits = try stackUInt(stack[1])
             guard consumedBits > 0, consumedBits % 8 == 0, consumedBits <= UInt64(remaining.count * 8) else {
                 throw TOSDNSError.invalidResponse("invalid consumed-bit count")
             }
@@ -130,7 +133,7 @@ private struct TOSDNSResolver {
             guard TOSDNSRules.isComponentBoundary(consumedBytes: consumedBytes, query: remaining) else {
                 throw TOSDNSError.invalidResponse("resolver stopped inside a component")
             }
-            guard let value = try stackCell(stack[1]) else { throw TOSDNSError.notFound }
+            guard let value = try stackCell(stack[0]) else { throw TOSDNSError.notFound }
             if consumedBytes == remaining.count { terminal = value; break }
             current = try parseAddressRecord(value, expectedTag: 0xBA93, flags: false)
             remaining = remaining.subdata(in: consumedBytes ..< remaining.count)
@@ -143,7 +146,8 @@ private struct TOSDNSResolver {
         let auction = try await runGetter(address: path[2], method: "get_auction_info", stack: [], sequence: sequence)
         _ = try bindCheckpoint(auction, expected: checkpoint, sequence: sequence)
         let auctionStack = try resultStack(auction, count: 3)
-        guard try stackUInt(auctionStack[2]) == 0 else { throw TOSDNSError.unsafeLifecycle }
+        // (bidder, amount, end) => [end, amount, bidder].
+        guard try stackUInt(auctionStack[0]) == 0 else { throw TOSDNSError.unsafeLifecycle }
         let fill = try await runGetter(address: path[2], method: "get_last_fill_up_time", stack: [], sequence: sequence)
         _ = try bindCheckpoint(fill, expected: checkpoint, sequence: sequence)
         let lastFill = try stackUInt(try resultStack(fill, count: 1)[0])
@@ -159,7 +163,8 @@ private struct TOSDNSResolver {
         let identity = try await runGetter(address: item, method: "get_nft_data", stack: [], sequence: sequence)
         _ = try bindCheckpoint(identity, expected: checkpoint, sequence: sequence)
         let stack = try resultStack(identity, count: 5)
-        let index = try stackBigUInt(stack[1])
+        // (init,index,collection,owner,content) => [content,owner,collection,index,init].
+        let index = try stackBigUInt(stack[3])
         guard let collectionCell = try stackCell(stack[2]), try parseBareAddress(collectionCell) == collection else {
             throw TOSDNSError.invalidResponse("Domain Item belongs to another Collection")
         }
