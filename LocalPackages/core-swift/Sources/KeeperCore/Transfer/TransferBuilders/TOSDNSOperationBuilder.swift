@@ -70,6 +70,7 @@ public enum TOSDNSOperation: Equatable {
 public enum TOSDNSOperationError: LocalizedError, Equatable {
     case invalidRegistrationLabel
     case categoryTooLarge
+    case watchOnlyWallet
 
     public var errorDescription: String? {
         switch self {
@@ -77,6 +78,8 @@ public enum TOSDNSOperationError: LocalizedError, Equatable {
             "A registration label must be 4–126 lowercase ASCII letters, digits, or interior hyphens."
         case .categoryTooLarge:
             "A DNS record category must fit in 256 bits."
+        case .watchOnlyWallet:
+            "A watch-only wallet cannot create a DNS mutation."
         }
     }
 }
@@ -246,6 +249,9 @@ public struct TOSDNSOperationTransferBuilder {
         timeout: UInt64?,
         messageType: MessageType
     ) throws -> WalletTransfer {
+        guard wallet.kind != .watchonly else {
+            throw TOSDNSOperationError.watchOnlyWallet
+        }
         let body = try operation.body()
         return try WalletTransferBuilder.buildWalletTransfer(
             wallet: wallet,

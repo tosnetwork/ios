@@ -719,7 +719,7 @@ public struct TransferService {
                 do {
                     let state = try await dnsService.inspectDomain(domainName, network: wallet.network)
                     guard state.itemAddress == nft.address,
-                          state.ownerAddress == wallet.address,
+                          state.ownerAddress == (try wallet.address),
                           state.lifecycle == .leased || state.lifecycle == .releasable
                     else { throw TOSDNSManagementError.actionNotAllowed }
                 } catch {

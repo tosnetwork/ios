@@ -7,7 +7,7 @@ final class TOSDNSOperationTests: XCTestCase {
     func testRegistrationBodyUsesOpZeroSnakeEncoding() throws {
         let label = String(repeating: "a", count: 126)
         let body = try TOSDNSOperation.register(label: label).body()
-        let slice = body.beginParse()
+        let slice = try body.beginParse()
         XCTAssertEqual(try slice.loadUint(bits: 32), 0)
         var bytes = try slice.loadBytes(slice.remainingBits / 8)
         if slice.remainingRefs == 1 {
@@ -128,5 +128,29 @@ final class TOSDNSOperationTests: XCTestCase {
             state: releasable, walletAddress: owner, action: .release(bid: minimum), now: now, queryId: 10
         )
         XCTAssertEqual(release.target, item)
+    }
+
+    func testWatchOnlyWalletCannotBuildDNSMutation() throws {
+        let wallet = Wallet(
+            id: UUID().uuidString,
+            identity: .init(
+                network: .mainnet,
+                kind: .Watchonly(.Resolved(try Address.parse("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c")))
+            ),
+            metaData: .init(label: "Watch", tintColor: .defaultColor, icon: .icon(.wallet)),
+            setupSettings: .init(isSetupFinished: true),
+            batterySettings: .init()
+        )
+        XCTAssertThrowsError(try TOSDNSOperationTransferBuilder.createWalletTransfer(
+            wallet: wallet,
+            seqno: 0,
+            target: try Address.parse("0:" + String(repeating: "11", count: 32)),
+            amount: TOSDNSAuctionRules.oneTOS,
+            operation: .bidOrTopUp,
+            timeout: nil,
+            messageType: .ext
+        )) { error in
+            XCTAssertEqual(error as? TOSDNSOperationError, .watchOnlyWallet)
+        }
     }
 }

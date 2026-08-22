@@ -79,6 +79,16 @@ enum TOSDNSRules {
             throw TOSDNSError.invalidResponse("finalized checkpoint is stale or the device clock is wrong")
         }
     }
+
+    static func optionalInternalAddress(_ cell: Cell) throws -> Address? {
+        let slice = try cell.beginParse()
+        let value: TonSwift.AnyAddress = try slice.loadType()
+        let address = try value.asInternal()
+        guard slice.remainingBits == 0, slice.remainingRefs == 0 else {
+            throw TOSDNSError.invalidResponse("address cell has trailing data")
+        }
+        return address
+    }
 }
 
 private struct DNSCheckpoint: Equatable {
@@ -172,7 +182,7 @@ private struct TOSDNSResolver {
         else { throw TOSDNSError.invalidResponse("Domain Item identity mismatch") }
         let owner: Address?
         if let ownerCell = try stackCell(identityStack[1]) {
-            owner = try Address.parse(parseBareAddress(ownerCell))
+            owner = try TOSDNSRules.optionalInternalAddress(ownerCell)
         } else {
             owner = nil
         }
@@ -325,11 +335,11 @@ private struct TOSDNSResolver {
               config["@type"] as? String == "tvm.cell", let encoded = config["bytes"] as? String,
               let data = Data(base64Encoded: encoded), let cell = try Cell.fromBoc(src: data).first
         else { throw TOSDNSError.invalidResponse("ConfigParam 4 is missing") }
-        let slice = cell.beginParse()
+        let slice = try cell.beginParse()
         guard slice.remainingBits == 256, slice.remainingRefs == 0 else {
             throw TOSDNSError.invalidResponse("ConfigParam 4 has an invalid shape")
         }
-        let bytes = try slice.loadBits(256).bitsToPaddedBuffer().toByteArray()
+        let bytes = try slice.loadBits(256).bitsToPaddedBuffer()
         return "-1:" + bytes.map { String(format: "%02x", $0) }.joined()
     }
 
@@ -372,7 +382,7 @@ private struct TOSDNSResolver {
     }
 
     private func parseBareAddress(_ cell: Cell) throws -> String {
-        let slice = cell.beginParse()
+        let slice = try cell.beginParse()
         let address: Address = try slice.loadType()
         guard slice.remainingBits == 0, slice.remainingRefs == 0 else {
             throw TOSDNSError.invalidResponse("address cell has trailing data")
@@ -381,7 +391,7 @@ private struct TOSDNSResolver {
     }
 
     private func parseAddressRecord(_ cell: Cell, expectedTag: UInt64, flags: Bool) throws -> String {
-        let slice = cell.beginParse()
+        let slice = try cell.beginParse()
         guard try slice.loadUint(bits: 16) == expectedTag else {
             throw TOSDNSError.invalidResponse("DNS record type does not match its category")
         }

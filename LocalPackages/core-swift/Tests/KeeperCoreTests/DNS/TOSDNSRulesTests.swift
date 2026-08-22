@@ -1,6 +1,7 @@
 import BigInt
 import Foundation
 @testable import KeeperCore
+import TonSwift
 import XCTest
 
 final class TOSDNSRulesTests: XCTestCase {
@@ -93,6 +94,14 @@ final class TOSDNSRulesTests: XCTestCase {
             TOSDNSRules.walletCategory,
             "105311596331855300602201538317979276640056460191511695660591596829410056223515"
         )
+    }
+
+    func testAuctionOwnerMayBeAddrNoneButTrailingDataFails() throws {
+        let none = try Builder().store(uint: 0, bits: 2).endCell()
+        XCTAssertNil(try TOSDNSRules.optionalInternalAddress(none))
+
+        let malformed = try Builder().store(uint: 0, bits: 2).store(bit: true).endCell()
+        XCTAssertThrowsError(try TOSDNSRules.optionalInternalAddress(malformed))
     }
 
     func testRejectsStaleOrFutureCheckpointTime() throws {

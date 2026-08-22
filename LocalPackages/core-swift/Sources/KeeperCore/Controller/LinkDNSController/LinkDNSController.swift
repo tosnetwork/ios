@@ -106,7 +106,7 @@ private extension LinkDNSController {
         if let linkAddress {
             value = try Builder()
                 .store(uint: 0x9fd3, bits: 16)
-                .store(AnyAddress(linkAddress))
+                .store(linkAddress)
                 .store(uint: 0, bits: 8)
                 .endCell()
         } else {
