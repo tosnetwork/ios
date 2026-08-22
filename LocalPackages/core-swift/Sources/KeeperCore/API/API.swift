@@ -249,7 +249,7 @@ public struct API {
         case failed
     }
 
-    private func tosRPCCall(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
+    func tosRPCCall(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
         try await TOSRPCClient(
             basePath: { await hostProvider.basePath },
             urlSession: urlSession
@@ -673,32 +673,17 @@ extension API {
 // MARK: - DNS
 
 extension API {
-    enum DNSError: Swift.Error {
-        case noWalletData
-    }
-
     func resolveDomainName(_ domainName: String) async throws -> FriendlyAddress {
-        let request = try await createRequest {
-            DNSAPI.dnsResolveWithRequestBuilder(domainName: domainName)
-        }
-
-        let response = try await performRequest(request: request).body
-        guard let wallet = response.wallet else {
-            throw DNSError.noWalletData
-        }
-
-        let address = try Address.parse(wallet.address)
-        return FriendlyAddress(address: address, bounceable: !wallet.account.isWallet)
+        let evidence = try await resolveTOSDomain(domainName)
+        let address = try Address.parse(evidence.resolvedAddress)
+        // DNS is an alias, not evidence that the target is a wallet. Use the
+        // bounceable form so an inactive or incompatible target fails safely.
+        return FriendlyAddress(address: address, bounceable: true)
     }
 
     func getDomainExpirationDate(_ domainName: String) async throws -> Date? {
-        let request = try await createRequest {
-            DNSAPI.getDnsInfoWithRequestBuilder(domainName: domainName)
-        }
-
-        let response = try await performRequest(request: request).body
-        guard let expiringAt = response.expiringAt else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(integerLiteral: Int64(expiringAt)))
+        let evidence = try await resolveTOSDomain(domainName)
+        return Date(timeIntervalSince1970: TimeInterval(evidence.renewalDeadline))
     }
 }
 

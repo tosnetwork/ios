@@ -34,12 +34,23 @@ final class DNSServiceImplementation: DNSService {
             }
         }()
 
-        let result = try await apiProvider.api(network).resolveDomainName(resolveName)
-        return Domain(domain: resolveName, friendlyAddress: result)
+        guard resolveName.hasSuffix(".tos") else {
+            throw TOSDNSError.invalidName("only the canonical .tos suffix is supported")
+        }
+        let api = apiProvider.api(network)
+        let evidence = try await api.resolveTOSDomain(resolveName)
+        let address = try Address.parse(evidence.resolvedAddress)
+        let result = FriendlyAddress(
+            address: address,
+            testOnly: network == .testnet,
+            bounceable: true
+        )
+        return Domain(domain: evidence.canonicalName, friendlyAddress: result, evidence: evidence)
     }
 
     func loadDomainExpirationDate(_ domainName: String, network: Network) async throws -> Date? {
-        return try await apiProvider.api(network).getDomainExpirationDate(domainName)
+        let evidence = try await apiProvider.api(network).resolveTOSDomain(domainName)
+        return Date(timeIntervalSince1970: TimeInterval(evidence.renewalDeadline))
     }
 }
 
@@ -47,7 +58,7 @@ private extension DNSServiceImplementation {
     func parseDomainName(_ domainName: String) -> String {
         guard let url = URL(string: domainName) else { return domainName }
         if url.pathExtension.isEmpty {
-            return "\(domainName).ton"
+            return "\(domainName).tos"
         }
         return domainName
     }

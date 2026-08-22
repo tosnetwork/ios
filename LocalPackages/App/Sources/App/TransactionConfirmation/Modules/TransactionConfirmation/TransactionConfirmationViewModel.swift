@@ -422,6 +422,9 @@ final class TransactionConfirmationViewModelImplementation: TransactionConfirmat
         if let recipientAddress = createRecipientAddresItem(transaction: transaction) {
             items.append(recipientAddress)
         }
+        if let dnsLifecycle = createDNSLifecycleItem(transaction: transaction) {
+            items.append(dnsLifecycle)
+        }
         if let networkItem = createNetworkItem() {
             items.append(networkItem)
         }
@@ -509,6 +512,17 @@ final class TransactionConfirmationViewModelImplementation: TransactionConfirmat
             title: TKLocales.TransactionConfirmation.recipient,
             value: recipientAddress,
             copyValue: recipientAddress
+        )
+    }
+
+    private func createDNSLifecycleItem(transaction: TransactionConfirmationModel) -> TKListContainerItem? {
+        guard let evidence = transaction.dnsEvidence else { return nil }
+        let deadline = Date(timeIntervalSince1970: TimeInterval(evidence.renewalDeadline))
+        let network = transaction.wallet.network == .testnet ? "testnet (-3)" : "mainnet (-239)"
+        return TKListContainerFullValueItemItem(
+            title: "TOS DNS · \(network) · renewal deadline",
+            value: ISO8601DateFormatter().string(from: deadline),
+            copyValue: evidence.resolvedAddress
         )
     }
 

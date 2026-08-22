@@ -1,11 +1,12 @@
 import Foundation
 import TonSwift
 
-/// Human-visible address that can be resolved dynamically
+/// Human-visible TOS address that can be resolved dynamically.
 public enum ResolvableAddress: Hashable, Codable {
-    /// Raw TON address (e.g. "EQf85gAj...")
+    /// Raw or friendly TOS address.
     case Resolved(TonSwift.Address)
-    /// TON.DNS name (e.g. "oleganza.ton")
+    /// Canonical TOS DNS name (for example, "alice.tos") plus its last
+    /// verified raw destination. The persisted name is never authorization.
     case Domain(String, TonSwift.Address)
 }
 

@@ -177,6 +177,7 @@ final class NFTTransferTransactionConfirmationController: TransactionConfirmatio
             wallet: wallet,
             recipient: recipient.recipientAddress.name,
             recipientAddress: recipientDisplayAddress ?? recipient.recipientAddress.addressString,
+            dnsEvidence: recipient.recipientAddress.dnsEvidence,
             transaction: .transfer(.nft(nft)),
             amount: nil,
             extraState: extraState,

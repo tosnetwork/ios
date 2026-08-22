@@ -61,11 +61,12 @@ public struct RecipientResolverImplementation: RecipientResolver {
                 isMemoRequired: account.isMemoRequired == true,
                 isScam: account.isScam == true
             )
-        } else if let account = try? await getAccount(
-            for: string,
-            network: network
-        ) {
-            let domain = Domain(domain: string, friendlyAddress: account.address.toFriendly(bounceable: !account.isWallet))
+        } else if string.lowercased().hasSuffix(".tos") {
+            // Never ask the inherited account API to interpret a domain. The
+            // TOS resolver binds every hop and lifecycle getter to one
+            // finalized checkpoint before this address is used for payment.
+            let domain = try await dnsService.resolveDomainName(string, network: network)
+            let account = try await getAccount(for: domain.friendlyAddress.address, network: network)
 
             return TonRecipient(
                 recipientAddress: .domain(domain),
@@ -83,9 +84,5 @@ public struct RecipientResolverImplementation: RecipientResolver {
 
     private func getAccount(for address: Address, network: Network) async throws -> Account {
         try await accountService.loadAccount(network: network, address: address)
-    }
-
-    private func getAccount(for domain: String, network: Network) async throws -> Account {
-        try await accountService.loadAccount(network: network, domain: domain)
     }
 }

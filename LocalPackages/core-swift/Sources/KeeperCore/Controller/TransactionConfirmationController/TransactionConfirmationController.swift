@@ -113,6 +113,7 @@ public struct TransactionConfirmationModel {
     public let wallet: Wallet
     public let recipient: String?
     public let recipientAddress: String?
+    public let dnsEvidence: TOSDNSResolutionEvidence?
     public let transaction: Transaction
     public let amount: Amount?
     public let extraState: ExtraState
@@ -126,6 +127,7 @@ public struct TransactionConfirmationModel {
         wallet: Wallet,
         recipient: String?,
         recipientAddress: String?,
+        dnsEvidence: TOSDNSResolutionEvidence? = nil,
         transaction: Transaction,
         amount: Amount?,
         extraState: ExtraState,
@@ -138,6 +140,7 @@ public struct TransactionConfirmationModel {
         self.wallet = wallet
         self.recipient = recipient
         self.recipientAddress = recipientAddress
+        self.dnsEvidence = dnsEvidence
         self.transaction = transaction
         self.amount = amount
         self.extraState = extraState

@@ -108,6 +108,7 @@ final class TonTransferTransactionConfirmationController: TransactionConfirmatio
             wallet: wallet,
             recipient: recipient.recipientAddress.name,
             recipientAddress: recipientDisplayAddress ?? recipient.recipientAddress.addressString,
+            dnsEvidence: recipient.recipientAddress.dnsEvidence,
             transaction: .transfer(.ton(isMaxAmount)),
             amount: getAmountValue(),
             extraState: extraState,

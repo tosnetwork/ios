@@ -291,6 +291,7 @@ final class JettonTransferTransactionConfirmationController: TransactionConfirma
             wallet: wallet,
             recipient: recipient.recipientAddress.name,
             recipientAddress: recipientDisplayAddress ?? recipient.recipientAddress.addressString,
+            dnsEvidence: recipient.recipientAddress.dnsEvidence,
             transaction: .transfer(.jetton(jettonItem.jettonInfo)),
             amount: getAmountValue(),
             extraState: extraState,

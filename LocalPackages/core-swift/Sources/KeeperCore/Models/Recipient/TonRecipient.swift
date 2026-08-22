@@ -25,7 +25,9 @@ public struct TonRecipient: Equatable {
             case let .raw(address):
                 return address.toRaw()
             case let .domain(domain):
-                return domain.friendlyAddress.toString()
+                // Payment confirmation must expose the authoritative raw
+                // destination rather than repeating the human alias.
+                return domain.friendlyAddress.address.toRaw()
             }
         }
 
@@ -36,7 +38,7 @@ public struct TonRecipient: Equatable {
             case let .raw(address):
                 return address.toShortRawString()
             case let .domain(domain):
-                return domain.friendlyAddress.toShort()
+                return domain.friendlyAddress.address.toShortRawString()
             }
         }
 
@@ -58,6 +60,11 @@ public struct TonRecipient: Equatable {
             case let .domain(domain):
                 return domain.friendlyAddress.isBounceable
             }
+        }
+
+        public var dnsEvidence: TOSDNSResolutionEvidence? {
+            guard case let .domain(domain) = self else { return nil }
+            return domain.evidence
         }
     }
 
