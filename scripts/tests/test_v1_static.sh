@@ -56,7 +56,7 @@ rg -q 'keychain-access-groups' "$entitlements_file" || fail "V1 app is missing i
 
 scope_file="$project_root/LocalPackages/App/Sources/App/Shared/TOSV1Scope.swift"
 assert_contains "$scope_file" 'supportsOnlyNativeTOS = true' "native-only scope is disabled"
-for flag in allowsScanner allowsSwap allowsBuySell allowsStaking allowsNonNativeAssets allowsWatchOnlyWallets allowsConnectedApps allowsBiometry; do
+for flag in allowsScanner allowsSwap allowsBuySell allowsStaking allowsNonNativeAssets allowsWatchOnlyWallets allowsConnectedApps allowsBiometry allowsSecuritySettings allowsNotifications allowsFiatCurrency; do
     assert_contains "$scope_file" "${flag} = false" "$flag is enabled"
 done
 

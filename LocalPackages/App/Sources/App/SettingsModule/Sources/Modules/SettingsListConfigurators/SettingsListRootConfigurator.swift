@@ -188,7 +188,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         if let backupItem = createBackupItem() {
             items.append(.listItem(backupItem))
         }
-        if let securityItem = createSecurityItem() {
+        if TOSV1Scope.allowsSecuritySettings, let securityItem = createSecurityItem() {
             items.append(.listItem(securityItem))
         }
 
@@ -202,13 +202,18 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     }
 
     private func createAppSettingsSection() -> SettingsListSection? {
-        let items = [
-            createNotificationsItem(),
-            createCurrencyItem(),
+        var items = [SettingsListItem]()
+        if TOSV1Scope.allowsNotifications {
+            items.append(createNotificationsItem())
+        }
+        if TOSV1Scope.allowsFiatCurrency {
+            items.append(createCurrencyItem())
+        }
+        items.append(contentsOf: [
             createRPCNodeItem(),
             createLanguageItem(),
             createThemeItem(),
-        ]
+        ])
 
         guard !items.isEmpty else { return nil }
 
@@ -592,7 +597,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         let cellConfiguration = TKListItemCell.Configuration(
             listItemContentViewConfiguration: TKListItemContentView.Configuration(
                 textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: "Rate TosWallet")
+                    titleViewConfiguration: TKListItemTitleView.Configuration(title: "Rate TOS Wallet")
                 )
             )
         )

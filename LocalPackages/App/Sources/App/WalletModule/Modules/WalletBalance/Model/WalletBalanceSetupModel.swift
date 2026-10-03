@@ -180,14 +180,15 @@ final class WalletBalanceSetupModel {
             items.append(.backup)
         }
 
-        if !isNotificationsOn {
+        if TOSV1Scope.allowsNotifications, !isNotificationsOn {
             items.append(.notifications)
         }
 
-        let isBiometryVisible: Bool = !isSetupFinished && wallet.isBiometryAvailable && !isBiometryEnable
+        let isBiometryVisible: Bool = TOSV1Scope.allowsBiometry && !isSetupFinished && wallet.isBiometryAvailable && !isBiometryEnable
         if isBiometryVisible {
             items.append(.biometry)
         }
+        guard !items.isEmpty else { return nil }
 
         return State(
             wallet: wallet,

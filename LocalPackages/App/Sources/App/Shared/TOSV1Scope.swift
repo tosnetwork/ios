@@ -9,4 +9,7 @@ enum TOSV1Scope {
     static let allowsWatchOnlyWallets = false
     static let allowsConnectedApps = false
     static let allowsBiometry = false
+    static let allowsSecuritySettings = false
+    static let allowsNotifications = false
+    static let allowsFiatCurrency = false
 }

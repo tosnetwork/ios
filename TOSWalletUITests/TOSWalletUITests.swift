@@ -978,11 +978,14 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.cells["settings.BackupItem"].exists)
         XCTAssertTrue(app.cells["settings.RPCNodeItem"].exists)
-        XCTAssertTrue(app.cells["settings.DeleteAccountItem"].exists)
+        XCTAssertTrue(app.cells["settings.SignOutIdentifier"].exists)
         XCTAssertTrue(app.cells["settings.LegalItem"].exists)
 
-        for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "TRON"] {
+        for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "Security", "Change Passcode", "TRON"] {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 setting is visible: \(unsupported)")
+        }
+        for identifier in ["SecurityItem", "Notifications item", "CurrencyItem"] {
+            XCTAssertFalse(app.cells["settings.\(identifier)"].exists)
         }
         assertReachableControlsAreAccessible()
 
@@ -1029,9 +1032,9 @@ final class TOSWalletUITests: XCTestCase {
     func testDeleteWalletRequiresAcknowledgementAndCanBeCancelled() {
         createNativeWalletToHome()
         openSettings()
-        app.cells["settings.DeleteAccountItem"].tap()
+        app.cells["settings.SignOutIdentifier"].tap()
 
-        XCTAssertTrue(app.staticTexts["Delete Wallet Data"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sign Out"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["settings.delete.confirm"].isEnabled)
         app.terminate()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
@@ -1044,7 +1047,7 @@ final class TOSWalletUITests: XCTestCase {
     func testDeletingLastWalletReturnsToCleanOnboarding() {
         createNativeWalletToHome()
         openSettings()
-        app.cells["settings.DeleteAccountItem"].tap()
+        app.cells["settings.SignOutIdentifier"].tap()
 
         let acknowledge = app.descendants(matching: .any)["settings.delete.acknowledge"]
         XCTAssertTrue(acknowledge.waitForExistence(timeout: 5))
@@ -1327,6 +1330,8 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(switchWallet.label, "Switch wallet")
         XCTAssertFalse(app.buttons["wallet.scan"].exists)
         XCTAssertFalse(app.buttons["ic qr viewfinder thin 28"].exists)
+        XCTAssertFalse(app.staticTexts["Enable transaction notifications"].exists)
+        XCTAssertFalse(app.staticTexts["Biometry unavailable"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Wallet"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["History"].exists)
         for unsupported in ["Scan", "Swap", "Buy", "Stake", "Browser", "Collectibles"] {
