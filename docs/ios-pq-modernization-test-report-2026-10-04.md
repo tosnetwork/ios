@@ -33,6 +33,8 @@ Dependencies remain pinned by the app's existing SwiftPM lockfile.
   tab-bar class replacement and custom blur constraints are restricted to older
   UIKit, avoiding the wallet-home hierarchy exception reproduced on iOS 27.
   Self-sizing collection layouts use positive initial estimates.
+  Both navigation-bar paths honor the disabled V1 scanner. Settings and wallet
+  switching expose stable identifiers and readable accessibility labels.
 - Blocking Xcode 27 compiler diagnostics are resolved with explicit ownership and handled
   asynchronous errors. Biometry setup now propagates Keychain failures to its
   caller. CI selects an installed Xcode >=26 and an available simulator, then
@@ -58,11 +60,11 @@ the deployed toserver network is not mutated.
 | Simulator build and V1 static/artifact gates | Passed before the UIKit fix; final rerun pending | `make test_v1_static`; `/tmp/ios-pq-static.log` |
 | Full package suite | Passed before final VM-capability change | 178 tests, no failures/skips; `make test_all`; `/tmp/ios-pq-tests-all-passed.log`. Final full Core rerun passed on iOS27.0: 153 tests, including five live-chain tests; `/tmp/ios-pq-core-final.log`, retained `build/TestResults/WalletCore-20261004T020831-33678.xcresult`. The other packages remain 28/28 passed (181 combined). |
 | TOS signing-vector mutation control | Passed red / restored green | Removing signed global ID failed 3 of 6 tests / 9 assertions; `/tmp/ios-pq-global-id-red.log`; retained `build/TestResults/WalletCore-global-id-red.xcresult`; restoration rerun passed all six. |
-| UI suite | Full rerun pending; targeted restores passed | Initial two dual-domain restores reproduced the iOS27 tab-bar exception. Both restore choices pass with the fix and their official addresses; `/tmp/ios-pq-ui-{legacy,tos}-home-green.log`. The next full run was stopped after an unsupported-URL import failure: runner RPC contained the literal scheme macro. Invalid-run raw logs and runner evidence are retained in `/tmp/ios-pq-ui-final-invalid-rpc*`; its interrupted bundle is incomplete. Corrected forwarding passed the live TOS restore1/1 in96.885s, actual runner18645, with a retained home screenshot and passing runtime/performance gates; `/tmp/ios-pq-ui-tos-home-forwarded{,-raw}.log`. |
+| UI suite | Full rerun pending; targeted restores passed; navigation accessibility repair under test | Initial dual-domain restores reproduced the iOS27 tab-bar exception, then passed after its repair. Corrected RPC forwarding passed live TOS restore1/1 in96.885s. The next complete run passed8 tests before two deletion tests exposed native navigation items missing Settings identifiers; its unsupported scanner was also visible. Red logs and screenshot are retained as `/tmp/ios-pq-ui-navbar-red*`; interrupted bundles are incomplete. Product paths and stronger home assertions now cover these controls; targeted repair validation is running. |
 | Offline legacy wallet-home regression | Passed with verified endpoint and final forwarding/assertions | Generic root Make target, actual runner RPC127.0.0.1:1, no proxy/performance; 1/1 passed in117.625s with the sanitized startup log and expected-URL assertion; `/tmp/ios-pq-ui-legacy-offline-final{,-raw}.log`, retained bundle `TOSWalletUITests-20261004T031712-48158.xcresult`. The earlier66.7s pass proved home behavior only: its endpoint forwarding was invalidated. Added to CI. |
 | Layout matrix | Pending | iPhone 17e / iPhone 17 Pro Max, iOS 26.5 |
 | Runtime secret gate and mutation control | Passed green / injected red / restored green | `/tmp/ios-pq-secret-gate-{green,red,restored}.log`; public fixture injected into task-owned simulator clipboard, original clipboard restored, existing logs preserved. Post-UI scan pending. |
-| Unsigned generic-device release archive | Passed for frozen App source | `make release_archive BUILD_JOBS=2`; `/tmp/ios-pq-archive-final.log`; `build/release-archive/TOSWallet.xcarchive`. Version1.1.0/build2, arm64, SDK27.0, MinimumOSVersion15.0, unsigned. Subsequent changes affect only the test harness/report. The separate initial WIP archive/log are retained and are not final-source acceptance. |
+| Unsigned generic-device release archive | Earlier frozen-source build passed; superseded by navigation repair | `make release_archive BUILD_JOBS=2`; `/tmp/ios-pq-archive-final.log`; retained `build/release-archive/TOSWallet-navbar-pre-fix.xcarchive`. Version1.1.0/build2, arm64, SDK27.0, MinimumOSVersion15.0, unsigned. A new archive is required for the navigation repair. The separate initial WIP archive/log are retained and are not final-source acceptance. |
 
 The added regressions cover independent SDK address/signing/key vectors, both
 valid mnemonic domains, retained legacy keys/identity, malformed network/seqno
@@ -74,7 +76,7 @@ App Store publication, and GitHub final-head CI have not been verified locally.
 The app target's effective deployment target remains iOS 15.0, confirmed in every
 App target configuration at baseline and current HEAD and in the release archive.
 Some project/dependency configurations specify15.6; the App target overrides them.
-local runtime coverage uses iOS 26.5 and 27.0. No old-OS runtime claim is made.
+Local runtime coverage uses iOS 26.5 and 27.0. No old-OS runtime claim is made.
 Existing nonblocking package warnings remain, including deprecated API calls and
 the best-effort scam-report task/capture diagnostics outside the enabled PQ wallet
 flow; this report does not claim a warning-free build.

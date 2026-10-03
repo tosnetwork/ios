@@ -23,6 +23,7 @@ final class WalletContainerWalletButton: UIControl, ConfigurableView {
     }
 
     func configure(model: Model) {
+        accessibilityValue = model.title
         if !UIApplication.useSystemBarsAppearance {
             backgroundView.backgroundColor = model.color
         }
@@ -93,6 +94,10 @@ final class WalletContainerWalletButton: UIControl, ConfigurableView {
 
 private extension WalletContainerWalletButton {
     func setup() {
+        isAccessibilityElement = true
+        accessibilityIdentifier = "wallet.switch"
+        accessibilityLabel = "Switch wallet"
+        accessibilityTraits = .button
         backgroundView.layer.cornerCurve = .continuous
 
         stackView.isUserInteractionEnabled = false

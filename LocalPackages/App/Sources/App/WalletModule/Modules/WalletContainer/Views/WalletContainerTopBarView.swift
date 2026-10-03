@@ -55,6 +55,9 @@ private extension WalletContainerTopBarView {
         settingsButton.accessibilityIdentifier = "wallet.settings"
         settingsButton.isAccessibilityElement = true
         settingsButton.accessibilityLabel = "Settings"
+        leadingButton.isHidden = !TOSV1Scope.allowsScanner
+        leadingButton.accessibilityIdentifier = "wallet.scan"
+        leadingButton.accessibilityLabel = "Scan"
 
         addSubview(contentContainerView)
         addSubview(separatorView)

@@ -1319,6 +1319,14 @@ final class TOSWalletUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
         ).firstMatch
         XCTAssertTrue(receive.waitForExistence(timeout: 5))
+        let settings = app.buttons["wallet.settings"]
+        XCTAssertTrue(settings.exists, "Wallet home must expose its settings control")
+        XCTAssertEqual(settings.label, "Settings")
+        let switchWallet = app.buttons["wallet.switch"]
+        XCTAssertTrue(switchWallet.exists, "Wallet home must expose its wallet selector")
+        XCTAssertEqual(switchWallet.label, "Switch wallet")
+        XCTAssertFalse(app.buttons["wallet.scan"].exists)
+        XCTAssertFalse(app.buttons["ic qr viewfinder thin 28"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Wallet"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["History"].exists)
         for unsupported in ["Scan", "Swap", "Buy", "Stake", "Browser", "Collectibles"] {
