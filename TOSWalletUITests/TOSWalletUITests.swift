@@ -470,8 +470,12 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testRecoveryPhraseUnknownWordIsRejected() {
-        let unknownWord = fixtureMnemonic.replacingOccurrences(of: "mansion", with: "notaword")
+        var words = fixtureMnemonic.split(separator: " ").map(String.init)
+        words[0] = "notaword"
+        let unknownWord = words.joined(separator: " ")
+        XCTAssertNotEqual(unknownWord, fixtureMnemonic)
         launchRecoveryPhraseImport(phrase: unknownWord)
+        XCTAssertEqual(app.descendants(matching: .any)["mnemonic.input.0"].value as? String, "notaword")
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
@@ -685,8 +689,9 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["send.recipient.paste"].tap()
         replaceText(in: app.textFields["Amount"], with: "1")
         app.descendants(matching: .any)["send.comment.paste"].tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
 
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(waitForEnabled(continueButton, expected: true))
 
         replaceText(in: app.textViews["Comment"], with: String(repeating: "a", count: 121))
@@ -701,7 +706,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["Send"].tap()
         app.descendants(matching: .any)["send.recipient.paste"].tap()
         let amount = app.textFields["Amount"]
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(amount.waitForExistence(timeout: 5))
 
         replaceText(in: amount, with: "1")
@@ -800,7 +805,7 @@ final class TOSWalletUITests: XCTestCase {
         comment.typeText("TOS automated transfer")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
 
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
@@ -845,7 +850,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["send.comment.paste"].tap()
         XCTAssertEqual(comment.value as? String, transferComment)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
@@ -1171,11 +1176,18 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     private func waitForEnabled(_ element: XCUIElement, expected: Bool) -> Bool {
+        guard element.waitForExistence(timeout: 5) else { return false }
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "enabled == %@", NSNumber(value: expected)),
+            predicate: NSPredicate { _, _ in element.exists && element.isEnabled == expected },
             object: element
         )
-        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+        let completed = XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+        if !completed {
+            retainScreenshot(named: "Continue predicate failure")
+            print("Continue state after predicate: exists=\(element.exists), enabled=\(element.exists ? element.isEnabled : false)")
+            print(app.debugDescription)
+        }
+        return completed
     }
 
     private func assertCannotContinue(continueButton: XCUIElement, amountField: XCUIElement) {
@@ -1189,7 +1201,7 @@ final class TOSWalletUITests: XCTestCase {
         replaceText(in: app.textFields["Amount"], with: amount)
         app.descendants(matching: .any)["send.comment.paste"].tap()
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         continueButton.tap()
         XCTAssertTrue(app.staticTexts["Confirm action"].waitForExistence(timeout: 20))

@@ -70,6 +70,10 @@ private extension SendV3ViewController {
         setupNavigationBar()
 
         customView.amountInputView.textInputControl.delegate = viewModel.sendAmountTextFieldFormatter
+        customView.continueButton.isAccessibilityElement = true
+        customView.continueButton.accessibilityIdentifier = "send.continue"
+        customView.continueButton.accessibilityLabel = TKLocales.Actions.continueAction
+        customView.continueButton.accessibilityTraits = .button
 
         var configuration = TKButton.Configuration.titleHeaderButtonConfiguration(category: .tertiary)
         configuration.content.title = .plainString(TKLocales.Actions.paste)
@@ -141,6 +145,8 @@ private extension SendV3ViewController {
             customView.amountInputView.balanceView.limitError = viewState.balanceState.limitError
 
             customView.continueButton.configuration = viewState.continueButtonConfiguration
+            customView.continueButton.accessibilityTraits = viewState.continueButtonConfiguration.isEnabled
+                ? .button : [.button, .notEnabled]
 
             if let commentState = viewState.commentState {
                 customView.commentInputView.isHidden = false

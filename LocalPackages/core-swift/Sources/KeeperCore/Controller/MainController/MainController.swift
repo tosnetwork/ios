@@ -59,10 +59,12 @@ public final class MainController {
         balanceLoader.loadActiveWalletBalance()
         walletInfoLoader.loadActiveWalletInfoNotifications()
         balanceLoader.startActiveWalletBalanceReload()
+        backgroundUpdate.start()
         updatesStarted = true
     }
 
     public func stopUpdates() {
+        backgroundUpdate.stop()
         balanceLoader.stopActiveWalletBalanceReload()
         updatesStarted = false
     }

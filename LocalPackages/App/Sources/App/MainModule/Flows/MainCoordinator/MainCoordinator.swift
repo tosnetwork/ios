@@ -2280,8 +2280,8 @@ extension MainCoordinator: AppStateTrackerObserver {
 
 extension MainCoordinator: ReachabilityTrackerObserver {
     func didUpdateState(_ state: TKCore.ReachabilityTracker.State) {
-        switch reachabilityTracker.state {
-        case .connected:
+        switch (appStateTracker.state, reachabilityTracker.state) {
+        case (.active, .connected):
             mainController.startUpdates()
         default:
             return
