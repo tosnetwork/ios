@@ -141,7 +141,7 @@ private extension AddWalletOptionPickerViewController {
     func makeGlobalHeader() -> NSCollectionLayoutBoundarySupplementaryItem {
         let headerSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1.0),
-            heightDimension: .estimated(0)
+            heightDimension: .estimated(1)
         )
         return NSCollectionLayoutBoundarySupplementaryItem(
             layoutSize: headerSize,

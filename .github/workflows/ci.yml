@@ -29,6 +29,13 @@ jobs:
       - name: Test app packages
         run: make test_all TEST_DESTINATION="$TEST_DESTINATION"
 
+      - name: Restore legacy wallet offline and open wallet home
+        run: >-
+          make test_project_scheme SCHEME=TOSWalletUITests
+          TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testAmbiguousPhraseCanExplicitlyRestoreLegacyWallet
+          TEST_DESTINATION="$TEST_DESTINATION"
+          TOS_UI_RPC_URL=http://127.0.0.1:1
+
       - name: Retain build and test evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -90,7 +90,7 @@ archive_v1_release:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
-TOS_UI_RPC_URL ?=
+TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 TEST_DERIVED_DATA_PATH ?= $(TEST_BUILD_ROOT)/DerivedData
@@ -156,6 +156,7 @@ test_project_scheme:
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
 		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
+		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
 		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
 
 test_core_swift: SCHEME=WalletCore

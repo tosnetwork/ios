@@ -29,10 +29,16 @@ Dependencies remain pinned by the app's existing SwiftPM lockfile.
   public key to stored wallet metadata.
 - Node configuration is available on onboarding and after create/import errors,
   allowing an unreachable default endpoint to be replaced before wallet creation.
+- On iOS 26+, release builds use the existing native system-bars path. Legacy
+  tab-bar class replacement and custom blur constraints are restricted to older
+  UIKit, avoiding the wallet-home hierarchy exception reproduced on iOS 27.
+  Self-sizing collection layouts use positive initial estimates.
 - Xcode 27 compiler diagnostics are resolved with explicit ownership and handled
   asynchronous errors. Biometry setup now propagates Keychain failures to its
   caller. CI selects an installed Xcode >=26 and an available simulator, then
-  runs the full package suite through the root Makefile.
+  runs the full package suite plus an offline legacy wallet-home UI regression
+  through the root Makefile. The UI scheme explicitly receives the RPC override;
+  runtime gates select the same simulator as Xcode, including multiple runtimes.
 
 The wallet remains an Ed25519 user wallet compatible with PQ validator consensus.
 ML-DSA/Falcon user-wallet signing and advanced arbitrary-cell signing are outside
@@ -49,10 +55,11 @@ the deployed toserver network is not mutated.
 | Simulator build and V1 static/artifact gates | Passed | `make test_v1_static`; `/tmp/ios-pq-static.log` |
 | Full package suite | Passed before final VM-capability change | 178 tests, no failures/skips; `make test_all`; `/tmp/ios-pq-tests-all-passed.log`. Final full Core rerun passed on iOS27.0: 153 tests, including five live-chain tests; `/tmp/ios-pq-core-final.log`, retained `build/TestResults/WalletCore-20261004T020831-33678.xcresult`. The other packages remain 28/28 passed (181 combined). |
 | TOS signing-vector mutation control | Passed red / restored green | Removing signed global ID failed 3 of 6 tests / 9 assertions; `/tmp/ios-pq-global-id-red.log`; retained `build/TestResults/WalletCore-global-id-red.xcresult`; restoration rerun passed all six. |
-| UI suite | Pending | `make test_ui`, 45 discovered methods |
+| UI suite | Full rerun pending; targeted restores passed | Initial two dual-domain restores reproduced the iOS27 tab-bar exception. Both restore choices now pass with the fix and their official addresses; `/tmp/ios-pq-ui-{legacy,tos}-home-green.log`. |
+| Offline legacy wallet-home regression | Passed | Generic root Make target, RPC127.0.0.1:1, no proxy/performance; 1/1 passed in66.7s; `/tmp/ios-pq-ui-legacy-offline.log`; added to CI. |
 | Layout matrix | Pending | iPhone 17e / iPhone 17 Pro Max, iOS 26.5 |
 | Runtime secret gate and mutation control | Passed green / injected red / restored green | `/tmp/ios-pq-secret-gate-{green,red,restored}.log`; public fixture injected into task-owned simulator clipboard, original clipboard restored, existing logs preserved. Post-UI scan pending. |
-| Unsigned generic-device release archive | Pending | `make archive_v1_release` |
+| Unsigned generic-device release archive | WIP archive passed; final incremental rebuild pending | Initial build ran while UIKit source changed; `/tmp/ios-pq-archive.log` is not final-source acceptance. |
 
 The added regressions cover independent SDK address/signing/key vectors, both
 valid mnemonic domains, retained legacy keys/identity, malformed network/seqno

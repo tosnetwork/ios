@@ -8,11 +8,13 @@ final class TOSWalletUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        try setProxyMode("normal", resetCounts: true)
+        let rpcURL = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645"
+        if URL(string: rpcURL)?.port == 18645 {
+            try setProxyMode("normal", resetCounts: true)
+        }
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
-        app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
-            ?? "http://127.0.0.1:18645"
+        app.launchEnvironment["TOS_RPC_URL"] = rpcURL
         app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = "TOS automated transfer"
         app.launch()

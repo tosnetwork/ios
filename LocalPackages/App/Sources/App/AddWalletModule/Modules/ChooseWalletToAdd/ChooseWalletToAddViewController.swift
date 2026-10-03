@@ -104,7 +104,7 @@ final class ChooseWalletToAddViewController: GenericViewViewController<ChooseWal
 
         let headerSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1.0),
-            heightDimension: .estimated(0)
+            heightDimension: .estimated(1)
         )
         let header = NSCollectionLayoutBoundarySupplementaryItem(
             layoutSize: headerSize,
