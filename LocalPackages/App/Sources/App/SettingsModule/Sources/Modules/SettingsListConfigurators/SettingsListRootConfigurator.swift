@@ -661,7 +661,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                 self.didTapSignOutRegularWallet?(self.wallet)
             }
         } else {
-            action = {
+            action = { [weak self] in
+                guard let self else { return }
                 let actions = [
                     UIAlertAction(title: TKLocales.Actions.delete, style: .destructive, handler: { [weak self] _ in
                         guard let self else { return }

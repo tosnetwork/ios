@@ -54,8 +54,8 @@ final class WalletTransferSignCoordinator: RouterCoordinator<ViewControllerRoute
     }
 
     func handleSign(parentCoordinator: Coordinator) async -> Result {
-        return await Task<WalletTransferSignCoordinator.Result, Never> { @MainActor in
-            return await withCheckedContinuation { [weak parentCoordinator] (continuation: CheckedContinuation<WalletTransferSignCoordinator.Result, Never>) in
+        return await Task<WalletTransferSignCoordinator.Result, Never> { @MainActor [self, parentCoordinator] in
+            return await withCheckedContinuation { [self, weak parentCoordinator] (continuation: CheckedContinuation<WalletTransferSignCoordinator.Result, Never>) in
                 didSign = { [weak parentCoordinator, weak self] in
                     continuation.resume(returning: .success($0))
                     guard let self else { return }
@@ -246,7 +246,11 @@ private extension WalletTransferSignCoordinator {
                             wallet: wallet,
                             password: passcode
                         )
-                        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: mnemonic.mnemonicWords)
+                        let currentSeqno = try await keeperCoreMainAssembly.servicesAssembly.sendService().loadSeqno(wallet: wallet)
+                        guard currentSeqno == transferData.seqno else {
+                            throw TonError.custom("The wallet changed while confirming. Review the transfer again.")
+                        }
+                        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
                         let privateKey = keyPair.privateKey
                         let walletTransfer = try await UnsignedTransferBuilder(transferData: transferData)
                             .createUnsignedWalletTransfer(
@@ -272,8 +276,8 @@ private extension WalletTransferSignCoordinator {
     }
 
     func handleLedgerSign(transactions: [Transaction], ledgerDevice: Wallet.LedgerDevice) async -> LedgerConfirmSignedItem? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
+        await withCheckedContinuation { [self] continuation in
+            DispatchQueue.main.async { [self] in
                 let confirmItem: LedgerConfirmConfirmItem = transactions.count == 1 ? .transaction(transactions[0]) : .transactions(transactions)
                 let module = LedgerConfirmAssembly.module(
                     confirmItem: confirmItem,

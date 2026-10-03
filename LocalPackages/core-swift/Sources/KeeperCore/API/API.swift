@@ -47,11 +47,11 @@ struct MainnetAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
-            if let environmentEndpoint = ProcessInfo.processInfo.environment["TOS_RPC_URL"] {
-                return environmentEndpoint
-            }
             if let customEndpoint = TOSRPCSettings.customEndpoint {
                 return customEndpoint
+            }
+            if let environmentEndpoint = ProcessInfo.processInfo.environment["TOS_RPC_URL"] {
+                return environmentEndpoint
             }
 #if DEBUG
             return "http://127.0.0.1:18545"
@@ -247,6 +247,11 @@ public struct API {
 
     enum Error: Swift.Error {
         case failed
+    }
+
+    func boundTOSRPCClient() async -> TOSRPCClient {
+        let endpoint = await hostProvider.basePath
+        return TOSRPCClient(basePath: { endpoint }, urlSession: urlSession)
     }
 
     func tosRPCCall(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
@@ -461,7 +466,7 @@ extension API {
             method: "getWalletInformation",
             params: ["address": address.toRaw()]
         )
-        return Int(integer(response["seqno"]))
+        return Int(try TOSWalletRPC.decodeSeqno(response))
     }
 
     func getWalletInfo(address: Address) async throws -> WalletInfo {

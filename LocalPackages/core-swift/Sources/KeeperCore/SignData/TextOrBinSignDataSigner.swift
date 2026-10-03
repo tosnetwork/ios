@@ -88,7 +88,7 @@ public struct TextOrBinSignDataSigner: SignDataSigner {
             wallet: wallet,
             password: passcode
         )
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: mnemonic.mnemonicWords)
+        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
 
         let sodium = Sodium()
         guard let signature = sodium.sign.signature(

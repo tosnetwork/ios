@@ -90,7 +90,7 @@ private extension TokenDetailsViewController {
         ]
 
         customView.navigationBar.rightViews = [
-            TKUINavigationBar.createMoreButton { view in
+            TKUINavigationBar.createMoreButton { [weak self] view in
                 let item = TKPopupMenuItem(
                     title: TKLocales.Token.viewDetails,
                     icon: .TKUIKit.Icons.Size16.globe,

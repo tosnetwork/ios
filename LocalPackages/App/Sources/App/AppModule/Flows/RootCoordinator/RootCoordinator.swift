@@ -118,9 +118,7 @@ final class RootCoordinator: RouterCoordinator<ViewControllerRouter> {
                 for wallet in missedTonProofWallets {
                     do {
                         let mnemonic = try await mnemonicRepository.getMnemonic(wallet: wallet, password: passcode)
-                        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(
-                            mnemonicArray: mnemonic.mnemonicWords
-                        )
+                        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
                         let pair = WalletPrivateKeyPair(
                             wallet: wallet,
                             privateKey: keyPair.privateKey

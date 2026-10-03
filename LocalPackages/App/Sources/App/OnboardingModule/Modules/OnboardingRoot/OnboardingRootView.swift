@@ -20,6 +20,7 @@ final class OnboardingRootView: UIView, ConfigurableView {
 
     let createButton = TKButton()
     let importButton = TKButton()
+    let configureNodeButton = UIButton(type: .system)
     let termsTextView: UITextView = {
         let textView = UITextView()
         textView.isEditable = false
@@ -80,7 +81,13 @@ private extension OnboardingRootView {
         importButton.accessibilityTraits = .button
         termsTextView.accessibilityIdentifier = "onboarding.terms"
 
-        bottomControlsContainer.setViews([createButton, importButton, termsTextView])
+        configureNodeButton.setTitle("Configure TOS Node", for: .normal)
+        configureNodeButton.setTitleColor(.Text.accent, for: .normal)
+        configureNodeButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .callout)
+        configureNodeButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        configureNodeButton.accessibilityIdentifier = "onboarding.configureNode"
+        configureNodeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        bottomControlsContainer.setViews([createButton, importButton, configureNodeButton, termsTextView])
 
         addSubview(coverImageView)
         addSubview(titleDescriptionView)

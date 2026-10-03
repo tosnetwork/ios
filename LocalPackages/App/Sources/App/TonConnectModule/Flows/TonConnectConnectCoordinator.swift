@@ -208,7 +208,7 @@ private extension TonConnectConnectCoordinator {
             )
         }
 
-        module.output.didTapOpenBrowserAndConnect = { [weak bottomSheetViewController] manifest in
+        module.output.didTapOpenBrowserAndConnect = { [weak self, weak bottomSheetViewController] manifest in
             bottomSheetViewController?.dismiss { [weak self] in
                 self?.didRequestOpeningBrowser?(manifest)
                 self?.didCancel?()
@@ -489,7 +489,7 @@ private extension TonConnectConnectCoordinator {
         ) else { throw ConnectError.noPasscode }
 
         let mnemonic = try await keeperCoreMainAssembly.secureAssembly.mnemonicsRepository().getMnemonic(wallet: wallet, password: passcode)
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: mnemonic.mnemonicWords)
+        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
         let privateKey = keyPair.privateKey
 
         let signature: TonConnect.Signature = .init(signatureData: signatureData, privateKey: privateKey)

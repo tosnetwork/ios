@@ -28,7 +28,7 @@ public enum TransferSigner {
     ) throws -> Cell {
         let signed = try walletTransfer.signMessage(
             signer: signer,
-            hashModifier: wallet.network == .tetra
+            hashModifier: wallet.network == .tetra && wallet.contractVersion != .tosV5R1
                 ? { TransferSignaturePrefixedHash.prefixedHash(prefixId: Int32(Network.tetra.rawValue), hash: $0) }
                 : nil
         )

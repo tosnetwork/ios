@@ -4,7 +4,7 @@ import XCTest
 
 final class TOSWalletUITests: XCTestCase {
     private var app: XCUIApplication!
-    private let fixtureMnemonic = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
+    private let fixtureMnemonic = "enhance depend evolve rotate creek total enable settle mammal margin round cube truck quote hold correct provide voyage north model sure off strategy pulse"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -44,6 +44,33 @@ final class TOSWalletUITests: XCTestCase {
             assertVisibleElementsFitWindow()
             assertScreenshotHasReadableContrast(app.screenshot().image)
         }
+    }
+
+    func testUnavailableNodeCreationCanConfigureAndRetryWithoutLosingRecovery() {
+        app.terminate()
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:9"
+        app.launch()
+        XCTAssertTrue(app.buttons["onboarding.configureNode"].waitForExistence(timeout: 15))
+        openCreatePasscode()
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.descendants(matching: .any)["Later"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["Later"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["Continue"].tap()
+        let failure = app.alerts["Wallet creation failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15))
+        failure.buttons["Configure TOS Node"].tap()
+        let field = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645")
+        app.buttons["Save"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].exists)
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+        XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
     }
 
     func testBackgroundPrivacyShieldAppearsAndForegroundRestores() {
@@ -202,6 +229,46 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Back up your recovery phrase"].exists)
     }
 
+    func testLegacyRecoveryRequiresExplicitChoiceAndPreservesAddress() {
+        launchRecoveryPhraseImport(phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.alerts["Legacy Recovery Phrase"].waitForExistence(timeout: 10))
+        app.alerts["Legacy Recovery Phrase"].buttons["Restore Legacy Wallet"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+    }
+
+    func testAmbiguousPhraseCanExplicitlyRestoreTOSWallet() {
+        launchRecoveryPhraseImport(phrase: "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Recovery Phrase Format"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        XCTAssertTrue(choice.buttons["Restore Legacy Wallet"].exists)
+        choice.buttons["Restore TOS Wallet"].tap()
+        completeImportedWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQDxvyHqyxsnJeR5LU7q4j39VALosGD2fSpycZrsSeXXJwDq"].waitForExistence(timeout: 10))
+    }
+
+    func testAmbiguousPhraseCanExplicitlyRestoreLegacyWallet() {
+        launchRecoveryPhraseImport(phrase: "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Recovery Phrase Format"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        XCTAssertTrue(choice.buttons["Restore TOS Wallet"].exists)
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCzuE67CycqLve5l3-2JSZmUYAuq7OpQjcnX-7sC5w4Qn4H"].waitForExistence(timeout: 10))
+    }
+
     func testImportWalletOpensRecoveryPhraseFlow() {
         let importWallet = app.buttons["Import Existing Wallet"]
         XCTAssertTrue(importWallet.waitForExistence(timeout: 15))
@@ -232,7 +299,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
         ).firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"].waitForExistence(timeout: 10))
 
         app.terminate()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
@@ -243,7 +310,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testFundedFixtureLoadsExactNativeBalanceAndIncomingHistory() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let expectedBalance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         let walletList = app.collectionViews["wallet.balance.list"]
@@ -274,7 +341,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testIncomingLocalChainTransferRefreshesBalanceAndHistory() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balanceBefore = try rpcBalance(address: sender)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome()
@@ -375,6 +442,8 @@ final class TOSWalletUITests: XCTestCase {
         let decorated = "MANSION Chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction VOICE"
         launchRecoveryPhraseImport(phrase: decorated)
         app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.alerts["Legacy Recovery Phrase"].waitForExistence(timeout: 10))
+        app.alerts["Legacy Recovery Phrase"].buttons["Restore Legacy Wallet"].tap()
         XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
     }
 
@@ -612,7 +681,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testNativeSendAmountBoundaries() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let currentBalance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
@@ -638,7 +707,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testMaxAmountUsesSendAllFeeSemantics() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
@@ -668,7 +737,7 @@ final class TOSWalletUITests: XCTestCase {
             amountField: app.textFields["Amount"]
         )
 
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
@@ -745,7 +814,7 @@ final class TOSWalletUITests: XCTestCase {
     func testPasscodeSignsBroadcastsAndReconcilesNativeTransfer() throws {
         let transferComment = "TOS 星河 🚀"
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let senderBefore = try rpcBalance(address: sender)
         let eventsBefore = try rpcEventIDs(address: sender)
@@ -815,7 +884,7 @@ final class TOSWalletUITests: XCTestCase {
 
     func testLostBroadcastResponseDoesNotDuplicateNativeTransfer() throws {
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome(comment: "lost response")
@@ -836,7 +905,7 @@ final class TOSWalletUITests: XCTestCase {
 
     func testRelaunchReconcilesTransferWithDelayedBroadcastResponse() throws {
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome(comment: "relaunch pending")
@@ -1021,6 +1090,16 @@ final class TOSWalletUITests: XCTestCase {
     private func importFixtureWalletToHome(comment: String = "TOS automated transfer") {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic, comment: comment)
         app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+    }
+
+    private func completeImportedWalletToHome() {
         XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
         enterPasscode("1234")
         XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))

@@ -102,7 +102,7 @@ private extension PasscodeInputViewModelImplementation {
                 isInputEnable = true
                 return
             }
-            Task {
+            Task { [self] in
                 let result = await validateInput(input)
                 let state: PasscodeInputView.State
                 switch result {
@@ -114,8 +114,8 @@ private extension PasscodeInputViewModelImplementation {
                     state = .input(inputCount)
                 }
 
-                await MainActor.run {
-                    didUpdateState?(state) { [weak self] in
+                await MainActor.run { [weak self] in
+                    self?.didUpdateState?(state) { [weak self] in
                         self?.isInputEnable = true
                         switch result {
                         case .success, .none:

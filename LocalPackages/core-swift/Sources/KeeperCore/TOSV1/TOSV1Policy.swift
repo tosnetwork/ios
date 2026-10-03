@@ -1,4 +1,5 @@
 import TonSwift
+import CoreComponents
 
 public enum TOSV1MnemonicValidator {
     public static func normalize(_ phrase: String) -> [String] {
@@ -14,7 +15,7 @@ public enum TOSV1MnemonicValidator {
 
     public static func isValid(_ words: [String]) -> Bool {
         let normalized = normalize(words)
-        return normalized.count == 24 && Mnemonic.mnemonicValidate(mnemonicArray: normalized)
+        return normalized.count == 24 && (TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: normalized) || TOSMnemonic.isValid(normalized))
     }
 }
 

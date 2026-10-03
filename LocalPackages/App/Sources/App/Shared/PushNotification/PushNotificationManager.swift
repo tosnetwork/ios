@@ -98,14 +98,18 @@ final class PushNotificationManager {
     private func subscribePushNotifications(wallet: Wallet) {
         let action: (String) -> Void = { [uniqueIdProvider, pushNotificationAPI] token in
             Task {
-                _ = try await pushNotificationAPI.subscribeNotifications(
-                    subscribeData: PushNotificationsAPI.SubscribeData(
-                        token: token,
-                        device: uniqueIdProvider.uniqueDeviceId.uuidString,
-                        accounts: [PushNotificationsAPI.SubscribeData.Account(address: wallet.friendlyAddress.toString())],
-                        locale: Locale.current.languageCode ?? "en"
+                do {
+                    _ = try await pushNotificationAPI.subscribeNotifications(
+                        subscribeData: PushNotificationsAPI.SubscribeData(
+                            token: token,
+                            device: uniqueIdProvider.uniqueDeviceId.uuidString,
+                            accounts: [PushNotificationsAPI.SubscribeData.Account(address: wallet.friendlyAddress.toString())],
+                            locale: Locale.current.languageCode ?? "en"
+                        )
                     )
-                )
+                } catch {
+                    Log.w("Push notification subscription failed")
+                }
             }
         }
 
@@ -131,12 +135,16 @@ final class PushNotificationManager {
     private func unsubscribePushNotifications(wallet: Wallet) {
         let action: (String) -> Void = { [uniqueIdProvider, pushNotificationAPI] _ in
             Task {
-                _ = try await pushNotificationAPI.unsubscribeNotifications(
-                    unsubscribeData: PushNotificationsAPI.UnsubscribeData(
-                        device: uniqueIdProvider.uniqueDeviceId.uuidString,
-                        accounts: [PushNotificationsAPI.UnsubscribeData.Account(address: wallet.friendlyAddress.toString())]
+                do {
+                    _ = try await pushNotificationAPI.unsubscribeNotifications(
+                        unsubscribeData: PushNotificationsAPI.UnsubscribeData(
+                            device: uniqueIdProvider.uniqueDeviceId.uuidString,
+                            accounts: [PushNotificationsAPI.UnsubscribeData.Account(address: wallet.friendlyAddress.toString())]
+                        )
                     )
-                )
+                } catch {
+                    Log.w("Push notification unsubscription failed")
+                }
             }
         }
 

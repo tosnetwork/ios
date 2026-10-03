@@ -66,6 +66,7 @@ public struct RNWallet: Codable {
     public enum RNContractVersion: String, Codable {
         case v5Beta
         case v5R1
+        case tosV5R1
         case v4R2
         case v4R1
         case v3R2
@@ -86,6 +87,8 @@ public struct RNWallet: Codable {
                 self = .v5Beta
             case .v5R1:
                 self = .v5R1
+            case .tosV5R1:
+                self = .tosV5R1
             }
         }
     }
@@ -106,12 +109,14 @@ public struct RNWallet: Codable {
     public let network: WalletNetwork
     public let type: WalletType
     public let version: RNContractVersion
+    public let networkGlobalId: Int32?
     public let workchain: Int
     public let ledger: Ledger?
 }
 
 public extension RNWallet {
     init(wallet: Wallet) {
+        self.networkGlobalId = wallet.identity.networkGlobalId
         self.identifier = wallet.id
         self.name = wallet.label
         self.color = wallet.tintColor.rawValue
@@ -207,6 +212,8 @@ public extension RNWallet {
             contractVersion = .v5Beta
         case .v5R1:
             contractVersion = .v5R1
+        case .tosV5R1:
+            contractVersion = .tosV5R1
         case .LockupV1:
             contractVersion = .v3R1
         }
@@ -221,6 +228,9 @@ public extension RNWallet {
 
         let contract: WalletContract
         switch contractVersion {
+        case .tosV5R1:
+            guard let networkGlobalId else { throw TOSNetworkIdentityError.missingIdentity }
+            contract = try TOSWalletV5R1(publicKey: publicKey.data, networkGlobalId: networkGlobalId)
         case .v5R1:
             contract = WalletV5R1(
                 publicKey: publicKey.data,
@@ -291,7 +301,7 @@ public extension RNWallet {
 
         return Wallet(
             id: identifier,
-            identity: WalletIdentity(network: network, kind: kind),
+            identity: WalletIdentity(network: network, kind: kind, networkGlobalId: networkGlobalId),
             metaData: WalletMetaData(label: name, tintColor: tintColor, icon: icon),
             setupSettings: WalletSetupSettings(
                 backupDate: backupDate,

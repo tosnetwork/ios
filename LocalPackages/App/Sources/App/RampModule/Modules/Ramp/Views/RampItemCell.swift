@@ -84,7 +84,7 @@ typealias RampItemCellRegistration = UICollectionView.CellRegistration<RampItemC
 
 extension RampItemCellRegistration {
     static func registration(collectionView: UICollectionView) -> RampItemCellRegistration {
-        RampItemCellRegistration { cell, _, configuration in
+        RampItemCellRegistration { [weak collectionView] cell, _, configuration in
             cell.configuration = configuration
             cell.isFirstInSection = { ip in ip.item == 0 }
             cell.isLastInSection = { [weak collectionView] ip in

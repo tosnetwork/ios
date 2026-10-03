@@ -112,7 +112,7 @@ final class SettingsListViewController: GenericViewViewController<SettingsListVi
 
         let dataSource = DataSource(
             collectionView: customView.collectionView
-        ) {
+        ) { [weak self]
             collectionView, indexPath, itemIdentifier in
             switch itemIdentifier {
             case let .settingsListItem(listItem):

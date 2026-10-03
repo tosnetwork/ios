@@ -1,3 +1,4 @@
+import CoreComponents
 import KeeperCore
 import TKCoordinator
 import TKCore
@@ -65,7 +66,7 @@ private extension CreateWalletCoordinator {
                 })
             },
             onCreate: { [weak self] passcode in
-                let phrase = TonSwift.Mnemonic.mnemonicNew()
+                let phrase = TOSMnemonic.generate()
                 self?.openBackupIntro(
                     router: router,
                     animated: true,
@@ -92,7 +93,7 @@ private extension CreateWalletCoordinator {
             onInput: { [weak self] passcode in
                 let navigationController = TKNavigationController()
                 navigationController.configureTransparentAppearance()
-                let phrase = TonSwift.Mnemonic.mnemonicNew()
+                let phrase = TOSMnemonic.generate()
                 self?.openBackupIntro(
                     router: NavigationControllerRouter(rootViewController: navigationController),
                     animated: false,
@@ -146,6 +147,11 @@ private extension CreateWalletCoordinator {
                             message: error.localizedDescription,
                             preferredStyle: .alert
                         )
+                        alert.addAction(UIAlertAction(title: "Configure TOS Node", style: .default) { _ in
+                            DispatchQueue.main.async {
+                                TOSRPCNodeEditor.present(from: router.rootViewController, onSaved: {})
+                            }
+                        })
                         alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
                         router.present(alert)
                     }

@@ -306,7 +306,7 @@ private extension BuySellListViewModelImplementation {
                 [weak self] in
                 guard let self else { return }
 
-                Task {
+                Task { [self] in
                     do {
                         let currency = self.currencyStore.state
                         let walletAddress = try self.wallet.friendlyAddress
@@ -320,7 +320,7 @@ private extension BuySellListViewModelImplementation {
                                 ipProvider: { [weak self] in try? await self?.toswalletAPI.getIP() }
                             )
                         ) else { return }
-                        await MainActor.run {
+                        await MainActor.run { [self] in
                             if self.appSettings.isBuySellItemMarkedDoNotShowWarning(item.id) {
                                 self.didSelectURL?(url)
                                 self.logOnrampSelectAnalyticsEvent(

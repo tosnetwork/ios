@@ -3,7 +3,7 @@ import XCTest
 
 final class TOSRPCLiveIntegrationTests: XCTestCase {
     private static let faucetAddress = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-    private static let deterministicWalletAddress = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+    private static let deterministicWalletAddress = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
 
     func testThreeNodeRPCReportsFundedFaucetAndAdvancingMasterchain() async throws {
         let client = try await makeLiveClient()

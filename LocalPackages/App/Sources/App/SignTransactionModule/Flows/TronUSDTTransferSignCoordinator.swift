@@ -37,8 +37,8 @@ final class TronUSDTTransferSignCoordinator: RouterCoordinator<ViewControllerRou
     }
 
     func handleSign(parentCoordinator: Coordinator) async -> Result {
-        return await Task<Result, Never> { @MainActor in
-            return await withCheckedContinuation { [weak parentCoordinator] (continuation: CheckedContinuation<Result, Never>) in
+        return await Task<Result, Never> { @MainActor [self, parentCoordinator] in
+            return await withCheckedContinuation { [self, weak parentCoordinator] (continuation: CheckedContinuation<Result, Never>) in
                 didSign = { [weak parentCoordinator, weak self] in
                     continuation.resume(returning: .success($0))
                     guard let self else { return }

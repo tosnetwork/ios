@@ -51,4 +51,23 @@ final class TOSV1DeeplinkPolicyTests: XCTestCase {
             XCTAssertFalse(TOSV1DeeplinkPolicy.allows(deeplink), "Unexpectedly allowed: \(deeplink)")
         }
     }
+
+    func testExternalBinaryPayloadCannotEnterNativeSendRoute() throws {
+        try assertExternalCellRejected(parameter: "bin")
+    }
+
+    func testExternalStateInitCannotEnterNativeSendRoute() throws {
+        try assertExternalCellRejected(parameter: "init")
+    }
+
+    private func assertExternalCellRejected(parameter: String) throws {
+        let cell = try Builder().store(uint: 0x12345678, bits: 32).endCell().toBoc().base64EncodedString()
+        var components = try XCTUnwrap(URLComponents(string: "tos://transfer/EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c"))
+        components.queryItems = [URLQueryItem(name: "amount", value: "1"), URLQueryItem(name: parameter, value: cell)]
+        let parsed = try DeeplinkParser().parse(string: XCTUnwrap(components.string))
+        guard case .transfer(.signRawTransfer) = parsed else {
+            return XCTFail("External cells must be classified as a raw transfer")
+        }
+        XCTAssertFalse(TOSV1DeeplinkPolicy.allows(parsed))
+    }
 }

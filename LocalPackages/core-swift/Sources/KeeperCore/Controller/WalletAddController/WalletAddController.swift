@@ -9,17 +9,20 @@ public final class WalletAddController {
     private let tonProofTokenService: TonProofTokenService
     private let mnemonicsRepository: MnemonicsRepository
     private let tronBalanceService: TronBalanceService
+    private let networkIdentityProvider: (Network) async throws -> Int32
 
     init(
         walletsStore: WalletsStore,
         tonProofTokenService: TonProofTokenService,
         mnemonicsRepositoty: MnemonicsRepository,
-        tronBalanceService: TronBalanceService
+        tronBalanceService: TronBalanceService,
+        networkIdentityProvider: @escaping (Network) async throws -> Int32
     ) {
         self.walletsStore = walletsStore
         self.tonProofTokenService = tonProofTokenService
         self.mnemonicsRepository = mnemonicsRepositoty
         self.tronBalanceService = tronBalanceService
+        self.networkIdentityProvider = networkIdentityProvider
     }
 
     public func createWallet(
@@ -28,16 +31,16 @@ public final class WalletAddController {
         mnemonicWords: [String],
         setupSettings: WalletSetupSettings = WalletSetupSettings()
     ) async throws {
-        guard TOSV1MnemonicValidator.isValid(mnemonicWords) else {
+        let mnemonicWords = TOSV1MnemonicValidator.normalize(mnemonicWords)
+        guard TOSMnemonic.isValid(mnemonicWords) else {
             throw Mnemonic.Error.incorrectMnemonicWords
         }
         let mnemonic = try Mnemonic(mnemonicWords: mnemonicWords)
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(
-            mnemonicArray: mnemonic.mnemonicWords
-        )
+        let keyPair = try TOSMnemonic.keyPair(words: mnemonic.mnemonicWords)
         let walletIdentity = WalletIdentity(
             network: .mainnet,
-            kind: .Regular(keyPair.publicKey, .currentVersion)
+            kind: .Regular(keyPair.publicKey, .currentVersion),
+            networkGlobalId: try await networkIdentityProvider(.mainnet)
         )
         let wallet = Wallet(
             id: UUID().uuidString,
@@ -62,10 +65,11 @@ public final class WalletAddController {
     }
 
     public func addWalletRevision(wallet: Wallet, revision: WalletContractVersion, passcode: String) async throws {
+        guard try (revision == .tosV5R1) == (wallet.contractVersion == .tosV5R1) else {
+            throw AddWalletRevisionError.unsupportedWalletKind
+        }
         let mnemonic = try await mnemonicsRepository.getMnemonic(wallet: wallet, password: passcode)
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(
-            mnemonicArray: mnemonic.mnemonicWords
-        )
+        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
 
         let newWalletKind: WalletKind
         switch wallet.identity.kind {
@@ -81,7 +85,8 @@ public final class WalletAddController {
 
         let newWalletIdentity = WalletIdentity(
             network: wallet.identity.network,
-            kind: newWalletKind
+            kind: newWalletKind,
+            networkGlobalId: revision == .tosV5R1 ? try await networkIdentityProvider(wallet.network) : wallet.identity.networkGlobalId
         )
 
         let wallet = Wallet(
@@ -107,7 +112,8 @@ public final class WalletAddController {
         revisions: [WalletContractVersion],
         metaData: WalletMetaData,
         passcode: String,
-        network: Network
+        network: Network,
+        format: WalletMnemonicFormat? = nil
     ) async throws {
         let phrase = TOSV1MnemonicValidator.normalize(phrase)
         guard TOSV1MnemonicValidator.isValid(phrase) else {
@@ -115,14 +121,21 @@ public final class WalletAddController {
         }
         let mnemonic = try Mnemonic(mnemonicWords: phrase)
 
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(
-            mnemonicArray: mnemonic.mnemonicWords
-        )
-        let tron = await loadImportedWalletTronIfPositiveBalance(
-            mnemonicWords: mnemonic.mnemonicWords,
-            network: network
-        )
+        let resolvedFormat = try format ?? WalletMnemonicFormat.detect(words: phrase)
+        guard WalletMnemonicFormat.validFormats(words: phrase).contains(resolvedFormat) else { throw WalletMnemonicFormat.Error.invalidPhrase }
+        guard resolvedFormat != .tos || revisions.allSatisfy({ $0 == .tosV5R1 }),
+              resolvedFormat != .legacyTON || !revisions.contains(.tosV5R1) else {
+            throw WalletMnemonicFormat.Error.invalidPhrase
+        }
+        let keyPair = try resolvedFormat.keyPair(words: mnemonic.mnemonicWords)
+        let tron: WalletTron?
+        if resolvedFormat == .legacyTON {
+            tron = await loadImportedWalletTronIfPositiveBalance(mnemonicWords: mnemonic.mnemonicWords, network: network)
+        } else {
+            tron = nil
+        }
 
+        let networkGlobalId = revisions.contains(.tosV5R1) ? try await networkIdentityProvider(network) : nil
         let addPostfix = revisions.count > 1
 
         let wallets = revisions.map { revision in
@@ -135,7 +148,8 @@ public final class WalletAddController {
 
             let walletIdentity = WalletIdentity(
                 network: network,
-                kind: .Regular(keyPair.publicKey, revision)
+                kind: .Regular(keyPair.publicKey, revision),
+                networkGlobalId: revision == .tosV5R1 ? networkGlobalId : nil
             )
 
             return Wallet(
@@ -213,6 +227,7 @@ public final class WalletAddController {
         path: String?,
         metaData: WalletMetaData
     ) async throws {
+        guard !revisions.contains(.tosV5R1) else { throw TOSNetworkIdentityError.unsupportedSigner }
         let addPostfix = revisions.count > 1
 
         let wallets = revisions.map { revision in
@@ -245,6 +260,7 @@ public final class WalletAddController {
         metaData: WalletMetaData,
         isDevice: Bool
     ) async throws {
+        guard !revisions.contains(.tosV5R1) else { throw TOSNetworkIdentityError.unsupportedSigner }
         let addPostfix = revisions.count > 1
 
         let wallets = revisions.map { revision in

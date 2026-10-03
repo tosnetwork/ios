@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Fail the simulator release gate when launch or resident-memory budgets regress."""
 
-import json
+import os
 import statistics
 import subprocess
 import time
 from pathlib import Path
+from ios_test_simulator import prepare_simulator
 
 BUNDLE_ID = "network.tos.wallet"
 MAX_LAUNCH_SECONDS = 5.0
@@ -16,21 +17,11 @@ def run(*args, check=True):
     return subprocess.run(args, check=check, capture_output=True, text=True)
 
 
-devices = json.loads(run("xcrun", "simctl", "list", "devices", "available", "-j").stdout)["devices"]
-available = [device for runtime in devices.values() for device in runtime]
-booted = [device for device in available if device["state"] == "Booted"]
-device = booted[0] if booted else next(
-    (candidate for candidate in available if candidate["name"] == "iPhone 17"),
-    available[0] if available else None,
-)
-if device is None:
-    raise SystemExit("V1 performance gate failed: no available simulator")
+device = prepare_simulator()
 udid = device["udid"]
-if device["state"] != "Booted":
-    run("xcrun", "simctl", "boot", udid)
-    run("xcrun", "simctl", "bootstatus", udid, "-b")
 
-app_candidates = sorted(Path("build/DerivedData-tests/TOSWalletUITests/Build/Products").glob("*-iphonesimulator/TOS Wallet.app"))
+derived_data = Path(os.environ.get("TOS_TEST_DERIVED_DATA_PATH", "build/DerivedData"))
+app_candidates = sorted((derived_data / "Build/Products").glob("*-iphonesimulator/TOS Wallet.app"))
 if not app_candidates:
     raise SystemExit("V1 performance gate failed: built simulator app not found")
 run("xcrun", "simctl", "install", udid, str(app_candidates[-1]))

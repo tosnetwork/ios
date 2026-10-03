@@ -3,7 +3,7 @@ import UIKit
 public typealias ListItemCellRegistration = UICollectionView.CellRegistration<TKListItemCell, TKListItemCell.Configuration>
 public extension ListItemCellRegistration {
     static func registration(collectionView: UICollectionView) -> ListItemCellRegistration {
-        ListItemCellRegistration { cell, _, configuration in
+        ListItemCellRegistration { [weak collectionView] cell, _, configuration in
             cell.configuration = configuration
             cell.isFirstInSection = { ip in ip.item == 0 }
             cell.isLastInSection = { [weak collectionView] ip in

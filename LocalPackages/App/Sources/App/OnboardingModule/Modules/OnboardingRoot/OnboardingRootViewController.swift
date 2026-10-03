@@ -18,12 +18,17 @@ final class OnboardingRootViewController: GenericViewViewController<OnboardingRo
         super.viewDidLoad()
 
         customView.termsTextView.delegate = self
+        customView.configureNodeButton.addTarget(self, action: #selector(configureNode), for: .touchUpInside)
         setupBindings()
         viewModel.viewDidLoad()
     }
 }
 
 private extension OnboardingRootViewController {
+    @objc func configureNode() {
+        TOSRPCNodeEditor.present(from: self, onSaved: {})
+    }
+
     func setupBindings() {
         viewModel.didUpdateModel = { [customView] model in
             customView.configure(model: model)

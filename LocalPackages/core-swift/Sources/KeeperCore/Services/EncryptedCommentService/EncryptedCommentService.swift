@@ -18,7 +18,7 @@ final class EncryptedCommentServiceImplementation: EncryptedCommentService {
             wallet: wallet,
             password: passcode
         )
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: mnemonic.mnemonicWords)
+        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
 
         return try CommentDecryptor(
             privateKey: keyPair.privateKey,

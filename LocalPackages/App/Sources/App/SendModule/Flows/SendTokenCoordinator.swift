@@ -157,30 +157,36 @@ private extension SendTokenCoordinator {
         }
 
         module.output.didTapScan = { [weak self] in
-            self?.openScan(completion: { deeplink in
+            self?.openScan(completion: { [weak self] deeplink in
                 Task { [weak self] in
                     guard let self else { return }
-                    switch deeplink {
-                    case let .transfer(data):
-                        switch data {
-                        case let .sendTransfer(sendTransferData):
-                            let recipient = try await self.recipientResolver.resolverRecipient(
-                                string: sendTransferData.recipient,
-                                network: wallet.network
-                            )
-                            switch recipient {
-                            case .ton:
-                                module.input.setRecipient(string: sendTransferData.recipient)
-                                module.input.setAmount(amount: sendTransferData.amount)
-                                module.input.setComment(comment: sendTransferData.comment)
-                            case .tron:
-                                module.input.setRecipient(string: sendTransferData.recipient)
-                                module.input.updateWithToken(.tron(.usdt(amount: sendTransferData.amount ?? 0)))
-                                module.input.setComment(comment: sendTransferData.comment)
+                    do {
+                        switch deeplink {
+                        case let .transfer(data):
+                            switch data {
+                            case let .sendTransfer(sendTransferData):
+                                let recipient = try await self.recipientResolver.resolverRecipient(
+                                    string: sendTransferData.recipient,
+                                    network: wallet.network
+                                )
+                                switch recipient {
+                                case .ton:
+                                    module.input.setRecipient(string: sendTransferData.recipient)
+                                    module.input.setAmount(amount: sendTransferData.amount)
+                                    module.input.setComment(comment: sendTransferData.comment)
+                                case .tron:
+                                    module.input.setRecipient(string: sendTransferData.recipient)
+                                    module.input.updateWithToken(.tron(.usdt(amount: sendTransferData.amount ?? 0)))
+                                    module.input.setComment(comment: sendTransferData.comment)
+                                }
+                            default: break
                             }
                         default: break
                         }
-                    default: break
+                    } catch {
+                        await MainActor.run {
+                            ToastPresenter.showToast(configuration: .failed)
+                        }
                     }
                 }
             })

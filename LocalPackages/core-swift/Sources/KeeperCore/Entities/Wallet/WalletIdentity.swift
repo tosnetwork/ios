@@ -4,6 +4,14 @@ import TonSwift
 public struct WalletIdentity: Equatable, Hashable {
     public let network: Network
     public let kind: WalletKind
+    /// Discovered from the selected TOS node; absent in legacy identities.
+    public let networkGlobalId: Int32?
+
+    public init(network: Network, kind: WalletKind, networkGlobalId: Int32? = nil) {
+        self.network = network
+        self.kind = kind
+        self.networkGlobalId = networkGlobalId
+    }
 
     public func identifier() throws -> WalletID {
         let builder = Builder()
@@ -31,13 +39,30 @@ extension WalletIdentity: CellCodable {
     public func storeTo(builder: Builder) throws {
         try network.storeTo(builder: builder)
         try kind.storeTo(builder: builder)
+        if kind.usesTOSNetworkIdentity {
+            guard let networkGlobalId else { throw TOSNetworkIdentityError.missingIdentity }
+            try builder.store(int: networkGlobalId, bits: 32)
+        }
     }
 
     public static func loadFrom(slice: Slice) throws -> WalletIdentity {
         return try slice.tryLoad { s in
             let network: Network = try s.loadType()
             let kind: WalletKind = try s.loadType()
-            return WalletIdentity(network: network, kind: kind)
+            let globalId = kind.usesTOSNetworkIdentity ? Int32(try s.loadInt(bits: 32)) : nil
+            return WalletIdentity(network: network, kind: kind, networkGlobalId: globalId)
+        }
+    }
+}
+
+private extension WalletKind {
+    var usesTOSNetworkIdentity: Bool {
+        switch self {
+        case let .Regular(_, revision), let .Signer(_, revision), let .SignerDevice(_, revision),
+             let .Ledger(_, revision, _), let .Keystone(_, _, _, revision):
+            return revision == .tosV5R1
+        case .Lockup, .Watchonly:
+            return false
         }
     }
 }

@@ -110,6 +110,11 @@ public extension Wallet {
                         workchain: 0
                     )
                 )
+            case .tosV5R1:
+                guard let globalId = identity.networkGlobalId else {
+                    throw TOSNetworkIdentityError.missingIdentity
+                }
+                return try TOSWalletV5R1(publicKey: publicKey.data, networkGlobalId: globalId)
             case .v5R1:
                 return WalletV5R1(
                     publicKey: publicKey.data,
@@ -197,7 +202,7 @@ public extension Wallet {
 
     var isW5: Bool {
         do {
-            return try contractVersion == .v5R1
+            return try contractVersion == .v5R1 || contractVersion == .tosV5R1
         } catch {
             return false
         }

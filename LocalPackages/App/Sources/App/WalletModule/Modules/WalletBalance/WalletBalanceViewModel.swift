@@ -508,17 +508,26 @@ final class WalletBalanceViewModelImplementation:
                 let action: (Bool) -> Void = { [weak self] isOn in
                     guard let self else { return }
                     Task {
-                        if isOn {
-                            guard let passcode = await self.didRequirePasscode?() else {
-                                self.syncQueue.async {
-                                    self.didUpdateSetupState(setupState: setupState)
+                        do {
+                            if isOn {
+                                guard let passcode = await self.didRequirePasscode?() else {
+                                    self.syncQueue.async {
+                                        self.didUpdateSetupState(setupState: setupState)
+                                    }
+                                    return
                                 }
-                                return
-                            }
 
-                            try self.setupModel.turnOnBiometry(passcode: passcode)
-                        } else {
-                            try self.setupModel.turnOffBiometry()
+                                try await self.setupModel.turnOnBiometry(passcode: passcode)
+                            } else {
+                                try await self.setupModel.turnOffBiometry()
+                            }
+                        } catch {
+                            self.syncQueue.async {
+                                self.didUpdateSetupState(setupState: setupState)
+                            }
+                            await MainActor.run {
+                                ToastPresenter.showToast(configuration: .failed)
+                            }
                         }
                     }
                 }

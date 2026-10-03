@@ -4,13 +4,13 @@ import TonSwift
 import XCTest
 
 final class MnemonicValidationTests: XCTestCase {
-    func testDeterministicNativeTOSMnemonicDerivesExpectedAddress() throws {
+    func testDeterministicLegacyWalletMnemonicPreservesExpectedAddress() throws {
         let words = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice".split(separator: " ").map(String.init)
         XCTAssertTrue(TOSV1MnemonicValidator.isValid(words))
         let pair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: words)
         let wallet = Wallet(
             id: "fixture",
-            identity: WalletIdentity(network: .mainnet, kind: .Regular(pair.publicKey, .currentVersion)),
+            identity: WalletIdentity(network: .mainnet, kind: .Regular(pair.publicKey, .v5R1)),
             metaData: WalletMetaData(label: "Fixture", tintColor: .defaultColor, icon: .icon(.wallet)),
             setupSettings: WalletSetupSettings(),
             batterySettings: BatterySettings()
@@ -21,11 +21,23 @@ final class MnemonicValidationTests: XCTestCase {
         )
     }
 
+    func testCurrentTOSMnemonicDerivesSDKCompatibleWalletAddress() throws {
+        let words = "enhance depend evolve rotate creek total enable settle mammal margin round cube truck quote hold correct provide voyage north model sure off strategy pulse".split(separator: " ").map(String.init)
+        XCTAssertTrue(TOSV1MnemonicValidator.isValid(words))
+        XCTAssertTrue(TOSMnemonic.isValid(words))
+        XCTAssertFalse(TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: words))
+        let pair = try TOSMnemonic.keyPair(words: words)
+        XCTAssertEqual(pair.publicKey.data, try XCTUnwrap(Data(hex: "a71563f5709a827fad271813afc670403589781f4ac7259c7b0282b6686b2589")))
+        let wallet = Wallet(id: "fixture", identity: WalletIdentity(network: .mainnet, kind: .Regular(pair.publicKey, .currentVersion), networkGlobalId: 3), metaData: WalletMetaData(label: "Fixture", tintColor: .defaultColor, icon: .icon(.wallet)), setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+        XCTAssertEqual(try wallet.address.toRaw(), "0:88269a9a5ecb30262608e6fb86f8ae3d534e8c77d5a9ae0140ce5217196a0cfe")
+        XCTAssertEqual(try WalletMnemonic.keyPair(words: words, wallet: wallet).privateKey.data, pair.privateKey.data)
+    }
+
     func testGeneratedNativeWalletPhrasesHaveExpectedCountAndValidate() throws {
         for _ in 0 ..< 20 {
-            let words = TonSwift.Mnemonic.mnemonicNew()
+            let words = TOSMnemonic.generate()
             XCTAssertEqual(words.count, 24)
-            XCTAssertTrue(TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: words))
+            XCTAssertTrue(TOSMnemonic.isValid(words))
             XCTAssertTrue(TOSV1MnemonicValidator.isValid(words))
             XCTAssertNoThrow(try CoreComponents.Mnemonic(mnemonicWords: words))
         }

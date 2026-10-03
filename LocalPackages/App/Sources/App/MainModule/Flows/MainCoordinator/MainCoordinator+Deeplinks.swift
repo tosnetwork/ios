@@ -33,7 +33,7 @@ extension MainCoordinator {
 
         let walletsStore = keeperCoreMainAssembly.storesAssembly.walletsStore
 
-        let deeplinkHandleTask = Task {
+        let deeplinkHandleTask = Task { [self] in
             do {
                 let wallet = try walletsStore.activeWallet
                 let recipient = try await self.recipientResolver.resolverRecipient(string: recipient, network: wallet.network)
@@ -317,7 +317,7 @@ extension MainCoordinator {
         let stakingService = keeperCoreMainAssembly.servicesAssembly.stackingService()
         let stakingStore = keeperCoreMainAssembly.storesAssembly.stackingPoolsStore
 
-        let deeplinkHandleTask = Task {
+        let deeplinkHandleTask = Task { [self] in
             do {
                 let wallet = try walletsStore.activeWallet
                 let stakingPools = try await stakingService.loadStakingPools(wallet: wallet)
@@ -331,7 +331,7 @@ extension MainCoordinator {
                     return
                 }
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
+                await MainActor.run { [self] in
                     self.deeplinkHandleTask = nil
                     ToastPresenter.hideAll()
                     self.router.dismiss(animated: true) { [weak self] in
@@ -399,7 +399,7 @@ extension MainCoordinator {
                 )
                 let bottomSheetViewController = TKBottomSheetViewController(contentViewController: warningModule.view)
 
-                warningModule.output.didTapOpen = { [weak bottomSheetViewController] url, title in
+                warningModule.output.didTapOpen = { [weak self, weak bottomSheetViewController] url, title in
                     bottomSheetViewController?.dismiss { [weak self] in
                         self?.openDapp(title: title, url: url)
                     }
@@ -430,7 +430,7 @@ extension MainCoordinator {
         let currencyStore = keeperCoreMainAssembly.storesAssembly.currencyStore
         let toswalletAPI = keeperCoreMainAssembly.toswalletAPIAssembly.api
 
-        let deeplinkHandleTask = Task {
+        let deeplinkHandleTask = Task { [self] in
             do {
                 let wallet = try walletsStore.activeWallet
                 let mercuryoSecret = await configuration.mercuryoSecret
@@ -456,7 +456,7 @@ extension MainCoordinator {
                     return
                 }
 
-                await MainActor.run {
+                await MainActor.run { [self] in
                     self.deeplinkHandleTask = nil
                     ToastPresenter.hideAll()
                     self.router.dismiss(animated: true) { [weak self] in

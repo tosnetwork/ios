@@ -204,6 +204,10 @@ private extension ActiveWalletsServiceImplementation {
 
         let contract: WalletContract
         switch revision {
+        case .tosV5R1:
+            // TOS V5 addresses do not encode the network ID. This instance is
+            // used only for discovery, never for creating a signing request.
+            contract = try TOSWalletV5R1(publicKey: publicKey.data, networkGlobalId: 0)
         case .v5R1:
             contract = WalletV5R1(
                 publicKey: publicKey.data,

@@ -85,7 +85,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/tip-1-dns-v1.json")],
+            resources: [.copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

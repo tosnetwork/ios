@@ -3,6 +3,7 @@ import KeeperCore
 import SignRaw
 import TKCoordinator
 import TKCore
+import TKLogging
 import TonSwift
 import UIKit
 
@@ -142,7 +143,11 @@ struct BridgeSignRawResultHandler: SignRawControllerResultHandler {
 
     func didConfirm(boc: String) {
         Task {
-            try await tonConnectService.confirmRequest(boc: boc, appRequest: appRequest, app: app)
+            do {
+                try await tonConnectService.confirmRequest(boc: boc, appRequest: appRequest, app: app)
+            } catch {
+                Log.e("Dapp response failed", extraInfo: ["error": error.localizedDescription])
+            }
         }
     }
 
@@ -151,7 +156,11 @@ struct BridgeSignRawResultHandler: SignRawControllerResultHandler {
     func didCancel() {
         didCancelHandler?()
         Task {
-            try await tonConnectService.cancelRequest(appRequest: appRequest, app: app)
+            do {
+                try await tonConnectService.cancelRequest(appRequest: appRequest, app: app)
+            } catch {
+                Log.e("Dapp response failed", extraInfo: ["error": error.localizedDescription])
+            }
         }
     }
 }
@@ -162,13 +171,21 @@ struct BridgeSignDataResultHandler: SignDataResultHandler {
     func didCancel() {
         didCancelHandler?()
         Task {
-            try await tonConnectService.cancelSignRequest(appRequest: appRequest, app: app)
+            do {
+                try await tonConnectService.cancelSignRequest(appRequest: appRequest, app: app)
+            } catch {
+                Log.e("Dapp response failed", extraInfo: ["error": error.localizedDescription])
+            }
         }
     }
 
     func didSign(signedData: SignedDataResult) {
         Task {
-            try await tonConnectService.confirmSignRequest(signed: signedData, appRequest: appRequest, app: app)
+            do {
+                try await tonConnectService.confirmSignRequest(signed: signedData, appRequest: appRequest, app: app)
+            } catch {
+                Log.e("Dapp response failed", extraInfo: ["error": error.localizedDescription])
+            }
         }
     }
 

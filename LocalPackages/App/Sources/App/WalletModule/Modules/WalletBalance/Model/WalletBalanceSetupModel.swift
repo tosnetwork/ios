@@ -83,18 +83,14 @@ final class WalletBalanceSetupModel {
         }
     }
 
-    func turnOnBiometry(passcode: String) throws {
-        Task {
-            try mnemonicsRepository.savePassword(passcode)
-            await self.securityStore.setIsBiometryEnable(true)
-        }
+    func turnOnBiometry(passcode: String) async throws {
+        try mnemonicsRepository.savePassword(passcode)
+        await securityStore.setIsBiometryEnable(true)
     }
 
-    func turnOffBiometry() throws {
-        Task {
-            try self.mnemonicsRepository.deletePassword()
-            await self.securityStore.setIsBiometryEnable(false)
-        }
+    func turnOffBiometry() async throws {
+        try mnemonicsRepository.deletePassword()
+        await securityStore.setIsBiometryEnable(false)
     }
 
     func turnOnNotifications() async {
