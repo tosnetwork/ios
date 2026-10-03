@@ -154,7 +154,7 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
 
     private func makeStore(wallets: [Wallet]) -> WalletsStore {
         let keeperInfo = wallets.first.map {
-            KeeperInfo(wallets: wallets, currentWallet: $0, currency: .defaultCurrency, securitySettings: SecuritySettings(isBiometryEnabled: false, isLockScreen: false), appSettings: AppSettings(isSecureMode: false, searchEngine: .duckduckgo), country: .auto)
+            KeeperInfo(wallets: wallets, currentWallet: $0, currency: .defaultCurrency, securitySettings: SecuritySettings(isBiometryEnabled: false, isLockScreen: false), appSettings: KeeperInfo.AppSettings(isSecureMode: false, searchEngine: .duckduckgo), country: .auto)
         }
         return WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: LifecycleKeeperInfoRepository(keeperInfo)))
     }
