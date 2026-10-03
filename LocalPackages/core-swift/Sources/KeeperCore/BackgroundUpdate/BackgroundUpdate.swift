@@ -83,14 +83,13 @@ public final class BackgroundUpdate {
             DispatchQueue.main.async {
                 guard observer.isRunning, observer.lifecycleGeneration == generation else { return }
                 switch event {
-                case .didChangeActiveWallet:
+                case .didChangeActiveWallet, .didDeleteAll:
                     observer.lifecycleGeneration = UUID()
                     observer.stopWalletUpdates()
+                    // Reconcile current state: delete/add callbacks may already
+                    // be queued together when the main queue handles deletion.
                     guard let activeWallet = try? observer.walletStore.activeWallet else { return }
                     observer.start(for: activeWallet)
-                case .didDeleteAll:
-                    observer.lifecycleGeneration = UUID()
-                    observer.stopWalletUpdates()
                 default: break
                 }
             }

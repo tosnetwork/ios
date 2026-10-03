@@ -81,6 +81,38 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
         XCTAssertEqual(readWalletIDs, ["deleted", "replacement"])
     }
 
+    func testBatchedDeleteAndReplacementReconcileLatestActiveWallet() async {
+        let oldWallet = fixtureWallet(id: "deleted")
+        let newWallet = fixtureWallet(id: "replacement")
+        let store = makeStore(wallets: [oldWallet])
+        let initialRead = expectation(description: "Original wallet starts polling")
+        let replacementRead = expectation(description: "Batched replacement starts polling")
+        let probe = LifecycleUpdateProbe { wallet in
+            if wallet.id == "deleted" { initialRead.fulfill() } else { replacementRead.fulfill() }
+        }
+        let background = BackgroundUpdate(walletStore: store, walletBackgroundUpdateProvider: probe.provide)
+        defer { background.stop() }
+        await drainWalletEvents(store)
+        background.start()
+        await fulfillment(of: [initialRead], timeout: 2)
+        await MainActor.run {
+            let storeEventsQueued = DispatchSemaphore(value: 0)
+            store.deleteAllWallets { _ in
+                store.addWallets([newWallet]) { _ in
+                    // Store event observers run on its serial queue, independently
+                    // of main. This barrier proves both lifecycle callbacks queued
+                    // before main can process either one.
+                    store.updateState({ _ in nil }) { _ in storeEventsQueued.signal() }
+                }
+            }
+            XCTAssertTrue(storeEventsQueued.wait(timeout: .now() + 2) == .success)
+        }
+        await fulfillment(of: [replacementRead], timeout: 2)
+        background.stop()
+        XCTAssertEqual(probe.snapshotWalletIDs, ["deleted", "replacement"])
+        XCTAssertEqual(probe.createdWalletIDs, ["deleted", "replacement"])
+    }
+
     func testQueuedPreStopStateAndEventCannotDeliverAfterSameWalletResume() async throws {
         let wallet = fixtureWallet(id: "same")
         let store = makeStore(wallets: [wallet])

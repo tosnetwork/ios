@@ -45,7 +45,9 @@ Dependencies remain pinned by the app's existing SwiftPM lockfile.
   to endpoint-bound RPC transaction cursors. The poller refreshes after cursor
   changes, initial/resumed reads and connection recovery, deduplicates unchanged
   healthy reads, and stops on backgrounding or deletion. Generation checks
-  suppress cancelled requests and queued stale deliveries. This repair is
+  suppress cancelled requests and queued stale deliveries. A batched delete/add
+  reconciles the current active wallet, so dropping an older queued callback
+  cannot leave its replacement without updates. This repair is
   implemented for review; its new runtime tests remain pending.
 - Alert presentation preserves UIKit ownership of `UIAlertController` delegates,
   addressing the iOS27 exception reproduced when an unreachable node caused
@@ -74,7 +76,7 @@ the deployed toserver network is not mutated.
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Simulator build and V1 static/artifact gates | Earlier source passed; repaired-source build blocked before compilation | `make test_v1_static`; earlier `/tmp/ios-pq-static.log`. Current brand-only Make check and `git diff --check` passed. `make compile BUILD_JOBS=2` failed at package resolution; `/tmp/ios-pq-compile-repair-sandbox{,-raw}.log`. |
-| Full package suite | Earlier Core tree passed; polling repair needs a new full Core run | Core tree `dbd163bde5b8355df80687f74363a5602b252397`: 153/153 on iOS27.0 including five live-chain tests, `/tmp/ios-pq-core-final.log`, `WalletCore-20261004T020831-33678.xcresult`. Other package trees passed 28/28 (181 distinct cases combined). The 14 new cursor/polling/RPC/lifecycle methods are not included in those totals. The repaired-source full Core Make attempt was blocked at package resolution, before compiling or running tests; `/tmp/ios-pq-core-repair-sandbox{,-raw}.log`. |
+| Full package suite | Earlier Core tree passed; polling repair needs a new full Core run | Core tree `dbd163bde5b8355df80687f74363a5602b252397`: 153/153 on iOS27.0 including five live-chain tests, `/tmp/ios-pq-core-final.log`, `WalletCore-20261004T020831-33678.xcresult`. Other package trees passed 28/28 (181 distinct cases combined). The 15 new cursor/polling/RPC/lifecycle methods are not included in those totals. The repaired-source full Core Make attempt was blocked at package resolution, before compiling or running tests; `/tmp/ios-pq-core-repair-sandbox{,-raw}.log`. |
 | TOS signing-vector mutation control | Passed red / restored green on the earlier Core tree | Omitting signed global ID failed 3 of 6 tests / 9 assertions; `/tmp/ios-pq-global-id-red.log`, `WalletCore-global-id-red.xcresult`. Restored source passed all six. |
 | Frozen `3377e5a` full UI suite | **Failed: 40/45 passed, five failures; zero skips** | iPhone17/iOS27.0, 3483.314s. `/tmp/ios-pq-ui-final-3377e5a{,-raw}.log`, `/tmp/ios-pq-ui-final-3377e5a-summary.json`, complete `TOSWalletUITests-20261004T040235-58472.xcresult`. Successful cases include actual first deployment/transfer, lost/delayed broadcast-response reconciliation, Max/fee rejection, node editing/persistence, dual/legacy recovery, backup authentication and destructive-action acknowledgement. |
 | Follow-up amount diagnostic | Passed 1/1 before the final accessibility/wait repair | 199.606s, `/tmp/ios-pq-ui-amount-diagnostic{,-raw}.log`, `TOSWalletUITests-20261004T050710-67803.xcresult`. Extra hierarchy reads observed `Continue` as enabled StaticText (type48); this does not prove the original failure's exact cause or certify the final control query. Runtime-secret and command-latency/RSS gates also passed for this diagnostic snapshot. |
@@ -124,7 +126,7 @@ After the environment changed to restricted filesystem/network access, both
 before compilation with xcodebuild exit74 / Make exit2. The recorded errors
 include `sandbox-exec: sandbox_apply: Operation not permitted` and unavailable
 CoreSimulator/runtime-image service connections. No workaround to disable
-sandbox restrictions was attempted. The later source repairs and all 14 new
+sandbox restrictions was attempted. The later source repairs and all 15 new
 methods have received static review only; they are not a tested release.
 
 When simulator/toolchain access is available, run the full Core and UI suites
