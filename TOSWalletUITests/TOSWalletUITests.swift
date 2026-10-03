@@ -9,6 +9,17 @@ final class TOSWalletUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         let rpcURL = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645"
+        let endpoint = try XCTUnwrap(URL(string: rpcURL), "The test RPC endpoint must be a URL")
+        XCTAssertTrue(["http", "https"].contains(endpoint.scheme ?? ""), "The test RPC endpoint must use HTTP(S)")
+        XCTAssertNotNil(endpoint.host, "The test RPC endpoint must have a host")
+        if let port = endpoint.port {
+            XCTAssertTrue((1...65535).contains(port), "The test RPC endpoint port must be valid")
+        }
+        if let expected = ProcessInfo.processInfo.environment["TOS_UI_EXPECTED_RPC_URL"] {
+            XCTAssertTrue(rpcURL == expected, "The runner RPC endpoint must match the Make configuration")
+        }
+        let port = endpoint.port ?? (endpoint.scheme == "https" ? 443 : 80)
+        print("UI test RPC endpoint: \(endpoint.scheme ?? "")://\(endpoint.host ?? ""):\(port)")
         if URL(string: rpcURL)?.port == 18645 {
             try setProxyMode("normal", resetCounts: true)
         }
@@ -45,6 +56,7 @@ final class TOSWalletUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["TOS Wallet"].waitForExistence(timeout: 15))
             assertVisibleElementsFitWindow()
             assertScreenshotHasReadableContrast(app.screenshot().image)
+            retainScreenshot(named: "Onboarding \(appearance) \(contentSize)")
         }
     }
 
@@ -1314,6 +1326,14 @@ final class TOSWalletUITests: XCTestCase {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 tab is visible: \(unsupported)")
         }
         assertReachableControlsAreAccessible()
+        retainScreenshot(named: "Wallet home")
+    }
+
+    private func retainScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertReachableControlsAreAccessible(

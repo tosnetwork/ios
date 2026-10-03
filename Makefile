@@ -142,7 +142,8 @@ test_project_scheme:
 		result_bundle="$(TEST_BUILD_ROOT)/TestResults/$(SCHEME)-$$(date +%Y%m%dT%H%M%S)-$$$$.xcresult"; \
 		SWIFTPM_CONFIG_DIR=$(TEST_BUILD_ROOT)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
-		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
+		TEST_RUNNER_TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
+		TEST_RUNNER_TOS_UI_EXPECTED_RPC_URL='$(TOS_UI_RPC_URL)' \
 		xcodebuild -jobs $(BUILD_JOBS) \
 		-project TosWallet.xcodeproj \
 		-scheme $(SCHEME) \
@@ -156,7 +157,6 @@ test_project_scheme:
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
 		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
-		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
 		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
 
 test_core_swift: SCHEME=WalletCore
