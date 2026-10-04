@@ -43,7 +43,7 @@ for path in a.wire:
  ms,ws=active_account(root,mc,md),active_account(wallet,wc,wd)
  body=boc('submission');request=boc('request')
  assert body.refs[0].refs[0].hash==request.hash
- e=Emulator(16 if algorithm==1 else 19);events=[]
+ e=Emulator(16);events=[]
  try:
   mr=e.send(ms,internal((0,17),root,body,10_000_000_000));check(mr,0,'module')
   messages=outgoing(from_boc(mr['transaction']));assert len(messages)==1
@@ -84,7 +84,7 @@ for path in a.wire:
   malformed=Cell().uint(0x4d4c4434 if algorithm==1 else 0x46414c31,32).uint(0,64).ref(body.refs[0]).ref(chain(bytes(sig)))
   bad=e.send(ms,internal((0,17),root,malformed,10_000_000_000));check(bad,1808,'signature tamper')
   assert not outgoing(from_boc(bad['transaction']))
-  old=Emulator(15 if algorithm==1 else 18)
+  old=Emulator(15)
   try:
    before=old.send(ms,internal((0,17),root,body,10_000_000_000))
    assert before['success'] and before['details']['exit']!=0 and not outgoing(from_boc(before['transaction']))

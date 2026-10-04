@@ -6,6 +6,7 @@ import CoreComponents
 final class TOSPQWalletTests: XCTestCase {
     func testExportPublicMobileSignaturesForNativeVM() throws {
         for algorithm in [TOSPQAlgorithm.mldsa44, .falcon512Padded] {
+            XCTAssertEqual(algorithm.minimumVM, 16)
             let seed = Data(repeating: 0xa0, count: 32) // PUBLIC TEST DATA only.
             let pk = try TOSPQSigner.publicKey(algorithm: algorithm, seed: seed)
             let wallet = try TOSPQWallet(algorithm: algorithm, publicKey: pk, network: 3)
