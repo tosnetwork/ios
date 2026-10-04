@@ -5,7 +5,7 @@ import TOSPQNative
 public enum TOSPQAlgorithm: Int32, Codable, Sendable {
     case mldsa44 = 1
     case falcon512Padded = 2
-    public var minimumVM: Int { self == .mldsa44 ? 16 : 19 }
+    public var minimumVM: Int { 16 }
     public var publicKeySize: Int { Int(tos_pq_public_key_size(rawValue)) }
     public var signatureSize: Int { Int(tos_pq_signature_size(rawValue)) }
 }

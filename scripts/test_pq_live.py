@@ -36,7 +36,7 @@ def mark_for(addr,messagehash):
  return None
 a.records.mkdir(parents=True,exist_ok=True)
 initial=[json.loads(x.read_text()) for x in sorted((a.records/'initial').glob('*.json'))]
-assert len(initial)==2 and T.global_id()==3 and T.global_version()>=19
+assert len(initial)==2 and T.global_id()==3 and T.global_version()>=16
 code=Cell.one_from_boc(base64.b64decode(initial[0]['wallet_code']))
 payer,key=funded_payer(T,a.control,code,3,tos=180)
 class Blueprint:
@@ -119,5 +119,5 @@ for platform,nonce in [('ios',0),('android',1)]:
   print('LIVE_MOBILE_PASS',platform,alg,flush=True)
  if platform=='ios':
   _,now=T.head();(a.records/'android-ready.json').write_text(json.dumps(dict(chain_time=now,nonces=','.join(str(T.read_auth(Address(r['wallet_address'])).nonce) for r in initial))))
-(a.records/'live-result.json').write_text(json.dumps(dict(passed=True,scope='disposable-localnet VM19; actual mobile public signatures; selected owned node trust anchor',events=events),indent=2))
+(a.records/'live-result.json').write_text(json.dumps(dict(passed=True,scope='disposable-localnet VM16; actual mobile public signatures; selected owned node trust anchor',events=events),indent=2))
 print('ALL_FOUR_LIVE_MOBILE_CASES_PASSED',flush=True)

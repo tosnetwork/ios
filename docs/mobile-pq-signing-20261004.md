@@ -207,3 +207,12 @@ The independent WalletCore test host lacks Keychain entitlements (-34018), so it
 protection test verifies propagation of unavailable protection rather than proving
 a device-user-presence path. App-hosted simulator testing is reported separately.
 The full UI test uses only the owned local chain and public regular-wallet fixtures.
+
+## Unified development protocol baseline
+
+The `codex/unify-protocol-v16` branch uses protocol version 16 for both
+ML-DSA-44 and Falcon-512 padded. Both profiles reject versions below 16.
+Node support must come from the matching unified TOS branch; the version
+number alone cannot distinguish older development binaries. Recreate
+development chains with its genesis configuration before using this baseline.
+Earlier VM19 measurements above remain historical evidence of the prior head.
