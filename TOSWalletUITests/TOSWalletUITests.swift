@@ -56,6 +56,15 @@ final class TOSWalletUITests: XCTestCase {
             launchOnboarding(appearance: appearance, contentSize: contentSize)
             XCTAssertTrue(app.staticTexts["TOS Wallet"].waitForExistence(timeout: 15))
             assertVisibleElementsFitWindow()
+            let galaxy = app.images["onboarding.tosGalaxy"]
+            XCTAssertTrue(galaxy.exists)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(galaxy.frame), "The whole galaxy must remain in the viewport")
+            XCTAssertGreaterThanOrEqual(galaxy.frame.width, 44)
+            XCTAssertLessThanOrEqual(galaxy.frame.width, 136)
+            let statusBar = app.statusBars.firstMatch
+            if statusBar.exists {
+                XCTAssertFalse(galaxy.frame.intersects(statusBar.frame), "The galaxy must not overlap the status bar")
+            }
             let screenshot = app.screenshot().image
             assertScreenshotHasReadableContrast(screenshot)
             assertOnboardingAppearance(screenshot, appearance: appearance)
@@ -1290,7 +1299,7 @@ final class TOSWalletUITests: XCTestCase {
     ) {
         guard let cgImage = image.cgImage,
               let sample = cgImage.cropping(to: CGRect(
-                x: CGFloat(cgImage.width / 2), y: CGFloat(cgImage.height / 10), width: 1, height: 1
+                x: CGFloat(cgImage.width / 20), y: CGFloat(cgImage.height / 10), width: 1, height: 1
               ))
         else {
             return XCTFail("Unable to inspect onboarding appearance", file: file, line: line)
