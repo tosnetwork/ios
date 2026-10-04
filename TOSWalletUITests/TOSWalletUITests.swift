@@ -607,8 +607,7 @@ final class TOSWalletUITests: XCTestCase {
         let payload = qrImage.flatMap {
             detector?.features(in: $0).compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
         }
-        XCTAssertNotNil(payload)
-        XCTAssertTrue(payload?.contains(address.label) == true)
+        XCTAssertEqual(payload, "tos://transfer/\(address.label)", "The rendered QR must open this TOS app with the exact receive address")
         let copy = app.descendants(matching: .any)["Copy"]
         XCTAssertTrue(copy.exists)
         copy.tap()
