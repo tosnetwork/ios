@@ -1,5 +1,6 @@
 @testable import KeeperCore
 import XCTest
+import TonSwift
 
 final class TOSRPCClientTests: XCTestCase {
     override func tearDown() {
@@ -153,6 +154,175 @@ final class TOSRPCClientTests: XCTestCase {
                 XCTAssertEqual(attempts, 1)
             }
         }
+    }
+
+    func testWalletBroadcastKeepsVerifiedEndpointWhenSettingChangesDuringAwait() async throws {
+        var endpoint = "http://node.test"
+        var methods = [String]()
+        RPCURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "node.test")
+            let body = try Self.requestBody(request)
+            let method = try XCTUnwrap(body["method"] as? String)
+            methods.append(method)
+            if method == "getConfigParam" {
+                // An endpoint edit while the identity request is in flight must
+                // not send this operation's BOC to the newly selected node.
+                endpoint = "http://unverified.test"
+                return (200, try Self.configurationResponse(requestBody: body))
+            }
+            return (200, #"{"ok":true,"result":{"hash":"accepted"}}"#)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RPCURLProtocol.self]
+        let client = TOSRPCClient(basePath: { endpoint }, urlSession: URLSession(configuration: configuration))
+        _ = try await client.callForWallet(method: "sendBocReturnHash", params: ["boc": "fixture"], wallet: makeTOSWallet(globalId: 3))
+        XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "sendBocReturnHash"])
+        XCTAssertEqual(endpoint, "http://unverified.test")
+    }
+
+    func testWrongNodeIdentityRejectsBroadcastBeforeSubmission() async throws {
+        var methods = [String]()
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            methods.append(try XCTUnwrap(body["method"] as? String))
+            return (200, try Self.configurationResponse(requestBody: body))
+        }
+        do {
+            _ = try await makeClient().callForWallet(method: "sendBocReturnHash", params: ["boc": "fixture"], wallet: makeTOSWallet(globalId: -239))
+            XCTFail("A wrong network must never receive the signed BOC")
+        } catch let TOSNetworkIdentityError.wrongNetwork(expected, actual) {
+            XCTAssertEqual(expected, -239)
+            XCTAssertEqual(actual, 3)
+            XCTAssertEqual(methods, ["getConfigParam"])
+        }
+    }
+
+    func testFirstDeploymentEstimateSuppliesInitOnVerifiedEndpoint() async throws {
+        var endpoint = "http://node.test"
+        var methods = [String]()
+        let wallet = makeTOSWallet(globalId: 3)
+        RPCURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.host, "node.test")
+            let json = try Self.requestBody(request)
+            let method = try XCTUnwrap(json["method"] as? String)
+            methods.append(method)
+            switch method {
+            case "getConfigParam":
+                return (200, try Self.configurationResponse(requestBody: json))
+            case "getWalletInformation":
+                endpoint = "http://unverified.test"
+                return (200, #"{"ok":true,"result":{"account_state":"uninitialized","wallet":false}}"#)
+            default:
+                XCTAssertEqual(method, "estimateFee")
+                let params = try XCTUnwrap(json["params"] as? [String: Any])
+                XCTAssertEqual(params["body"] as? String, "signed-wallet-body")
+                XCTAssertEqual(params["ignore_chksig"] as? Bool, true)
+                let codeData = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_code"] as? String)))
+                let code = try XCTUnwrap(Cell.fromBoc(src: codeData).first)
+                XCTAssertEqual(code.hash(), try XCTUnwrap(Data(hex: "086a86aa9913c0ec52277adbb7e4b5695964dbb8c817ad0c305cdd345bbfac69")))
+                let data = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_data"] as? String)))
+                let slice = try XCTUnwrap(Cell.fromBoc(src: data).first).beginParse()
+                XCTAssertTrue(try slice.loadBoolean())
+                XCTAssertEqual(try slice.loadUint(bits: 32), 0)
+                return (200, #"{"ok":true,"result":{"source_fees":{"in_fwd_fee":"1","storage_fee":"2","gas_fee":"3","fwd_fee":"4"}}}"#)
+            }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [RPCURLProtocol.self]
+        let client = TOSRPCClient(basePath: { endpoint }, urlSession: URLSession(configuration: configuration))
+        let fee = try await client.estimateWalletFee(body: "signed-wallet-body", wallet: wallet)
+        XCTAssertEqual(fee, 10)
+        XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "getWalletInformation", "estimateFee"])
+    }
+
+    func testActiveWalletEstimateUsesChainStateWithoutDeploymentInit() async throws {
+        RPCURLProtocol.handler = { request in
+            let json = try Self.requestBody(request)
+            switch json["method"] as? String {
+            case "getConfigParam":
+                return (200, try Self.configurationResponse(requestBody: json))
+            case "getWalletInformation":
+                return (200, #"{"ok":true,"result":{"account_state":"active","wallet":true,"seqno":7}}"#)
+            default:
+                let params = try XCTUnwrap(json["params"] as? [String: Any])
+                XCTAssertNil(params["init_code"])
+                XCTAssertNil(params["init_data"])
+                return (200, #"{"ok":true,"result":{"source_fees":{"in_fwd_fee":1,"storage_fee":2,"gas_fee":3,"fwd_fee":4}}}"#)
+            }
+        }
+        let fee = try await makeClient().estimateWalletFee(body: "body", wallet: makeTOSWallet(globalId: 3))
+        XCTAssertEqual(fee, 10)
+    }
+
+    func testOldOrMissingVMCapabilityRejectsWalletDiscoveryAndBroadcast() async throws {
+        for version in [UInt32(0), 5] {
+            var methods = [String]()
+            RPCURLProtocol.handler = { request in
+                let body = try Self.requestBody(request)
+                methods.append(try XCTUnwrap(body["method"] as? String))
+                return (200, try Self.configurationResponse(requestBody: body, vmVersion: version))
+            }
+            do {
+                _ = try await makeClient().getVerifiedNetworkGlobalId()
+                XCTFail("Unsupported nodes must not create a native wallet")
+            } catch let TOSNetworkIdentityError.unsupportedVMVersion(actual) {
+                XCTAssertEqual(actual, version)
+            }
+            methods.removeAll()
+            do {
+                _ = try await makeClient().callForWallet(method: "sendBocReturnHash", params: ["boc": "fixture"], wallet: makeTOSWallet(globalId: 3))
+                XCTFail("Unsupported nodes must not receive a broadcast")
+            } catch let TOSNetworkIdentityError.unsupportedVMVersion(actual) {
+                XCTAssertEqual(actual, version)
+                XCTAssertEqual(methods, ["getConfigParam", "getConfigParam"])
+            }
+        }
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            if (body["params"] as? [String: Int])?["param"] == 19 {
+                return (200, try Self.configurationResponse(requestBody: body))
+            }
+            return (200, #"{"ok":true,"result":{}}"#)
+        }
+        do {
+            _ = try await makeClient().getVerifiedNetworkGlobalId()
+            XCTFail("Missing capabilities must fail closed")
+        } catch TOSNetworkIdentityError.invalidConfiguration {
+            // Expected.
+        }
+    }
+
+    private static func configurationResponse(requestBody: [String: Any], vmVersion: UInt32 = 18) throws -> String {
+        let parameter = try XCTUnwrap((requestBody["params"] as? [String: Int])?["param"])
+        let cell: Cell
+        if parameter == 19 {
+            cell = try Builder().store(int: 3, bits: 32).endCell()
+        } else {
+            XCTAssertEqual(parameter, 8)
+            cell = try Builder().store(uint: 0xc4, bits: 8).store(uint: vmVersion, bits: 32).store(uint: 0, bits: 64).endCell()
+        }
+        let data = try JSONSerialization.data(withJSONObject: ["ok": true, "result": ["config": ["bytes": try cell.toBoc().base64EncodedString()]]])
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
+    }
+
+    private func makeTOSWallet(globalId: Int32) -> Wallet {
+        Wallet(id: "fixture", identity: WalletIdentity(network: .mainnet, kind: .Regular(PublicKey(data: Data(repeating: 0, count: 32)), .tosV5R1), networkGlobalId: globalId), metaData: WalletMetaData(label: "Fixture", tintColor: .defaultColor, icon: .icon(.wallet)), setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+    }
+
+    private static func requestBody(_ request: URLRequest) throws -> [String: Any] {
+        if let data = request.httpBody { return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any]) }
+        let stream = try XCTUnwrap(request.httpBodyStream)
+        stream.open()
+        defer { stream.close() }
+        var bytes = [UInt8](repeating: 0, count: 4096)
+        var data = Data()
+        while true {
+            let count = stream.read(&bytes, maxLength: bytes.count)
+            if count == 0 { break }
+            guard count > 0 else { throw stream.streamError ?? URLError(.cannotDecodeContentData) }
+            data.append(contentsOf: bytes.prefix(count))
+        }
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     private func makeClient() -> TOSRPCClient {

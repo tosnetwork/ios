@@ -87,6 +87,7 @@ final class AddWalletOptionPickerViewController: GenericViewViewController<AddWa
             let cell = collectionView.dequeueConfiguredReusableCell(using: listCellRegistration, for: indexPath, item: itemIdentifier.cellConfiguration)
             let accessoryView = TKListItemIconAccessoryView()
             accessoryView.configuration = .chevron
+            accessoryView.isUserInteractionEnabled = false
             cell.defaultAccessoryViews = [accessoryView]
             return cell
         }
@@ -141,7 +142,7 @@ private extension AddWalletOptionPickerViewController {
     func makeGlobalHeader() -> NSCollectionLayoutBoundarySupplementaryItem {
         let headerSize = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1.0),
-            heightDimension: .estimated(0)
+            heightDimension: .estimated(1)
         )
         return NSCollectionLayoutBoundarySupplementaryItem(
             layoutSize: headerSize,

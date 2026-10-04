@@ -1,0 +1,101 @@
+{
+  "notice": "PUBLIC TEST DATA. These published mnemonics and keys must never hold real assets.",
+  "source_commit": "ee5ad71c343eb2227a8bd42d57bea259da4da0ec",
+  "normalization": "lowercase and trim each word; join by one ASCII space; product requires 24 English BIP39-list words; no BIP39 checksum",
+  "password": "",
+  "vectors": [
+    {
+      "id": "tos-only",
+      "mnemonic": "enhance depend evolve rotate creek total enable settle mammal margin round cube truck quote hold correct provide voyage north model sure off strategy pulse",
+      "tos_valid": true,
+      "ton_valid": false,
+      "TOS": {
+        "entropy_hex": "5b22149b28c646bca4fcf8ab0c5660f5967281d3451fcce160ca10d6e4c138ec10f3317f12db291ab597450b007f81b81f21c313bdf447d8e94594ce4658a400",
+        "seed64_hex": "de263887b1e3c56140e157232d178a4c2cc29ad23e9af5f248c0f0c9cc38008cd516b2e5c90b46c85d3e734f2b5754dc83689a47ff53a5c85540ecbe7ce9ad81",
+        "private_seed32_hex": "de263887b1e3c56140e157232d178a4c2cc29ad23e9af5f248c0f0c9cc38008c",
+        "secret_key64_hex": "de263887b1e3c56140e157232d178a4c2cc29ad23e9af5f248c0f0c9cc38008ca71563f5709a827fad271813afc670403589781f4ac7259c7b0282b6686b2589",
+        "public_key_hex": "a71563f5709a827fad271813afc670403589781f4ac7259c7b0282b6686b2589",
+        "basic_seed_check_byte": 0,
+        "tos_v5_address": "0:88269a9a5ecb30262608e6fb86f8ae3d534e8c77d5a9ae0140ce5217196a0cfe",
+        "tos_v5_friendly_testnet": "0QCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_j-M"
+      },
+      "TON": {
+        "entropy_hex": "5b22149b28c646bca4fcf8ab0c5660f5967281d3451fcce160ca10d6e4c138ec10f3317f12db291ab597450b007f81b81f21c313bdf447d8e94594ce4658a400",
+        "seed64_hex": "4afdaff384b65c09e68145cb9c332fea4697f1fb7af4e2bc1019ca937778cfca6b1f167b6fffa16f6f2df82e965528c4519b59b3cbaae97e2494986ee4daeb9e",
+        "private_seed32_hex": "4afdaff384b65c09e68145cb9c332fea4697f1fb7af4e2bc1019ca937778cfca",
+        "secret_key64_hex": "4afdaff384b65c09e68145cb9c332fea4697f1fb7af4e2bc1019ca937778cfca08bce5bf7f5e83951cf09242c3b8af164c1f7fce4d11ab2630e6f435987a7e41",
+        "public_key_hex": "08bce5bf7f5e83951cf09242c3b8af164c1f7fce4d11ab2630e6f435987a7e41",
+        "basic_seed_check_byte": 9,
+        "tos_v5_address": "0:9eaa9fdc303f658cf79e09a79a3e60a384114e9041960b0c368504b6d4eaec50",
+        "tos_v5_friendly_testnet": "0QCeqp_cMD9ljPeeCaeaPmCjhBFOkEGWCww2hQS21OrsUB9m",
+        "legacy_v5_mainnet_address": "0:3312549ea4838c6d5d1be29b3cb5beaea97c2ffc4b6825d3cd204ac570dc8b04",
+        "legacy_v5_mainnet_friendly": "UQAzElSepIOMbV0b4ps8tb6uqXwv_EtoJdPNIErFcNyLBMJ8"
+      }
+    },
+    {
+      "id": "legacy-ton-only",
+      "mnemonic": "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice",
+      "tos_valid": false,
+      "ton_valid": true,
+      "TOS": {
+        "entropy_hex": "e3560262634b75a15d901a236e0a8b2a45a5c65b5aeae6c59a4ea03870c27ee075c55c7e3305790e2eea65832d4d99774c2b33fa74088fd44afd466b5b11b823",
+        "seed64_hex": "5d03d76fc5604ccac7feff1d5002ee565e1da4545dd48afe1dfe145c9fab50ba48b29394fb760421c761d30ae7ac9ce1677a32df39a9e4fc76abddb349cc7614",
+        "private_seed32_hex": "5d03d76fc5604ccac7feff1d5002ee565e1da4545dd48afe1dfe145c9fab50ba",
+        "secret_key64_hex": "5d03d76fc5604ccac7feff1d5002ee565e1da4545dd48afe1dfe145c9fab50baf757353446b55e67ffa0d8636cef57e4533fd07c216ccbda88c8214d41e3f6b1",
+        "public_key_hex": "f757353446b55e67ffa0d8636cef57e4533fd07c216ccbda88c8214d41e3f6b1",
+        "basic_seed_check_byte": 234,
+        "tos_v5_address": "0:e3a12998b5ed33ef04b2c19610e9946867c24f603823ebc28a388f87c62cc5dc",
+        "tos_v5_friendly_testnet": "0QDjoSmYte0z7wSywZYQ6ZRoZ8JPYDgj68KKOI-HxizF3OsE"
+      },
+      "TON": {
+        "entropy_hex": "e3560262634b75a15d901a236e0a8b2a45a5c65b5aeae6c59a4ea03870c27ee075c55c7e3305790e2eea65832d4d99774c2b33fa74088fd44afd466b5b11b823",
+        "seed64_hex": "ff509faad49a8afa060c50358006bc7b41000e6f68ea51c9079e2b0c15ca6613b1aea84f16a491e3cf8ad30aea43c2c46733888262e086a6c54c0a185a502b11",
+        "private_seed32_hex": "ff509faad49a8afa060c50358006bc7b41000e6f68ea51c9079e2b0c15ca6613",
+        "secret_key64_hex": "ff509faad49a8afa060c50358006bc7b41000e6f68ea51c9079e2b0c15ca661354298c04ae729978cb7c988270e86b20e00a752562411b3511634ec59beebf26",
+        "public_key_hex": "54298c04ae729978cb7c988270e86b20e00a752562411b3511634ec59beebf26",
+        "basic_seed_check_byte": 0,
+        "tos_v5_address": "0:3cf49afbe5ccbea673d2190f54307bdc6af600ce269bdaa45343c9d174c01276",
+        "tos_v5_friendly_testnet": "0QA89Jr75cy-pnPSGQ9UMHvcavYAziab2qRTQ8nRdMASdgAX",
+        "legacy_v5_mainnet_address": "0:8915a85ac195336246b8bb31537969ecfa840d7e86b454d54e027f1ef012675c",
+        "legacy_v5_mainnet_friendly": "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+      }
+    },
+    {
+      "id": "ambiguous-both-domains",
+      "mnemonic": "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall",
+      "tos_valid": true,
+      "ton_valid": true,
+      "TOS": {
+        "entropy_hex": "8fd8a4a601e7cf206978416700edddd080ee8cffab2ec877051c7adfb42318bc49c4b4d203ad8da70a16cd107b421d50920384dbc1c50ac72e168eba5a0820cf",
+        "seed64_hex": "dc9c2ca90a8e401d13e8605e401e33f900fa6b4ae2b0db51317f5302c79de27b72daf9d9bc850119283bc4443ba49f347c36cc56d9819e843edc42c55c2864fc",
+        "private_seed32_hex": "dc9c2ca90a8e401d13e8605e401e33f900fa6b4ae2b0db51317f5302c79de27b",
+        "secret_key64_hex": "dc9c2ca90a8e401d13e8605e401e33f900fa6b4ae2b0db51317f5302c79de27b7c2c64e1dca71c1add3777ebaeb611ad56229995d435ad7bf6ba29909d816ceb",
+        "public_key_hex": "7c2c64e1dca71c1add3777ebaeb611ad56229995d435ad7bf6ba29909d816ceb",
+        "basic_seed_check_byte": 0,
+        "tos_v5_address": "0:f1bf21eacb1b2725e4792d4eeae23dfd5402e8b060f67d2a72719aec49e5d727"
+      },
+      "TON": {
+        "entropy_hex": "8fd8a4a601e7cf206978416700edddd080ee8cffab2ec877051c7adfb42318bc49c4b4d203ad8da70a16cd107b421d50920384dbc1c50ac72e168eba5a0820cf",
+        "seed64_hex": "f29b668f8189fdf1abb13786ab4fd72e078257b3e3de82a3b7c9732d0478e9412d96222a4dc3627069c59007780b2a4a1ebada9254cc35c69940eb48c7082ecd",
+        "private_seed32_hex": "f29b668f8189fdf1abb13786ab4fd72e078257b3e3de82a3b7c9732d0478e941",
+        "secret_key64_hex": "f29b668f8189fdf1abb13786ab4fd72e078257b3e3de82a3b7c9732d0478e941cfe05748559fea1f676ba2e6ef9d2e2bf5767a59fe66584c0fc5fea1cb772166",
+        "public_key_hex": "cfe05748559fea1f676ba2e6ef9d2e2bf5767a59fe66584c0fc5fea1cb772166",
+        "basic_seed_check_byte": 0,
+        "tos_v5_address": "0:02530a42f536585b85566f967ff347d3f0ee5b4ac3ce0a533db85bc963c49abd",
+        "legacy_v5_mainnet_address": "0:b3b84ebb0b272a2ef7b9977fb625266651802eabb3a94237275feeec0b9c3842",
+        "legacy_v5_mainnet_friendly": "UQCzuE67CycqLve5l3-2JSZmUYAuq7OpQjcnX-7sC5w4Qn4H"
+      },
+      "expected_import": "Reject ambiguous profile; require explicit trusted profile for recovery"
+    }
+  ],
+  "independent_python_crosscheck": {
+    "pass_count": 4,
+    "algorithm": "Python hmac/hashlib PBKDF2; libsodium Ed25519 via PyNaCl1.6.2"
+  },
+  "collision_search_public_counter": 151622,
+  "sdk_crosscheck": {
+    "pass_count": 3,
+    "source_commit": "ee5ad71c343eb2227a8bd42d57bea259da4da0ec"
+  },
+  "legacy_ton_v5_code_hash": "20834b7b72b112147e1b2fb457b84e74d1a30f04f737d4f62a668e9552d2b72f"
+}

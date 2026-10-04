@@ -8,6 +8,9 @@ public final class BackgroundUpdate {
 
     @Atomic private var walletBackgroundUpdates = [Wallet: WalletBackgroundUpdate]()
 
+    @Atomic private var isRunning = false
+    @Atomic private var lifecycleGeneration = UUID()
+
     private let walletStore: WalletsStore
     private let walletBackgroundUpdateProvider: (Wallet) -> WalletBackgroundUpdate
 
@@ -22,11 +25,19 @@ public final class BackgroundUpdate {
     }
 
     public func start() {
+        lifecycleGeneration = UUID()
+        isRunning = true
         guard let wallet = try? walletStore.activeWallet else { return }
         start(for: wallet)
     }
 
     public func stop() {
+        isRunning = false
+        lifecycleGeneration = UUID()
+        stopWalletUpdates()
+    }
+
+    private func stopWalletUpdates() {
         walletBackgroundUpdates.values.forEach { $0.stop() }
     }
 
@@ -58,7 +69,7 @@ public final class BackgroundUpdate {
         let observerClosure: (Wallet, BackgroundUpdateConnectionState) -> Void = { [weak self, weak observer] wallet, state in
             guard let self else { return }
             guard let observer else {
-                self.eventObservers.removeValue(forKey: id)
+                self.stateObservers.removeValue(forKey: id)
                 return
             }
             closure(observer, wallet, state)
@@ -68,10 +79,15 @@ public final class BackgroundUpdate {
 
     private func setupObservations() {
         walletStore.addObserver(self) { observer, event in
+            let generation = observer.lifecycleGeneration
             DispatchQueue.main.async {
+                guard observer.isRunning, observer.lifecycleGeneration == generation else { return }
                 switch event {
-                case .didChangeActiveWallet:
-                    observer.stop()
+                case .didChangeActiveWallet, .didDeleteAll:
+                    observer.lifecycleGeneration = UUID()
+                    observer.stopWalletUpdates()
+                    // Reconcile current state: delete/add callbacks may already
+                    // be queued together when the main queue handles deletion.
                     guard let activeWallet = try? observer.walletStore.activeWallet else { return }
                     observer.start(for: activeWallet)
                 default: break
@@ -81,6 +97,7 @@ public final class BackgroundUpdate {
     }
 
     private func start(for wallet: Wallet) {
+        guard isRunning else { return }
         if let updater = walletBackgroundUpdates[wallet] {
             updater.start()
         } else {
@@ -93,14 +110,20 @@ public final class BackgroundUpdate {
     private func createWalletBackgroundUpdate(wallet: Wallet) -> WalletBackgroundUpdate {
         let update = walletBackgroundUpdateProvider(wallet)
         update.stateClosure = { [weak self] state in
-            guard let self else { return }
+            guard let self, self.isRunning else { return }
+            let generation = self.lifecycleGeneration
             DispatchQueue.main.async {
+                guard self.isRunning, self.lifecycleGeneration == generation,
+                      (try? self.walletStore.activeWallet) == wallet else { return }
                 self.stateObservers.forEach { $0.value(wallet, state) }
             }
         }
         update.eventClosure = { [weak self] event in
-            guard let self else { return }
+            guard let self, self.isRunning else { return }
+            let generation = self.lifecycleGeneration
             DispatchQueue.main.async {
+                guard self.isRunning, self.lifecycleGeneration == generation,
+                      (try? self.walletStore.activeWallet) == wallet else { return }
                 self.eventObservers.forEach { $0.value(wallet, event) }
             }
         }

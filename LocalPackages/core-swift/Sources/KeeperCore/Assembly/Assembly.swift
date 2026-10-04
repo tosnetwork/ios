@@ -60,7 +60,7 @@ public final class Assembly {
     )
 
     private lazy var backgroundUpdateAssembly = BackgroundUpdateAssembly(
-        apiAssembly: apiAssembly,
+        apiProvider: apiAssembly.apiProvider,
         storesAssembly: storesAssembly,
         coreAssembly: coreAssembly
     )

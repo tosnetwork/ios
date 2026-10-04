@@ -1,0 +1,65 @@
+{
+  "agent": {
+    "boc_sha256": "bf6bdbabcf605e8fb402dda2de04a869ceda3c603455b7186ec85a122416ddbb",
+    "code_hash": "3361af55092dc2546570b134e68b158d526e172c67fb1a4a756210dd98d88e6d",
+    "compiler_sha256": "44e512f726fd49a75d4adc0be637d5de7079c4be59a12cd3df838cf17a849db3",
+    "profile": "TOS-FALCON512-PADDED-v1",
+    "source": "crypto/smartcont/agent-account-code.fc",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "AgentAccountState.serialize"
+  },
+  "mldsa-module-func": {
+    "boc_sha256": "12ac19c839b2a13304e921b0a0b1bf799a6549b906898c9080e3dc950ae680b2",
+    "code_hash": "570a064f8cd152c32f2c8a5694e1807c39cfb54efabb7e1147552a3c907cc239",
+    "compiler_sha256": "44e512f726fd49a75d4adc0be637d5de7079c4be59a12cd3df838cf17a849db3",
+    "profile": "TOS-AUTH-ML-DSA-44-v1",
+    "source": "crypto/smartcont/mldsa44-auth-module.fc",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "global_id:int32 public_key:^canonical1312"
+  },
+  "mldsa-module-tol": {
+    "boc_sha256": "35e5779a4e26143f2e7569b9af81ec197e5b55866ed17f3e365dd3bb4d9c6c59",
+    "code_hash": "ba9c43c7dd3e27ea6d1d8e54d960cfe81321718f071fcd9568ea09816b1def1c",
+    "compiler_sha256": "53fa32d9cb089ee4b7e98e10ac1b7f2c27514318a0adf97e02709c0c198741a3",
+    "profile": "TOS-AUTH-ML-DSA-44-v1",
+    "source": "crypto/smartcont/mldsa44-auth-module.tol",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "global_id:int32 public_key:^canonical1312"
+  },
+  "module-func": {
+    "boc_sha256": "9cec7b042b6f54021d7e90011085cb4281466322205639810cde837811e76e22",
+    "code_hash": "6eddb777521f31be62601bf978d73e68c5048e3ba76d535c59390b6976bcd918",
+    "compiler_sha256": "44e512f726fd49a75d4adc0be637d5de7079c4be59a12cd3df838cf17a849db3",
+    "profile": "TOS-FALCON512-PADDED-v1",
+    "source": "crypto/smartcont/falcon512-auth-module.fc",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "global_id:int32 profile_version:uint16=1 public_key:^canonical897"
+  },
+  "module-tol": {
+    "boc_sha256": "415053d533a58a34411eea668fe890b2f7617d2fceda2460799bcf1bffe8d152",
+    "code_hash": "588bd879559ac592c6c475d9e7d82a14dbce411ca1530b404d151f583f38435e",
+    "compiler_sha256": "53fa32d9cb089ee4b7e98e10ac1b7f2c27514318a0adf97e02709c0c198741a3",
+    "profile": "TOS-FALCON512-PADDED-v1",
+    "source": "crypto/smartcont/falcon512-auth-module.tol",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "global_id:int32 profile_version:uint16=1 public_key:^canonical897"
+  },
+  "wallet-func": {
+    "boc_sha256": "ca3101b2f0ab68fcc367cd15c6d2052b2c1047850b1f0afb57608001ec0dc9cf",
+    "code_hash": "086a86aa9913c0ec52277adbb7e4b5695964dbb8c817ad0c305cdd345bbfac69",
+    "compiler_sha256": "44e512f726fd49a75d4adc0be637d5de7079c4be59a12cd3df838cf17a849db3",
+    "profile": "TOS-FALCON512-PADDED-v1",
+    "source": "crypto/smartcont/wallet-v5-code.fc",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "WalletV5State.serialize"
+  },
+  "wallet-tol": {
+    "boc_sha256": "5344ee9a86c12d69d0050c06241ffa46d31b3131d86918d8d141dcf5c104a9be",
+    "code_hash": "5e5f6c60081e17cbc7a79bd0c0d2348fa6aaf63e96f45e7731cb4e19b93393a5",
+    "compiler_sha256": "53fa32d9cb089ee4b7e98e10ac1b7f2c27514318a0adf97e02709c0c198741a3",
+    "profile": "TOS-FALCON512-PADDED-v1",
+    "source": "crypto/smartcont/wallet-v5.tol",
+    "source_commit": "9d470d7ccf809a5960ac68c3092b2551830d995d",
+    "state_init": "WalletV5State.serialize"
+  }
+}

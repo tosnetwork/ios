@@ -53,7 +53,7 @@ public struct CellSignDataSigner: SignDataSigner {
             wallet: wallet,
             password: passcode
         )
-        let keyPair = try MnemonicLegacy.anyMnemonicToPrivateKey(mnemonicArray: mnemonic.mnemonicWords)
+        let keyPair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: wallet)
         let sodium = Sodium()
         guard let signature = try sodium.sign.signature(
             message: builder.endCell().hash().bytes,

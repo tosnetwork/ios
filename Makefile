@@ -14,6 +14,7 @@ SHELL := /bin/sh
 	test_tos_live \
 	test_ui \
 	test_brand_boundary \
+	test_v1_runtime_secrets \
 	test_v1_static \
 	test_v1_acceptance
 
@@ -40,35 +41,37 @@ tonconnect_generate:
 # Build
 
 BUILD_DIR := ./build
+BUILD_JOBS ?= 4
 
 compile:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
 		set -o pipefail; \
-		HOME=$(BUILD_DIR)/codex_home \
 		SWIFTPM_CACHE_PATH=$(BUILD_DIR)/swiftpm-cache \
 		SWIFTPM_CONFIG_DIR=$(BUILD_DIR)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(BUILD_DIR)/clang-module-cache \
 		CLONED_SOURCE_PACKAGES_DIR=$(BUILD_DIR)/SourcePackages \
-		xcodebuild \
+		xcodebuild -jobs $(BUILD_JOBS) \
 		-project TosWallet.xcodeproj \
 		-scheme TosWallet \
 		-configuration TosWalletDebug \
 		-destination 'generic/platform=iOS Simulator' \
+		-disableAutomaticPackageResolution \
+		-onlyUsePackageVersionsFromResolvedFile \
+		-skipPackageUpdates \
 		-derivedDataPath $(BUILD_DIR)/DerivedData \
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
-		build | xcbeautify
+		build 2>&1 | tee $(BUILD_DIR)/compile-raw.log | xcbeautify
 
 archive_v1_release:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(BUILD_DIR)/release-archive
 	@echo 'archiving unsigned TOS Wallet release...' && \
 		set -o pipefail; \
-		HOME=$(BUILD_DIR)/codex_home \
 		SWIFTPM_CONFIG_DIR=$(BUILD_DIR)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(BUILD_DIR)/clang-module-cache \
-		xcodebuild \
+		xcodebuild -jobs $(BUILD_JOBS) \
 		-project TosWallet.xcodeproj \
 		-scheme TosWallet \
 		-configuration TosWalletRelease \
@@ -87,14 +90,22 @@ archive_v1_release:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
-TOS_UI_RPC_URL ?=
+TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
+TEST_DERIVED_DATA_PATH ?= $(TEST_BUILD_ROOT)/DerivedData
+TEST_CONFIGURATION ?= TosWalletDebug
+TEST_PACKAGE_RESOURCE_BUNDLE_PATH ?= $(abspath $(TEST_DERIVED_DATA_PATH))/Build/Products/$(TEST_CONFIGURATION)-iphonesimulator
+LAYOUT_SMALL_DESTINATION ?= platform=iOS Simulator,name=iPhone 17e,OS=26.5
+LAYOUT_LARGE_DESTINATION ?= platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5
 
 test: test_all
 
 test_brand_boundary:
 	@sh scripts/tests/test_brand_boundary.sh
+
+test_v1_runtime_secrets:
+	@TOS_TEST_DESTINATION='$(TEST_DESTINATION)' sh scripts/tests/test_v1_runtime_secrets.sh
 
 test_v1_static: compile test_brand_boundary
 	@sh scripts/tests/test_v1_static.sh
@@ -102,11 +113,13 @@ test_v1_static: compile test_brand_boundary
 test_v1_acceptance: test_v1_static test_all test_tos_live test_ui test_ui_layout_matrix
 
 test_ui_layout_matrix:
-	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='platform=iOS Simulator,name=iPhone 17e'
-	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='platform=iOS Simulator,name=iPhone 17 Pro Max'
+	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='$(LAYOUT_SMALL_DESTINATION)'
+	@TOS_TEST_DESTINATION='$(LAYOUT_SMALL_DESTINATION)' python3 scripts/tests/ios_test_simulator.py --shutdown
+	$(MAKE) test_ui TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testV1OnboardingLayoutAndContrastAcrossAppearanceAndTextSizes TEST_DESTINATION='$(LAYOUT_LARGE_DESTINATION)'
+	@TOS_TEST_DESTINATION='$(LAYOUT_LARGE_DESTINATION)' python3 scripts/tests/ios_test_simulator.py --shutdown
 
 test_v1_performance:
-	python3 scripts/tests/test_v1_performance.py
+	TOS_TEST_DESTINATION='$(TEST_DESTINATION)' TOS_TEST_DERIVED_DATA_PATH='$(TEST_DERIVED_DATA_PATH)' python3 scripts/tests/test_v1_performance.py
 
 test_all:
 	$(MAKE) test_core_swift
@@ -120,30 +133,37 @@ test_all:
 test_project_scheme:
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
-		$(TEST_BUILD_ROOT)/codex_home \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
 		$(TEST_BUILD_ROOT)/swiftpm-config \
 		$(TEST_BUILD_ROOT)/clang-module-cache \
-		$(TEST_BUILD_ROOT)/SourcePackages
+		$(TEST_BUILD_ROOT)/SourcePackages \
+		$(TEST_BUILD_ROOT)/TestResults
 	@test -n "$(SCHEME)" || (echo "SCHEME is required"; exit 1)
 	@echo 'running $(SCHEME) tests...' && \
 		set -o pipefail; \
-		HOME=$(TEST_BUILD_ROOT)/codex_home \
+		result_bundle="$(TEST_BUILD_ROOT)/TestResults/$(SCHEME)-$$(date +%Y%m%dT%H%M%S)-$$$$.xcresult"; \
 		SWIFTPM_CONFIG_DIR=$(TEST_BUILD_ROOT)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
-		TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
-		xcodebuild \
+		TEST_RUNNER_TOS_PQ_CHAIN_TIME='$(TOS_PQ_CHAIN_TIME)' \
+		TEST_RUNNER_TOS_PQ_NONCE='$(TOS_PQ_NONCE)' \
+		TEST_RUNNER_TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
+		TEST_RUNNER_TOS_UI_EXPECTED_RPC_URL='$(TOS_UI_RPC_URL)' \
+		TEST_RUNNER_PACKAGE_RESOURCE_BUNDLE_PATH='$(TEST_PACKAGE_RESOURCE_BUNDLE_PATH)' \
+		xcodebuild -jobs $(BUILD_JOBS) \
 		-project TosWallet.xcodeproj \
 		-scheme $(SCHEME) \
+		-configuration '$(TEST_CONFIGURATION)' \
 		-destination '$(TEST_DESTINATION)' \
 		-disableAutomaticPackageResolution \
 		-onlyUsePackageVersionsFromResolvedFile \
 		-skipPackageUpdates \
-		-derivedDataPath $(TEST_BUILD_ROOT)/DerivedData-tests/$(SCHEME) \
+		-parallel-testing-enabled NO \
+		-derivedDataPath $(TEST_DERIVED_DATA_PATH) \
+		-resultBundlePath "$$result_bundle" \
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
 		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
-		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) | xcbeautify
+		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
 
 test_core_swift: SCHEME=WalletCore
 test_core_swift: test_project_scheme
@@ -183,7 +203,7 @@ test_ui:
 	status=0; \
 	$(MAKE) test_project_scheme SCHEME=$(SCHEME) TEST_ONLY='$(TEST_ONLY)' TOS_UI_RPC_URL=http://127.0.0.1:18645 || status=$$?; \
 	if [ $$status -ne 0 ]; then exit $$status; fi; \
-	sh scripts/tests/test_v1_runtime_secrets.sh; \
+	$(MAKE) test_v1_runtime_secrets || exit $$?; \
 	$(MAKE) test_v1_performance
 
 test_wallet_core: SCHEME=WalletCore

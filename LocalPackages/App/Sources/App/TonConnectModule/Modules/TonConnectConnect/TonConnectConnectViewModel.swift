@@ -146,7 +146,7 @@ private extension TonConnectConnectViewModelImplementation {
                         }
                     }
 
-                    await MainActor.run {
+                    await MainActor.run { [self] in
                         if isSuccess {
                             self.connectingState = .success
                         } else {

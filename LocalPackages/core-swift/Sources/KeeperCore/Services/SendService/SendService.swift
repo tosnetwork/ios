@@ -41,7 +41,8 @@ final class SendServiceImplementation: SendService {
     }
 
     func loadSeqno(wallet: Wallet) async throws -> UInt64 {
-        try await UInt64(apiProvider.api(wallet.network).getSeqno(address: wallet.address))
+        let client = await apiProvider.api(wallet.network).boundTOSRPCClient()
+        return UInt64(try TOSWalletRPC.decodeSeqno(await client.walletInformation(wallet: wallet)))
     }
 
     func loadTransactionInfo(
@@ -56,18 +57,20 @@ final class SendServiceImplementation: SendService {
     }
 
     func sendTransaction(boc: String, wallet: Wallet) async throws {
-        try await apiProvider.api(wallet.network)
-            .sendTransaction(boc: boc)
+        let client = await apiProvider.api(wallet.network).boundTOSRPCClient()
+        _ = try await client.callForWallet(method: "sendBocReturnHash", params: ["boc": boc], wallet: wallet)
     }
 
     func sendTransactions(batch: [String], wallet: Wallet) async throws {
-        try await apiProvider.api(wallet.network)
-            .sendTransactions(batch: batch)
+        let client = await apiProvider.api(wallet.network).boundTOSRPCClient()
+        for boc in batch {
+            _ = try await client.callForWallet(method: "sendBocReturnHash", params: ["boc": boc], wallet: wallet)
+        }
     }
 
     func estimateFee(boc: String, wallet: Wallet) async throws -> UInt64 {
-        try await apiProvider.api(wallet.network)
-            .estimateFee(address: wallet.address, boc: boc)
+        let client = await apiProvider.api(wallet.network).boundTOSRPCClient()
+        return try await client.estimateWalletFee(body: boc, wallet: wallet)
     }
 
     func getIndexingLatency(wallet: Wallet) async throws -> Int {

@@ -132,7 +132,7 @@ final class EthenaStakingDetailsViewModelImplementation: EthenaStakingDetailsVie
 private extension EthenaStakingDetailsViewModelImplementation {
     func updateLinks() {
         guard isUSDeAvailable else { return }
-        Task { @MainActor in
+        Task { @MainActor [self] in
             if let response = await ethenaStakingResponseTask.value {
                 let model = linksViewModelBuilder
                     .buildModelEthena(
@@ -236,7 +236,7 @@ private extension EthenaStakingDetailsViewModelImplementation {
             )
         )
 
-        Task { @MainActor in
+        Task { @MainActor [self] in
             if let response = await ethenaStakingResponseTask.value, isUSDeAvailable {
                 let actionItems = [TKActionLabel.ActionItem(
                     text: TKLocales.Ethena.aboutEthena,

@@ -149,6 +149,10 @@ public final class ServicesAssembly {
         )
     }
 
+    func discoverNetworkGlobalId(network: Network) async throws -> Int32 {
+        try await apiAssembly.apiProvider.api(network).getNetworkGlobalId()
+    }
+
     public func sendService() -> SendService {
         SendServiceImplementation(apiProvider: apiAssembly.apiProvider)
     }

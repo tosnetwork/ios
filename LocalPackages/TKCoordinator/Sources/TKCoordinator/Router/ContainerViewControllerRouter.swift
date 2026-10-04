@@ -15,7 +15,11 @@ public class ContainerViewControllerRouter<RootViewController: UIViewController>
         onDismiss: (() -> Void)? = nil
     ) {
         self.onDismiss = onDismiss
-        viewController.presentationController?.delegate = self
+        // UIKit owns the alert presentation controller's delegate. Replacing it
+        // raises an exception on current iOS releases.
+        if !(viewController is UIAlertController) {
+            viewController.presentationController?.delegate = self
+        }
         rootViewController.present(
             viewController,
             animated: animated,
@@ -30,7 +34,9 @@ public class ContainerViewControllerRouter<RootViewController: UIViewController>
         onDismiss: (() -> Void)? = nil
     ) {
         self.onDismiss = onDismiss
-        viewController.presentationController?.delegate = self
+        if !(viewController is UIAlertController) {
+            viewController.presentationController?.delegate = self
+        }
         rootViewController.topPresentedViewController().present(
             viewController,
             animated: animated,

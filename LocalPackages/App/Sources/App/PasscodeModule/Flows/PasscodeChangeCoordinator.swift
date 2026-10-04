@@ -119,14 +119,20 @@ private extension PasscodeChangeCoordinator {
         passcodeInput.output.didFinish = { [weak self] _ in
             guard let self else { return }
             Task {
-                try await self.keeperCoreAssembly.secureAssembly.mnemonicsRepository().changePassword(
-                    oldPassword: oldPasscode,
-                    newPassword: newPasscode
-                )
-                try? self.keeperCoreAssembly.secureAssembly.mnemonicsRepository().deletePassword()
-                await self.keeperCoreAssembly.storesAssembly.securityStore.setIsBiometryEnable(false)
-                await MainActor.run {
-                    self.didChangePasscode?()
+                do {
+                    try await self.keeperCoreAssembly.secureAssembly.mnemonicsRepository().changePassword(
+                        oldPassword: oldPasscode,
+                        newPassword: newPasscode
+                    )
+                    try? self.keeperCoreAssembly.secureAssembly.mnemonicsRepository().deletePassword()
+                    await self.keeperCoreAssembly.storesAssembly.securityStore.setIsBiometryEnable(false)
+                    await MainActor.run {
+                        self.didChangePasscode?()
+                    }
+                } catch {
+                    await MainActor.run {
+                        ToastPresenter.showToast(configuration: .failed)
+                    }
                 }
             }
         }

@@ -3,10 +3,10 @@ import TonSwift
 
 public enum WalletContractVersion: String, Codable, CaseIterable, Comparable, Hashable {
     /// Regular wallets
-    case v3R1, v3R2, v4R1, v4R2, v5Beta = "w5 beta", v5R1 = "w5"
+    case v3R1, v3R2, v4R1, v4R2, v5Beta = "w5 beta", v5R1 = "w5", tosV5R1 = "tos-w5"
 
     public static var currentVersion: WalletContractVersion {
-        .v5R1
+        .tosV5R1
     }
 
     private var intValue: Int {
@@ -23,6 +23,8 @@ public enum WalletContractVersion: String, Codable, CaseIterable, Comparable, Ha
             return 5
         case .v5R1:
             return 6
+        case .tosV5R1:
+            return 7
         }
     }
 
@@ -46,6 +48,8 @@ extension WalletContractVersion: CellCodable {
             try builder.store(uint: 5, bits: 4)
         case .v5R1:
             try builder.store(uint: 6, bits: 4)
+        case .tosV5R1:
+            try builder.store(uint: 7, bits: 4)
         }
     }
 
@@ -65,6 +69,8 @@ extension WalletContractVersion: CellCodable {
                 return .v5Beta
             case 6:
                 return .v5R1
+            case 7:
+                return .tosV5R1
             default:
                 throw TonError.custom("Invalid WalletContractVersion type")
             }

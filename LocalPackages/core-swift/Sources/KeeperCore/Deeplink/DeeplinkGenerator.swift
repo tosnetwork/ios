@@ -14,7 +14,7 @@ public struct DeeplinkGenerator {
         jettonAddress: Address? = nil
     ) throws -> String {
         var urlComponents = URLComponents()
-        urlComponents.scheme = "ton"
+        urlComponents.scheme = "tos"
         urlComponents.host = "transfer"
         urlComponents.path = "/\(addressString)"
         if let amount {

@@ -145,7 +145,7 @@ private extension HistoryListViewController {
     func setupLayout() -> UICollectionViewCompositionalLayout {
         let size = NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1.0),
-            heightDimension: .estimated(0)
+            heightDimension: .estimated(1)
         )
         let header = NSCollectionLayoutBoundarySupplementaryItem(
             layoutSize: size,

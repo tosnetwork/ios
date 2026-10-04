@@ -26,7 +26,10 @@ public final class WalletsUpdateAssembly {
             walletsStore: storesAssembly.walletsStore,
             tonProofTokenService: servicesAssembly.tonProofTokenService(),
             mnemonicsRepositoty: secureAssembly.mnemonicsRepository(),
-            tronBalanceService: servicesAssembly.tronBalanceService()
+            tronBalanceService: servicesAssembly.tronBalanceService(),
+            networkIdentityProvider: { [servicesAssembly] network in
+                try await servicesAssembly.discoverNetworkGlobalId(network: network)
+            }
         )
     }
 

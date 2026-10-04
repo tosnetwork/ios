@@ -20,6 +20,7 @@ final class OnboardingRootView: UIView, ConfigurableView {
 
     let createButton = TKButton()
     let importButton = TKButton()
+    let configureNodeButton = UIButton(type: .system)
     let termsTextView: UITextView = {
         let textView = UITextView()
         textView.isEditable = false
@@ -80,7 +81,24 @@ private extension OnboardingRootView {
         importButton.accessibilityTraits = .button
         termsTextView.accessibilityIdentifier = "onboarding.terms"
 
-        bottomControlsContainer.setViews([createButton, importButton, termsTextView])
+        var nodeConfiguration = UIButton.Configuration.plain()
+        nodeConfiguration.title = "Configure TOS Node"
+        nodeConfiguration.baseForegroundColor = .Text.accent
+        nodeConfiguration.titleAlignment = .center
+        nodeConfiguration.titleLineBreakMode = .byWordWrapping
+        nodeConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0)
+        nodeConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.preferredFont(forTextStyle: .callout)
+            return attributes
+        }
+        configureNodeButton.configuration = nodeConfiguration
+        configureNodeButton.titleLabel?.numberOfLines = 0
+        configureNodeButton.titleLabel?.textAlignment = .center
+        configureNodeButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        configureNodeButton.accessibilityIdentifier = "onboarding.configureNode"
+        configureNodeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        bottomControlsContainer.setViews([createButton, importButton, configureNodeButton, termsTextView])
 
         addSubview(coverImageView)
         addSubview(titleDescriptionView)
@@ -99,7 +117,14 @@ private extension OnboardingRootView {
         coverImageView.isAccessibilityElement = true
         coverImageView.accessibilityLabel = "TOS"
 
+        let preferredCoverWidth = coverImageView.widthAnchor.constraint(equalToConstant: 136)
+        preferredCoverWidth.priority = .defaultHigh
+        let preferredCoverGap = coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -48)
+        preferredCoverGap.priority = UILayoutPriority(749)
+
         NSLayoutConstraint.activate([
+            preferredCoverWidth,
+            preferredCoverGap,
             bottomControlsContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
             bottomControlsContainer.leftAnchor.constraint(equalTo: leftAnchor),
             bottomControlsContainer.rightAnchor.constraint(equalTo: rightAnchor),
@@ -108,9 +133,12 @@ private extension OnboardingRootView {
             titleDescriptionView.leftAnchor.constraint(equalTo: leftAnchor),
             titleDescriptionView.rightAnchor.constraint(equalTo: rightAnchor),
 
-            coverImageView.bottomAnchor.constraint(equalTo: titleDescriptionView.topAnchor, constant: -48),
+            coverImageView.topAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.topAnchor, constant: 16),
+            coverImageView.bottomAnchor.constraint(lessThanOrEqualTo: titleDescriptionView.topAnchor, constant: -16),
+            coverImageView.bottomAnchor.constraint(greaterThanOrEqualTo: titleDescriptionView.topAnchor, constant: -48),
             coverImageView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            coverImageView.widthAnchor.constraint(equalToConstant: 136),
+            coverImageView.widthAnchor.constraint(lessThanOrEqualToConstant: 136),
+            coverImageView.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
             coverImageView.heightAnchor.constraint(equalTo: coverImageView.widthAnchor),
         ])
     }

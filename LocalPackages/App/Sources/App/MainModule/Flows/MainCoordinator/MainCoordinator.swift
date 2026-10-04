@@ -146,7 +146,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             forName: NSNotification.Name(rawValue: "PushNotificationOpen"),
             object: nil,
             queue: .main
-        ) { notification in
+        ) { [weak self] notification in
             Task { @MainActor [weak self] in
                 self?.didOpenAppWithPushNotificationTapHandler(userInfo: notification.userInfo)
             }
@@ -635,7 +635,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(coordinator)
         coordinator.start()
 
-        router.dismiss(animated: true) { [weak self] in
+        router.dismiss(animated: true) { [weak self, weak coordinator] in
             self?.router.present(navigationController, onDismiss: { [weak self, weak coordinator] in
                 self?.removeChild(coordinator)
             })
@@ -675,7 +675,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(coordinator)
         coordinator.start()
 
-        router.dismiss(animated: true) { [weak self] in
+        router.dismiss(animated: true) { [weak self, weak coordinator] in
             self?.router.present(navigationController, onDismiss: { [weak self, weak coordinator] in
                 self?.removeChild(coordinator)
             })
@@ -892,10 +892,10 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         let window = TKWindow(windowScene: windowScene)
         window.windowLevel = .tonConnectConnect
         let router = WindowRouter(window: window)
-        Task {
+        Task { [self] in
             switch await tonConnectService.loadAppManifest(parameters: parameters) {
             case let .success(manifest):
-                await MainActor.run {
+                await MainActor.run { [self] in
                     ToastPresenter.hideToast()
                     let coordinator = TonConnectModule(
                         dependencies: TonConnectModule.Dependencies(
@@ -1701,7 +1701,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(coordinator)
         coordinator.start(deeplink: nil)
 
-        self.router.dismiss(animated: true) { [weak self] in
+        self.router.dismiss(animated: true) { [weak self, weak coordinator] in
             self?.router.present(navigationController, onDismiss: { [weak self, weak coordinator] in
                 self?.removeChild(coordinator)
             })
@@ -1804,7 +1804,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(coordinator)
         coordinator.start()
 
-        router.dismiss(animated: true) { [weak self] in
+        router.dismiss(animated: true) { [weak self, weak coordinator] in
             self?.router.present(navigationController, onDismiss: { [weak self, weak coordinator] in
                 self?.removeChild(coordinator)
             })
@@ -1863,7 +1863,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         addChild(coordinator)
         coordinator.start(deeplink: nil)
 
-        self.router.dismiss(animated: true) { [weak self] in
+        self.router.dismiss(animated: true) { [weak self, weak coordinator] in
             self?.router.present(navigationController, onDismiss: { [weak self, weak coordinator] in
                 self?.removeChild(coordinator)
             })
@@ -2045,7 +2045,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 }
             )
         } else {
-            self.router.dismiss(animated: true) { [weak self] in
+            self.router.dismiss(animated: true) { [weak self, coordinator] in
                 self?.router.present(
                     navigationController,
                     completion: {
@@ -2280,8 +2280,8 @@ extension MainCoordinator: AppStateTrackerObserver {
 
 extension MainCoordinator: ReachabilityTrackerObserver {
     func didUpdateState(_ state: TKCore.ReachabilityTracker.State) {
-        switch reachabilityTracker.state {
-        case .connected:
+        switch (appStateTracker.state, reachabilityTracker.state) {
+        case (.active, .connected):
             mainController.startUpdates()
         default:
             return

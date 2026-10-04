@@ -1,5 +1,6 @@
 import CoreComponents
 import KeeperCore
+import TonSwift
 import Stories
 import TKAppInfo
 import TKCoordinator
@@ -115,6 +116,20 @@ private extension SettingsCoordinator {
 
         configurator.didTapConnectedApps = { [weak self] wallet in
             self?.openConnectedApps(wallet: wallet)
+        }
+
+        configurator.didTapPQWallets = { [weak self] in
+            guard let self else { return }
+            let controller = TOSPQWalletsViewController(
+                api: self.keeperCoreMainAssembly.apiAssembly.pqAPI(network: self.wallet.network), payer: self.wallet,
+                authenticate: { [weak self] in await self?.getPasscode() != nil },
+                feeSign: { [weak self] unsigned in
+                    guard let self, let passcode = await self.getPasscode() else { throw CancellationError() }
+                    let mnemonic = try await self.keeperCoreMainAssembly.secureAssembly.mnemonicsRepository().getMnemonic(wallet: self.wallet, password: passcode)
+                    let pair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: self.wallet)
+                    return try WalletTransferSecretKeySigner(secretKey: pair.privateKey.data).signMessage(unsigned.hash())
+                })
+            self.router.push(viewController: controller, animated: true)
         }
 
         configurator.didTapRPCNode = { [weak self, weak configurator] in
@@ -448,43 +463,7 @@ private extension SettingsCoordinator {
     }
 
     func openRPCNodeEditor(onSaved: @escaping () -> Void) {
-        let alertController = UIAlertController(
-            title: "RPC Node",
-            message: "Enter a node URL or IP address with an optional port. The wallet adds /jsonRPC automatically.",
-            preferredStyle: .alert
-        )
-        alertController.addTextField { textField in
-            textField.accessibilityIdentifier = "settings.rpc.endpoint"
-            textField.accessibilityLabel = "RPC node endpoint"
-            textField.placeholder = "192.168.1.20:18545"
-            textField.text = TOSRPCSettings.customEndpoint
-            textField.keyboardType = .URL
-            textField.autocapitalizationType = .none
-            textField.autocorrectionType = .no
-            textField.clearButtonMode = .whileEditing
-        }
-        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        let restoreAction = UIAlertAction(title: "Restore Default", style: .destructive) { _ in
-            TOSRPCSettings.reset()
-            onSaved()
-        }
-        restoreAction.accessibilityIdentifier = "settings.rpc.restore"
-        alertController.addAction(restoreAction)
-        let saveAction = UIAlertAction(title: "Save", style: .default) { [weak self, weak alertController] _ in
-            do {
-                try TOSRPCSettings.setCustomEndpoint(alertController?.textFields?.first?.text ?? "")
-                onSaved()
-            } catch {
-                self?.presentAlertController(
-                    title: "Invalid RPC Node",
-                    message: error.localizedDescription,
-                    actions: [UIAlertAction(title: "OK", style: .default)]
-                )
-            }
-        }
-        saveAction.accessibilityIdentifier = "settings.rpc.save"
-        alertController.addAction(saveAction)
-        router.rootViewController.present(alertController, animated: true)
+        TOSRPCNodeEditor.present(from: router.rootViewController, onSaved: onSaved)
     }
 
     func openLegal() {
@@ -572,7 +551,7 @@ private extension SettingsCoordinator {
         configuration.didSelectExportLogs = { [weak self] in
             self?.exportLogs()
         }
-        configuration.didSelectRNSeedPhrasesRecovery = {
+        configuration.didSelectRNSeedPhrasesRecovery = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self,
                       let passcode = await self.getRNPasscode() else { return }
@@ -583,7 +562,7 @@ private extension SettingsCoordinator {
                 self.openSeedPhrases(mnemonics: mnemonics)
             }
         }
-        configuration.didSelectSeedPhrasesRecovery = {
+        configuration.didSelectSeedPhrasesRecovery = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self,
                       let passcode = await self.getPasscode() else { return }
@@ -656,7 +635,7 @@ private extension SettingsCoordinator {
     private func exportLogs() {
         ToastPresenter.showToast(configuration: .loading)
 
-        Task {
+        Task { [self] in
             do {
                 let fileURL = try await Task.detached(priority: .userInitiated) {
                     try LogExporter.exportToTemporaryFile(

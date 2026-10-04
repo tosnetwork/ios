@@ -1,21 +1,97 @@
 import CoreImage
+import CryptoKit
 import UIKit
+import Vision
 import XCTest
 
 final class TOSWalletUITests: XCTestCase {
     private var app: XCUIApplication!
-    private let fixtureMnemonic = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
+    private let fixtureMnemonic = "enhance depend evolve rotate creek total enable settle mammal margin round cube truck quote hold correct provide voyage north model sure off strategy pulse"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        try setProxyMode("normal", resetCounts: true)
+        let rpcURL = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645"
+        let endpoint = try XCTUnwrap(URL(string: rpcURL), "The test RPC endpoint must be a URL")
+        XCTAssertTrue(["http", "https"].contains(endpoint.scheme ?? ""), "The test RPC endpoint must use HTTP(S)")
+        XCTAssertNotNil(endpoint.host, "The test RPC endpoint must have a host")
+        if let port = endpoint.port {
+            XCTAssertTrue((1...65535).contains(port), "The test RPC endpoint port must be valid")
+        }
+        if let expected = ProcessInfo.processInfo.environment["TOS_UI_EXPECTED_RPC_URL"] {
+            XCTAssertTrue(rpcURL == expected, "The runner RPC endpoint must match the Make configuration")
+        }
+        let port = endpoint.port ?? (endpoint.scheme == "https" ? 443 : 80)
+        print("UI test RPC endpoint: \(endpoint.scheme ?? "")://\(endpoint.host ?? ""):\(port)")
+        if URL(string: rpcURL)?.port == 18645 {
+            try setProxyMode("normal", resetCounts: true)
+        }
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
-        app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
-            ?? "http://127.0.0.1:18645"
+        app.launchEnvironment["TOS_RPC_URL"] = rpcURL
         app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = "TOS automated transfer"
         app.launch()
+    }
+
+    func testPQWalletsCreateDeploySignReconcileAndDeleteBothProfilesOnLocalTos() throws {
+        importFixtureWalletToHome();openSettings()
+        let row = app.descendants(matching: .any)["settings.PQWalletsItem"]
+        if !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 10));row.tap()
+        XCTAssertTrue(app.buttons["pq.create"].waitForExistence(timeout: 15))
+        let feeLabel = app.staticTexts["pq.fee.address"]
+        XCTAssertTrue(feeLabel.waitForExistence(timeout: 10))
+        let feeAddress = feeLabel.label
+        XCTAssertNotNil(feeAddress.range(of: "^0:[a-fA-F0-9]{64}$", options: .regularExpression))
+        print("PUBLIC_PQ_UI_FEE_ADDRESS=" + feeAddress)
+        _ = try localnetTransfer(address: feeAddress, amount: 150)
+        func action(_ id: String) {
+            let control = app.buttons[id]
+            for _ in 0..<3 { if control.isHittable { break };app.swipeDown() }
+            for _ in 0..<8 { if control.isHittable { break };app.swipeUp() }
+            XCTAssertTrue(control.waitForExistence(timeout: 10));control.tap()
+        }
+        func form(_ values: [String]) {
+            for (index, value) in values.enumerated() {
+                let field = app.textFields["pq.input.\(index)"];XCTAssertTrue(field.waitForExistence(timeout: 10));field.tap();field.typeText(value)
+            }
+            app.alerts.buttons["Continue"].tap()
+        }
+        func pin() { XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 20));enterPasscode("1234") }
+        func confirm(_ title: String) { let alert = app.alerts[title];XCTAssertTrue(alert.waitForExistence(timeout: 30));alert.buttons["Confirm"].tap() }
+        for (index, profile) in ["ML-DSA-44", "Falcon-512 padded"].enumerated() {
+            action("pq.create");app.alerts.buttons[profile].tap();form(["PQ UI QA \(index + 1)"]);pin()
+            let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pq.wallet.' AND label BEGINSWITH %@", "PQ UI QA \(index + 1)")).firstMatch
+            XCTAssertTrue(record.waitForExistence(timeout: 30))
+            let match = try XCTUnwrap(record.label.range(of: "0:[a-fA-F0-9]{64}", options: .regularExpression))
+            let address = String(record.label[match])
+            record.tap();action("pq.deploy");form(["5", "20"]);confirm("Confirm deployment");confirm("Review network fees");pin()
+            XCTAssertTrue(waitForBalance(address: address, timeout: 60) { $0 >= 19_900_000_000 })
+            action("pq.history")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'deployed'")).firstMatch.waitForExistence(timeout: 20))
+            let recipient = "0:" + String(repeating: index == 0 ? "7a" : "7b", count: 32)
+            let before = try rpcBalance(address: recipient)
+            action("pq.send");form([recipient, "0.01", "PUBLIC PQ UI \(index + 1)", "2"]);confirm("Confirm PQ transfer");pin();confirm("Review network fees");pin()
+            XCTAssertTrue(waitForBalance(address: recipient, timeout: 60) { $0 > before })
+            let senderRows = try legacyRawTransactions(address: address).filter { row in
+                (row["out_msgs"] as? [[String: Any]])?.contains { message in
+                    message["value"] as? String == "10000000" && message["bounced"] as? Bool == false
+                } == true
+            }
+            XCTAssertEqual(senderRows.count, 1)
+            let senderID = try XCTUnwrap(try XCTUnwrap(senderRows.first)["transaction_id"] as? [String: Any])
+            let lt = try XCTUnwrap(senderID["lt"] as? String)
+            let hash = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(senderID["hash"] as? String)))
+            let eventID = lt + ":" + hash.map { String(format: "%02x", $0) }.joined()
+            let recipientFee = try assertLegacyRecipientReceipt(sender: address, recipient: recipient, eventID: eventID, amount: 10_000_000)
+            XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == before + 10_000_000 - recipientFee })
+            action("pq.history")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'delivered'")).firstMatch.waitForExistence(timeout: 30))
+            action("pq.delete");confirm("Delete PQ UI QA \(index + 1)?");pin()
+            XCTAssertTrue(app.buttons["pq.create"].waitForExistence(timeout: 20))
+            XCTAssertFalse(record.exists)
+        }
+        retainScreenshot(named: "PQ local-chain flow completed for both profiles")
     }
 
     func testOnboardingExposesCoreWalletEntryPoints() {
@@ -42,8 +118,88 @@ final class TOSWalletUITests: XCTestCase {
             launchOnboarding(appearance: appearance, contentSize: contentSize)
             XCTAssertTrue(app.staticTexts["TOS Wallet"].waitForExistence(timeout: 15))
             assertVisibleElementsFitWindow()
-            assertScreenshotHasReadableContrast(app.screenshot().image)
+            let galaxy = app.images["onboarding.tosGalaxy"]
+            XCTAssertTrue(galaxy.exists)
+            XCTAssertTrue(app.windows.firstMatch.frame.contains(galaxy.frame), "The whole galaxy must remain in the viewport")
+            XCTAssertGreaterThanOrEqual(galaxy.frame.width, 44)
+            XCTAssertLessThanOrEqual(galaxy.frame.width, 136)
+            let statusBar = app.statusBars.firstMatch
+            if statusBar.exists {
+                XCTAssertFalse(galaxy.frame.intersects(statusBar.frame), "The galaxy must not overlap the status bar")
+            }
+            let screenshot = app.screenshot().image
+            assertScreenshotHasReadableContrast(screenshot)
+            assertOnboardingAppearance(screenshot, appearance: appearance)
+            let configureNode = app.buttons["onboarding.configureNode"]
+            XCTAssertTrue(configureNode.exists)
+            XCTAssertTrue(configureNode.isHittable)
+            XCTAssertGreaterThanOrEqual(configureNode.frame.height, 44)
+            XCTAssertEqual(configureNode.label, "Configure TOS Node")
+            assertVisibleNodeTitle(configureNode.screenshot().image)
+            retainScreenshot(named: "Onboarding \(appearance) \(contentSize)")
         }
+    }
+
+    func testUnavailableNodeCreationCanConfigureAndRetryWithoutLosingRecovery() {
+        app.terminate()
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:9"
+        app.launch()
+        XCTAssertTrue(app.buttons["onboarding.configureNode"].waitForExistence(timeout: 15))
+        openCreatePasscode()
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.descendants(matching: .any)["Later"].waitForExistence(timeout: 5))
+        app.descendants(matching: .any)["Later"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 5))
+        let walletName = app.textFields["Wallet Name"]
+        XCTAssertTrue(walletName.exists)
+        let nameBeforeFailure = walletName.value as? String
+        XCTAssertNotNil(nameBeforeFailure)
+        app.buttons["wallet.customize.continue"].tap()
+        let failure = app.alerts["Wallet creation failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15))
+        failure.buttons["Configure TOS Node"].tap()
+        let field = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText(ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645")
+        app.buttons["Save"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].exists)
+        XCTAssertEqual(walletName.value as? String, nameBeforeFailure)
+        let retry = app.buttons["wallet.customize.continue"]
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        retry.tap()
+        assertNativeWalletHome()
+        XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
+    }
+
+    func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        let walletName = app.textFields["Wallet Name"]
+        let nameBeforeFailure = try XCTUnwrap(walletName.value as? String)
+        let retry = app.buttons["wallet.customize.continue"]
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        try setProxyMode("offline", resetCounts: true)
+        defer { try? setProxyMode("normal", resetCounts: false) }
+        retry.tap()
+        let failure = app.alerts["Wallet import failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15))
+        failure.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].exists)
+        XCTAssertEqual(walletName.value as? String, nameBeforeFailure)
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        try setProxyMode("normal", resetCounts: false)
+        retry.tap()
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"].waitForExistence(timeout: 10))
     }
 
     func testBackgroundPrivacyShieldAppearsAndForegroundRestores() {
@@ -202,6 +358,117 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Back up your recovery phrase"].exists)
     }
 
+    func testLegacyRecoveryRequiresExplicitChoiceAndPreservesAddress() {
+        launchRecoveryPhraseImport(phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.alerts["Legacy Recovery Phrase"].waitForExistence(timeout: 10))
+        app.alerts["Legacy Recovery Phrase"].buttons["Restore Legacy Wallet"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+    }
+
+    func testLegacyWalletDeploysAndTransfersAgainFromActiveStoredContract() throws {
+        // PUBLIC TEST DATA. This fixture must begin uninitialized on the isolated
+        // test chain; both its deployment and active send go through the App.
+        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let recipient = "0:" + String(repeating: "4a", count: 32)
+        let comment = "Legacy 已部署 🌌"
+        XCTAssertEqual(try rpcResult(method: "getAddressInformation", params: ["address": sender])["state"] as? String, "uninitialized")
+        let senderBefore = try rpcBalance(address: sender)
+        let recipientBefore = try rpcBalance(address: recipient)
+        let eventsBefore = try rpcEventIDs(address: sender)
+        XCTAssertGreaterThan(senderBefore, 30_000_000)
+
+        launchRecoveryPhraseImport(
+            phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice",
+            comment: comment, recipient: "EQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSnAa"
+        )
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Legacy Recovery Phrase"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        try setProxyMode("normal", resetCounts: true)
+
+        openNativeSendConfirmation(amount: "0.01")
+        confirmNativeTransferWithPasscode()
+        let deploymentEvents = try waitForLegacyEventIDs(address: sender, excluding: eventsBefore, count: 1)
+        let deploymentEvent = try XCTUnwrap(deploymentEvents.first)
+        try assertLegacyTransferEvent(address: sender, eventID: deploymentEvent, amount: 10_000_000, comment: comment)
+        let firstFee = try assertLegacyRecipientReceipt(sender: sender, recipient: recipient, eventID: deploymentEvent, amount: 10_000_000)
+        let firstBalance = recipientBefore.addingReportingOverflow(10_000_000 - firstFee)
+        XCTAssertFalse(firstBalance.overflow)
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == firstBalance.partialValue })
+        XCTAssertEqual(try rpcBalance(address: recipient), firstBalance.partialValue)
+        assertActiveLegacyCounter(address: sender, expected: 1)
+        XCTAssertEqual(try broadcastCount(), 1)
+
+        // Reopen the saved wallet rather than deriving a replacement wallet or
+        // attaching a new StateInit to the active account.
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+        openNativeSendConfirmation(amount: "0.02")
+        confirmNativeTransferWithPasscode()
+        let allNewEvents = try waitForLegacyEventIDs(address: sender, excluding: eventsBefore, count: 2)
+        let secondEvents = allNewEvents.subtracting(deploymentEvents)
+        XCTAssertEqual(secondEvents.count, 1)
+        let secondEvent = try XCTUnwrap(secondEvents.first)
+        try assertLegacyTransferEvent(address: sender, eventID: secondEvent, amount: 20_000_000, comment: comment)
+        let secondFee = try assertLegacyRecipientReceipt(sender: sender, recipient: recipient, eventID: secondEvent, amount: 20_000_000)
+        let finalBalance = firstBalance.partialValue.addingReportingOverflow(20_000_000 - secondFee)
+        XCTAssertFalse(finalBalance.overflow)
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == finalBalance.partialValue })
+        XCTAssertEqual(try rpcBalance(address: recipient), finalBalance.partialValue)
+        XCTAssertLessThan(try rpcBalance(address: sender), senderBefore - 30_000_000)
+        assertActiveLegacyCounter(address: sender, expected: 2)
+        XCTAssertEqual(try broadcastCount(), 2)
+        XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 20))
+        app.buttons["History"].tap()
+        let historyAmount = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "0.02", "TOS")
+        ).firstMatch
+        XCTAssertTrue(historyAmount.waitForExistence(timeout: 20))
+        historyAmount.tap()
+        XCTAssertTrue(app.staticTexts[comment].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSi3f"].exists)
+        retainScreenshot(named: "Legacy active transfer details")
+    }
+
+    func testAmbiguousPhraseCanExplicitlyRestoreTOSWallet() {
+        launchRecoveryPhraseImport(phrase: "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Recovery Phrase Format"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        XCTAssertTrue(choice.buttons["Restore Legacy Wallet"].exists)
+        choice.buttons["Restore TOS Wallet"].tap()
+        completeImportedWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQDxvyHqyxsnJeR5LU7q4j39VALosGD2fSpycZrsSeXXJwDq"].waitForExistence(timeout: 10))
+    }
+
+    func testAmbiguousPhraseCanExplicitlyRestoreLegacyWallet() {
+        launchRecoveryPhraseImport(phrase: "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Recovery Phrase Format"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        XCTAssertTrue(choice.buttons["Restore TOS Wallet"].exists)
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCzuE67CycqLve5l3-2JSZmUYAuq7OpQjcnX-7sC5w4Qn4H"].waitForExistence(timeout: 10))
+    }
+
     func testImportWalletOpensRecoveryPhraseFlow() {
         let importWallet = app.buttons["Import Existing Wallet"]
         XCTAssertTrue(importWallet.waitForExistence(timeout: 15))
@@ -210,7 +477,9 @@ final class TOSWalletUITests: XCTestCase {
         let existingWallet = app.cells.containing(.staticText, identifier: "Existing Wallet").firstMatch
         XCTAssertTrue(existingWallet.waitForExistence(timeout: 5))
         assertV1ImportOptionsAreHidden()
-        existingWallet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let chevron = existingWallet.images["Icons/16/ic-chevron-right-16"]
+        XCTAssertTrue(chevron.waitForExistence(timeout: 5))
+        chevron.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["Paste"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Continue"].exists)
@@ -232,7 +501,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
         ).firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"].waitForExistence(timeout: 10))
 
         app.terminate()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
@@ -243,7 +512,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testFundedFixtureLoadsExactNativeBalanceAndIncomingHistory() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let expectedBalance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         let walletList = app.collectionViews["wallet.balance.list"]
@@ -274,7 +543,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testIncomingLocalChainTransferRefreshesBalanceAndHistory() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balanceBefore = try rpcBalance(address: sender)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome()
@@ -375,6 +644,8 @@ final class TOSWalletUITests: XCTestCase {
         let decorated = "MANSION Chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction VOICE"
         launchRecoveryPhraseImport(phrase: decorated)
         app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.alerts["Legacy Recovery Phrase"].waitForExistence(timeout: 10))
+        app.alerts["Legacy Recovery Phrase"].buttons["Restore Legacy Wallet"].tap()
         XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
     }
 
@@ -387,8 +658,12 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testRecoveryPhraseUnknownWordIsRejected() {
-        let unknownWord = fixtureMnemonic.replacingOccurrences(of: "mansion", with: "notaword")
+        var words = fixtureMnemonic.split(separator: " ").map(String.init)
+        words[0] = "notaword"
+        let unknownWord = words.joined(separator: " ")
+        XCTAssertNotEqual(unknownWord, fixtureMnemonic)
         launchRecoveryPhraseImport(phrase: unknownWord)
+        XCTAssertEqual(app.descendants(matching: .any)["mnemonic.input.0"].value as? String, "notaword")
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
@@ -465,8 +740,7 @@ final class TOSWalletUITests: XCTestCase {
         let payload = qrImage.flatMap {
             detector?.features(in: $0).compactMap { ($0 as? CIQRCodeFeature)?.messageString }.first
         }
-        XCTAssertNotNil(payload)
-        XCTAssertTrue(payload?.contains(address.label) == true)
+        XCTAssertEqual(payload, "tos://transfer/\(address.label)", "The rendered QR must open this TOS app with the exact receive address")
         let copy = app.descendants(matching: .any)["Copy"]
         XCTAssertTrue(copy.exists)
         copy.tap()
@@ -476,6 +750,7 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(copyResult.value as? String, address.label)
         let share = app.descendants(matching: .any)["receive.share"]
         XCTAssertTrue(share.exists)
+        retainScreenshot(named: "Native TOS Receive")
         share.tap()
         XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
         XCTAssertEqual(share.value as? String, address.label)
@@ -602,8 +877,9 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["send.recipient.paste"].tap()
         replaceText(in: app.textFields["Amount"], with: "1")
         app.descendants(matching: .any)["send.comment.paste"].tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
 
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(waitForEnabled(continueButton, expected: true))
 
         replaceText(in: app.textViews["Comment"], with: String(repeating: "a", count: 121))
@@ -612,13 +888,13 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testNativeSendAmountBoundaries() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let currentBalance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
         app.descendants(matching: .any)["send.recipient.paste"].tap()
         let amount = app.textFields["Amount"]
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(amount.waitForExistence(timeout: 5))
 
         replaceText(in: amount, with: "1")
@@ -638,7 +914,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testMaxAmountUsesSendAllFeeSemantics() throws {
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
@@ -668,7 +944,7 @@ final class TOSWalletUITests: XCTestCase {
             amountField: app.textFields["Amount"]
         )
 
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let balance = try rpcBalance(address: sender)
         importFixtureWalletToHome()
         app.descendants(matching: .any)["Send"].tap()
@@ -717,7 +993,7 @@ final class TOSWalletUITests: XCTestCase {
         comment.typeText("TOS automated transfer")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
 
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
@@ -745,7 +1021,7 @@ final class TOSWalletUITests: XCTestCase {
     func testPasscodeSignsBroadcastsAndReconcilesNativeTransfer() throws {
         let transferComment = "TOS 星河 🚀"
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let senderBefore = try rpcBalance(address: sender)
         let eventsBefore = try rpcEventIDs(address: sender)
@@ -762,7 +1038,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["send.comment.paste"].tap()
         XCTAssertEqual(comment.value as? String, transferComment)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
@@ -815,7 +1091,7 @@ final class TOSWalletUITests: XCTestCase {
 
     func testLostBroadcastResponseDoesNotDuplicateNativeTransfer() throws {
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome(comment: "lost response")
@@ -836,7 +1112,7 @@ final class TOSWalletUITests: XCTestCase {
 
     func testRelaunchReconcilesTransferWithDelayedBroadcastResponse() throws {
         let faucet = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
-        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let sender = "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"
         let faucetBefore = try rpcBalance(address: faucet)
         let eventsBefore = try rpcEventIDs(address: sender)
         importFixtureWalletToHome(comment: "relaunch pending")
@@ -895,11 +1171,14 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.cells["settings.BackupItem"].exists)
         XCTAssertTrue(app.cells["settings.RPCNodeItem"].exists)
-        XCTAssertTrue(app.cells["settings.DeleteAccountItem"].exists)
+        XCTAssertTrue(app.cells["settings.SignOutIdentifier"].exists)
         XCTAssertTrue(app.cells["settings.LegalItem"].exists)
 
-        for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "TRON"] {
+        for unsupported in ["Swap", "Staking", "Battery", "Connected Apps", "Notifications", "Currency", "Security", "Change Passcode", "TRON"] {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 setting is visible: \(unsupported)")
+        }
+        for identifier in ["SecurityItem", "Notifications item", "CurrencyItem"] {
+            XCTAssertFalse(app.cells["settings.\(identifier)"].exists)
         }
         assertReachableControlsAreAccessible()
 
@@ -946,9 +1225,9 @@ final class TOSWalletUITests: XCTestCase {
     func testDeleteWalletRequiresAcknowledgementAndCanBeCancelled() {
         createNativeWalletToHome()
         openSettings()
-        app.cells["settings.DeleteAccountItem"].tap()
+        app.cells["settings.SignOutIdentifier"].tap()
 
-        XCTAssertTrue(app.staticTexts["Delete Wallet Data"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Sign Out"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["settings.delete.confirm"].isEnabled)
         app.terminate()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
@@ -961,7 +1240,7 @@ final class TOSWalletUITests: XCTestCase {
     func testDeletingLastWalletReturnsToCleanOnboarding() {
         createNativeWalletToHome()
         openSettings()
-        app.cells["settings.DeleteAccountItem"].tap()
+        app.cells["settings.SignOutIdentifier"].tap()
 
         let acknowledge = app.descendants(matching: .any)["settings.delete.acknowledge"]
         XCTAssertTrue(acknowledge.waitForExistence(timeout: 5))
@@ -1030,6 +1309,16 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
     }
 
+    private func completeImportedWalletToHome() {
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.descendants(matching: .any)["Continue"].tap()
+        assertNativeWalletHome()
+    }
+
     private func assertV1ImportOptionsAreHidden() {
         let unsupportedOptions = [
             "Watch-only Wallet", "Ledger", "Signer", "Keystone", "Testnet", "TRON",
@@ -1075,11 +1364,18 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     private func waitForEnabled(_ element: XCUIElement, expected: Bool) -> Bool {
+        guard element.waitForExistence(timeout: 5) else { return false }
         let expectation = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "enabled == %@", NSNumber(value: expected)),
+            predicate: NSPredicate { _, _ in element.exists && element.isEnabled == expected },
             object: element
         )
-        return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+        let completed = XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+        if !completed {
+            retainScreenshot(named: "Continue predicate failure")
+            print("Continue state after predicate: exists=\(element.exists), enabled=\(element.exists ? element.isEnabled : false)")
+            print(app.debugDescription)
+        }
+        return completed
     }
 
     private func assertCannotContinue(continueButton: XCUIElement, amountField: XCUIElement) {
@@ -1093,7 +1389,7 @@ final class TOSWalletUITests: XCTestCase {
         replaceText(in: app.textFields["Amount"], with: amount)
         app.descendants(matching: .any)["send.comment.paste"].tap()
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
-        let continueButton = app.descendants(matching: .any)["Continue"].firstMatch
+        let continueButton = app.buttons["send.continue"]
         XCTAssertTrue(continueButton.waitForExistence(timeout: 10))
         continueButton.tap()
         XCTAssertTrue(app.staticTexts["Confirm action"].waitForExistence(timeout: 20))
@@ -1121,10 +1417,67 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
         app.launchArguments += [
-            "-AppleInterfaceStyle", appearance,
+            "-TKThemeIdentifier", appearance.lowercased(),
             "-UIPreferredContentSizeCategoryName", contentSize,
         ]
         app.launch()
+    }
+
+    private func assertOnboardingAppearance(
+        _ image: UIImage,
+        appearance: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let cgImage = image.cgImage,
+              let sample = cgImage.cropping(to: CGRect(
+                x: CGFloat(cgImage.width / 20), y: CGFloat(cgImage.height / 10), width: 1, height: 1
+              ))
+        else {
+            return XCTFail("Unable to inspect onboarding appearance", file: file, line: line)
+        }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let brightness = pixel.withUnsafeMutableBytes { bytes -> Int? in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return (Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])) / 3
+        }
+        guard let brightness else {
+            return XCTFail("Unable to sample onboarding appearance", file: file, line: line)
+        }
+        if appearance == "Light" {
+            XCTAssertGreaterThan(brightness, 200, "The Light app theme must actually render a light background", file: file, line: line)
+        } else {
+            XCTAssertLessThan(brightness, 80, "The Dark app theme must actually render a dark background", file: file, line: line)
+        }
+    }
+
+    private func assertVisibleNodeTitle(
+        _ image: UIImage,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let cgImage = image.cgImage else {
+            return XCTFail("Unable to inspect the visible node action", file: file, line: line)
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        request.customWords = ["TOS"]
+        do {
+            try VNImageRequestHandler(cgImage: cgImage).perform([request])
+            let visibleTitle = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ")
+                .lowercased()
+                .filter { $0.isLetter }
+            XCTAssertEqual(visibleTitle, "configuretosnode", "The rendered node title must be complete", file: file, line: line)
+        } catch {
+            XCTFail("Unable to recognize the visible node title: \(error)", file: file, line: line)
+        }
     }
 
     private func assertVisibleElementsFitWindow(
@@ -1190,13 +1543,14 @@ final class TOSWalletUITests: XCTestCase {
 
     private func launchRecoveryPhraseImport(
         phrase: String,
-        comment: String = "TOS automated transfer"
+        comment: String = "TOS automated transfer",
+        recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
     ) {
         app.terminate()
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
         app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
-        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = recipient
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = comment
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
@@ -1226,6 +1580,16 @@ final class TOSWalletUITests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
         ).firstMatch
         XCTAssertTrue(receive.waitForExistence(timeout: 5))
+        let settings = app.buttons["wallet.settings"]
+        XCTAssertTrue(settings.exists, "Wallet home must expose its settings control")
+        XCTAssertEqual(settings.label, "Settings")
+        let switchWallet = app.buttons["wallet.switch"]
+        XCTAssertTrue(switchWallet.exists, "Wallet home must expose its wallet selector")
+        XCTAssertEqual(switchWallet.label, "Switch wallet")
+        XCTAssertFalse(app.buttons["wallet.scan"].exists)
+        XCTAssertFalse(app.buttons["ic qr viewfinder thin 28"].exists)
+        XCTAssertFalse(app.staticTexts["Enable transaction notifications"].exists)
+        XCTAssertFalse(app.staticTexts["Biometry unavailable"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Wallet"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["History"].exists)
         for unsupported in ["Scan", "Swap", "Buy", "Stake", "Browser", "Collectibles"] {
@@ -1233,6 +1597,14 @@ final class TOSWalletUITests: XCTestCase {
             XCTAssertFalse(app.staticTexts[unsupported].exists, "Unsupported V1 tab is visible: \(unsupported)")
         }
         assertReachableControlsAreAccessible()
+        retainScreenshot(named: "Wallet home")
+    }
+
+    private func retainScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func assertReachableControlsAreAccessible(
@@ -1272,6 +1644,329 @@ final class TOSWalletUITests: XCTestCase {
                     line: line
                 )
             }
+        }
+    }
+
+    private func rpcResult(method: String, params: [String: Any]) throws -> [String: Any] {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        let url = try XCTUnwrap(URL(string: endpoint + "/jsonRPC"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": method, "params": params])
+        let data = try synchronousData(request: request, description: "TOS RPC \(method)")
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(envelope["result"] as? [String: Any])
+    }
+
+    private func assertActiveLegacyCounter(address: String, expected: UInt32) {
+        do {
+            let snapshot = try rpcResult(method: "getAddressInformation", params: ["address": address])
+            XCTAssertEqual(snapshot["state"] as? String, "active")
+            let information = try rpcResult(method: "getWalletInformation", params: ["address": address])
+            XCTAssertEqual(information["wallet"] as? Bool, false, "Exercise the node's actual legacy classification gap")
+            XCTAssertTrue(information["seqno"] is NSNull)
+            // An independent VM getter is test evidence only. The production
+            // compatibility reader binds code/data from one raw snapshot.
+            let getter = try rpcResult(method: "runGetMethod", params: ["address": address, "method": "seqno", "stack": []])
+            XCTAssertEqual((getter["exit_code"] as? NSNumber)?.intValue, 0)
+            XCTAssertEqual(getter["stack"] as? [[String]], [["num", String(expected)]])
+        } catch { XCTFail("Failed to verify active legacy state: \(error)") }
+    }
+
+    private func assertLegacyTransferEvent(address: String, eventID: String, amount: UInt64, comment: String) throws {
+        let event = try rpcResult(method: "getAccountEvent", params: ["address": address, "event_id": eventID])
+        let transfers = try XCTUnwrap(event["transfers"] as? [[String: Any]])
+        XCTAssertEqual(transfers.count, 1)
+        let transfer = try XCTUnwrap(transfers.first)
+        XCTAssertEqual(transfer["direction"] as? String, "outgoing")
+        XCTAssertEqual(transfer["source"] as? String, "EQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXKub")
+        XCTAssertEqual(transfer["destination"] as? String, "EQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSnAa")
+        XCTAssertEqual(transfer["amount"] as? String, String(amount))
+        XCTAssertEqual(transfer["comment"] as? String, comment)
+        XCTAssertEqual(transfer["bounced"] as? Bool, false)
+    }
+
+    private func waitForLegacyEventIDs(address: String, excluding: Set<String>, count: Int) throws -> Set<String> {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let events = try rpcEventIDs(address: address).subtracting(excluding)
+            if events.count >= count {
+                XCTAssertEqual(events.count, count)
+                return events
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        throw LegacyReceiptError.invalid("Timed out waiting for the legacy sender transaction")
+    }
+
+    /// Plain, no-code recipients still pay storage fees. Prove the exact message
+    /// was credited and subtract only its BOC-bound transaction fee.
+    private func assertLegacyRecipientReceipt(
+        sender: String, recipient: String, eventID: String, amount: UInt64
+    ) throws -> UInt64 {
+        let eventParts = eventID.split(separator: ":")
+        guard eventParts.count == 2 else { throw LegacyReceiptError.invalid("Malformed sender event ID") }
+        let senderTransactions = try legacyRawTransactions(address: sender)
+        let senderMatches = senderTransactions.filter { transaction in
+            guard let id = transaction["transaction_id"] as? [String: Any],
+                  let hash = id["hash"] as? String, let data = Data(base64Encoded: hash) else { return false }
+            return id["lt"] as? String == String(eventParts[0])
+                && data.map { String(format: "%02x", $0) }.joined() == String(eventParts[1]).lowercased()
+        }
+        let senderTransaction = try XCTUnwrap(
+            senderMatches.count == 1 ? senderMatches.first : nil,
+            "Sender event \(eventID) matched \(senderMatches.count) raw transactions; IDs: \(senderTransactions.compactMap { $0["transaction_id"] })"
+        )
+        let senderReceipt = try LegacyRawReceipt(senderTransaction)
+        XCTAssertEqual(senderReceipt.account, try LegacyRawReceipt.addressHash(sender))
+        let outgoing = try XCTUnwrap(senderReceipt.outgoing)
+        try outgoing.checkInternal(source: sender, destination: recipient, amount: amount)
+        let outgoingJSON = try XCTUnwrap(senderTransaction["out_msgs"] as? [[String: Any]])
+        XCTAssertEqual(outgoingJSON.count, 1)
+        let messageJSON = try XCTUnwrap(outgoingJSON.first)
+        XCTAssertEqual(messageJSON["hash"] as? String, outgoing.hash.base64EncodedString())
+        XCTAssertEqual(messageJSON["value"] as? String, String(amount))
+        XCTAssertEqual(messageJSON["bounced"] as? Bool, false)
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let matches = try legacyRawTransactions(address: recipient).filter {
+                $0["in_msg_hash"] as? String == outgoing.hash.base64EncodedString()
+            }
+            if !matches.isEmpty {
+                XCTAssertEqual(matches.count, 1)
+                let transaction = try XCTUnwrap(matches.first)
+                let receipt = try LegacyRawReceipt(transaction)
+                XCTAssertEqual(receipt.account, try LegacyRawReceipt.addressHash(recipient))
+                XCTAssertNil(receipt.outgoing, "A plain recipient must not emit another message")
+                let incoming = try XCTUnwrap(receipt.incoming)
+                XCTAssertEqual(incoming.hash, outgoing.hash)
+                try incoming.checkInternal(source: sender, destination: recipient, amount: amount)
+                let incomingJSON = try XCTUnwrap(transaction["in_msg"] as? [String: Any])
+                XCTAssertEqual(incomingJSON["hash"] as? String, outgoing.hash.base64EncodedString())
+                for key in ["kind", "source", "destination", "value", "created_lt", "created_at"] {
+                    XCTAssertEqual(incomingJSON[key] as? NSObject, messageJSON[key] as? NSObject, "Incoming/outgoing \(key) must match")
+                }
+                XCTAssertEqual(incomingJSON["bounced"] as? Bool, false)
+                XCTAssertTrue((transaction["out_msgs"] as? [[String: Any]])?.isEmpty == true)
+                guard receipt.fee < amount else { throw LegacyReceiptError.invalid("Recipient fee consumes the gross credit") }
+                let proof: [String: Any] = [
+                    "sender_event": eventID, "recipient_transaction": transaction["transaction_id"] ?? [:],
+                    "message_hash": outgoing.hash.base64EncodedString(), "gross_nanos": String(amount),
+                    "recipient_fee_nanos": String(receipt.fee), "net_credit_nanos": String(amount - receipt.fee),
+                ]
+                let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: proof, options: [.prettyPrinted, .sortedKeys]), uniformTypeIdentifier: "public.json")
+                attachment.name = "Legacy recipient gross/fee/net receipt"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                return receipt.fee
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        throw LegacyReceiptError.invalid("No recipient transaction matched the sender outgoing message")
+    }
+
+    private func legacyRawTransactions(address: String) throws -> [[String: Any]] {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        var request = URLRequest(url: try XCTUnwrap(URL(string: endpoint + "/jsonRPC")))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "getTransactions", "params": ["address": address, "limit": 100],
+        ])
+        let data = try synchronousData(request: request, description: "Legacy raw transactions")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(object["result"] as? [[String: Any]])
+    }
+
+    private enum LegacyReceiptError: Error { case invalid(String) }
+
+    /// Independent test-only reader for the node's ordinary, root-first, plain
+    /// V3 transaction BOCs. This is deliberately not a general-purpose codec.
+    private struct LegacyRawReceipt {
+        struct Cell {
+            let data: [UInt8]
+            let bitCount: Int
+            let refs: [Int]
+            var hash = Data()
+            var depth = 0
+
+            func checkInternal(source: String, destination: String, amount: UInt64) throws {
+                var bits = Bits(data: data, count: bitCount)
+                guard try bits.read(1) == 0, try bits.read(1) == 1,
+                      try bits.read(1) == 0, try bits.read(1) == 0 else {
+                    throw LegacyReceiptError.invalid("Expected a nonbounceable, nonbounced internal message")
+                }
+                for address in [source, destination] {
+                    guard try bits.read(2) == 2, try bits.read(1) == 0,
+                          try bits.read(8) == 0, try bits.bytes(32) == LegacyRawReceipt.addressHash(address) else {
+                        throw LegacyReceiptError.invalid("Internal message address does not match")
+                    }
+                }
+                guard try bits.coins() == amount, try bits.read(1) == 0 else {
+                    throw LegacyReceiptError.invalid("Internal message amount/currency does not match")
+                }
+                _ = try bits.coins(); _ = try bits.coins()
+                _ = try bits.read(64); _ = try bits.read(32)
+                guard try bits.read(1) == 0 else { throw LegacyReceiptError.invalid("Recipient message unexpectedly carries StateInit") }
+            }
+        }
+
+        struct Bits {
+            let data: [UInt8]
+            let count: Int
+            var position = 0
+            mutating func read(_ width: Int) throws -> UInt64 {
+                guard (0...64).contains(width), position + width <= count else { throw LegacyReceiptError.invalid("Truncated transaction bits") }
+                var result: UInt64 = 0
+                for _ in 0..<width {
+                    result = (result << 1) | UInt64((data[position / 8] >> (7 - position % 8)) & 1)
+                    position += 1
+                }
+                return result
+            }
+            mutating func skip(_ width: Int) throws {
+                guard width >= 0, position + width <= count else { throw LegacyReceiptError.invalid("Truncated transaction bits") }
+                position += width
+            }
+            mutating func bytes(_ length: Int) throws -> Data {
+                var result = Data()
+                for _ in 0..<length { result.append(UInt8(try read(8))) }
+                return result
+            }
+            mutating func coins() throws -> UInt64 {
+                let length = Int(try read(4))
+                guard length <= 8 else { throw LegacyReceiptError.invalid("Transaction fee/value exceeds UInt64") }
+                return try read(length * 8)
+            }
+            var atEnd: Bool { position == count }
+        }
+
+        let account: Data
+        let fee: UInt64
+        let incoming: Cell?
+        let outgoing: Cell?
+
+        init(_ transaction: [String: Any]) throws {
+            guard let encoded = transaction["data"] as? String, let boc = Data(base64Encoded: encoded),
+                  boc.base64EncodedString() == encoded else { throw LegacyReceiptError.invalid("Invalid transaction BOC") }
+            let cells = try Self.cells(boc)
+            guard let id = transaction["transaction_id"] as? [String: Any],
+                  let hash = id["hash"] as? String, Data(base64Encoded: hash) == cells[0].hash,
+                  let lt = id["lt"] as? String, let logicalTime = UInt64(lt), String(logicalTime) == lt else {
+                throw LegacyReceiptError.invalid("Raw transaction ID is not bound to its BOC")
+            }
+            var root = Bits(data: cells[0].data, count: cells[0].bitCount)
+            guard try root.read(4) == 7 else { throw LegacyReceiptError.invalid("Wrong transaction tag") }
+            account = try root.bytes(32)
+            guard let accountHex = transaction["account"] as? String,
+                  account.map({ String(format: "%02x", $0) }).joined() == accountHex.lowercased(),
+                  try root.read(64) == logicalTime else { throw LegacyReceiptError.invalid("Transaction account/LT mismatch") }
+            try root.skip(256 + 64 + 32)
+            let outCount = Int(try root.read(15))
+            try root.skip(4)
+            fee = try root.coins()
+            guard try root.read(1) == 0, root.atEnd, cells[0].refs.count == 3,
+                  let feeText = transaction["fee"] as? String, let jsonFee = UInt64(feeText),
+                  String(jsonFee) == feeText, jsonFee == fee else { throw LegacyReceiptError.invalid("BOC and JSON total fee differ") }
+            let messages = cells[cells[0].refs[0]]
+            var envelope = Bits(data: messages.data, count: messages.bitCount)
+            let hasIn = try envelope.read(1) == 1
+            let hasOut = try envelope.read(1) == 1
+            guard envelope.atEnd, messages.refs.count == (hasIn ? 1 : 0) + (hasOut ? 1 : 0),
+                  outCount <= 1, hasOut == (outCount == 1) else { throw LegacyReceiptError.invalid("Unexpected transaction message dictionary") }
+            incoming = hasIn ? cells[messages.refs[0]] : nil
+            if hasOut {
+                let dictionary = cells[messages.refs[hasIn ? 1 : 0]]
+                var label = Bits(data: dictionary.data, count: dictionary.bitCount)
+                let length: Int
+                var key: UInt64 = 0
+                if try label.read(1) == 0 {
+                    var unary = 0
+                    while try label.read(1) == 1 { unary += 1; guard unary <= 15 else { throw LegacyReceiptError.invalid("Invalid short dictionary label") } }
+                    length = unary
+                    key = try label.read(length)
+                } else if try label.read(1) == 0 {
+                    length = Int(try label.read(4)); key = try label.read(length)
+                } else {
+                    let repeated = try label.read(1)
+                    length = Int(try label.read(4))
+                    key = repeated == 0 ? 0 : 1
+                }
+                guard length == 15, key == 0, label.atEnd, dictionary.refs.count == 1 else {
+                    throw LegacyReceiptError.invalid("Expected exactly outgoing dictionary index zero")
+                }
+                outgoing = cells[dictionary.refs[0]]
+            } else { outgoing = nil }
+        }
+
+        static func addressHash(_ address: String) throws -> Data {
+            if address.hasPrefix("0:") {
+                let hex = Array(address.dropFirst(2))
+                guard hex.count == 64 else { throw LegacyReceiptError.invalid("Invalid raw address") }
+                var data = Data()
+                for index in stride(from: 0, to: 64, by: 2) {
+                    guard let byte = UInt8(String(hex[index...index + 1]), radix: 16) else { throw LegacyReceiptError.invalid("Invalid raw address") }
+                    data.append(byte)
+                }
+                return data
+            }
+            let base64 = address.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            guard let data = Data(base64Encoded: base64), data.count == 36, data[1] == 0 else { throw LegacyReceiptError.invalid("Invalid friendly fixture address") }
+            return data.subdata(in: 2..<34)
+        }
+
+        private static func cells(_ boc: Data) throws -> [Cell] {
+            let bytes = [UInt8](boc)
+            guard bytes.count >= 11, bytes.count <= 1_048_576, Array(bytes.prefix(4)) == [0xb5, 0xee, 0x9c, 0x72],
+                  (1...4).contains(Int(bytes[4])), (1...4).contains(Int(bytes[5])) else {
+                throw LegacyReceiptError.invalid("Unsupported raw transaction BOC header")
+            }
+            let sizeWidth = Int(bytes[4]), offsetWidth = Int(bytes[5])
+            var cursor = 6
+            func read(_ width: Int) throws -> Int {
+                guard cursor + width <= bytes.count else { throw LegacyReceiptError.invalid("Truncated BOC header/reference") }
+                var value = 0
+                for _ in 0..<width { value = (value << 8) | Int(bytes[cursor]); cursor += 1 }
+                return value
+            }
+            let count = try read(sizeWidth), roots = try read(sizeWidth), absent = try read(sizeWidth), size = try read(offsetWidth)
+            guard (1...4096).contains(count), roots == 1, absent == 0, try read(sizeWidth) == 0,
+                  cursor + size == bytes.count else { throw LegacyReceiptError.invalid("Invalid raw transaction BOC lengths/root") }
+            var result: [Cell] = []
+            for index in 0..<count {
+                let d1 = try read(1), d2 = try read(1), length = (d2 + 1) / 2
+                guard d1 <= 4, cursor + length <= bytes.count else { throw LegacyReceiptError.invalid("Unsupported/truncated transaction cell") }
+                let data = Array(bytes[cursor..<cursor + length]); cursor += length
+                let bits: Int
+                if d2 % 2 == 0 { bits = length * 8 }
+                else {
+                    guard let last = data.last, last != 0, last != 128 else { throw LegacyReceiptError.invalid("Invalid transaction top-up bits") }
+                    bits = length * 8 - last.trailingZeroBitCount - 1
+                }
+                var refs: [Int] = []
+                for _ in 0..<d1 {
+                    let ref = try read(sizeWidth)
+                    guard ref > index, ref < count else { throw LegacyReceiptError.invalid("Invalid transaction reference") }
+                    refs.append(ref)
+                }
+                result.append(Cell(data: data, bitCount: bits, refs: refs))
+            }
+            guard cursor == bytes.count else { throw LegacyReceiptError.invalid("Trailing transaction BOC bytes") }
+            for index in result.indices.reversed() {
+                let refs = result[index].refs
+                let depth = refs.map { result[$0].depth }.max().map { $0 + 1 } ?? 0
+                guard depth <= 1023 else { throw LegacyReceiptError.invalid("Excessive transaction cell depth") }
+                var representation = Data([UInt8(refs.count), UInt8((result[index].bitCount / 8) + ((result[index].bitCount + 7) / 8))])
+                representation.append(contentsOf: result[index].data)
+                for ref in refs { representation.append(UInt8(result[ref].depth >> 8)); representation.append(UInt8(result[ref].depth & 255)) }
+                for ref in refs { representation.append(result[ref].hash) }
+                result[index].hash = Data(SHA256.hash(data: representation)); result[index].depth = depth
+            }
+            var seen: Set<Int> = [], pending = [0]
+            while let index = pending.popLast() { if seen.insert(index).inserted { pending.append(contentsOf: result[index].refs) } }
+            guard seen.count == count else { throw LegacyReceiptError.invalid("Unreachable transaction cells") }
+            return result
         }
     }
 

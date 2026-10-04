@@ -1,7 +1,5 @@
-import EventSource
 import Foundation
 import TKLogging
-import TonStreamingAPI
 
 public final class WalletBackgroundUpdate {
     @Atomic public var eventClosure: ((BackgroundUpdateEvent) -> Void)?
@@ -14,91 +12,101 @@ public final class WalletBackgroundUpdate {
         }
     }
 
-    @Atomic private var eventId: String?
+    // Serialize lifecycle changes with delivery. The recursive lock allows an
+    // observer to stop updates from inside a state/event callback.
+    private let lifecycleLock = NSRecursiveLock()
     private var task: Task<Void, Never>?
-
-    private let jsonDecoder = JSONDecoder()
+    private var generation: UUID?
+    private var cursor: TOSWalletTransactionCursor?
+    private var requiresRefresh = true
 
     private let wallet: Wallet
-    private let streamingAPI: StreamingAPI?
+    private let snapshot: () async throws -> TOSWalletTransactionCursor
+    private let pollIntervalNanoseconds: UInt64
 
     init(
         wallet: Wallet,
-        streamingAPIProvider: StreamingAPIProvider
+        snapshot: @escaping () async throws -> TOSWalletTransactionCursor,
+        pollIntervalNanoseconds: UInt64 = 3_000_000_000
     ) {
+        precondition(pollIntervalNanoseconds > 0)
         self.wallet = wallet
-        self.streamingAPI = streamingAPIProvider.api(wallet.network)
+        self.snapshot = snapshot
+        self.pollIntervalNanoseconds = pollIntervalNanoseconds
     }
 
-    func start() {
-        self.task?.cancel()
-
-        guard let api = self.streamingAPI else {
-            self.state = .connected
-            return
-        }
-
-        let task = Task {
-            do {
-                let address = try wallet.address
-
-                self.state = .connecting
-
-                let stream = try await api.accountTransactionsStream(account: address.toRaw())
-                try Task.checkCancellation()
-                self.state = .connected
-
-                for try await events in stream {
-                    handleReceivedEvents(events)
-                }
-
-                self.state = .disconnected
-
-                try Task.checkCancellation()
-                await MainActor.run {
-                    start()
-                }
-            } catch {
-                guard !error.isCancelledError else { return }
-                if error.isNoConnectionError {
-                    state = .noConnection
-                } else {
-                    state = .disconnected
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    await MainActor.run {
-                        self.start()
-                    }
-                }
-            }
-        }
-        self.task = task
-    }
-
-    func stop() {
+    deinit {
         task?.cancel()
     }
 
-    private func handleReceivedEvents(_ events: [EventSource.Event]) {
-        guard let messageEvent = events.last(where: { $0.event == "message" }),
-              let eventId = messageEvent.id,
-              let eventData = messageEvent.data?.data(using: .utf8)
-        else {
-            return
-        }
+    func start() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        task?.cancel()
+        let generation = UUID()
+        self.generation = generation
+        requiresRefresh = true
+        updateState(.connecting)
+        // A callback may have stopped or restarted this updater.
+        guard self.generation == generation else { return }
 
-        self.eventId = eventId
-
-        do {
-            let eventTransaction = try jsonDecoder.decode(EventSource.Transaction.self, from: eventData)
-            let event = BackgroundUpdateEvent(
-                wallet: wallet,
-                lt: eventTransaction.lt,
-                txHash: eventTransaction.txHash
-            )
-            eventClosure?(event)
-        } catch {
-            return
+        let snapshot = self.snapshot
+        let interval = pollIntervalNanoseconds
+        task = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    let cursor = try await snapshot()
+                    try Task.checkCancellation()
+                    guard let self, self.received(cursor, generation: generation) else { return }
+                } catch {
+                    guard !Task.isCancelled, !error.isCancelledError else { return }
+                    guard let self, self.received(error, generation: generation) else { return }
+                }
+                do {
+                    try await Task.sleep(nanoseconds: interval)
+                } catch {
+                    return
+                }
+            }
         }
+    }
+
+    func stop() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        generation = nil
+        task?.cancel()
+        task = nil
+    }
+
+    private func received(_ cursor: TOSWalletTransactionCursor, generation: UUID) -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard self.generation == generation, !Task.isCancelled else { return false }
+        let refresh = requiresRefresh || self.cursor != cursor
+        self.cursor = cursor
+        requiresRefresh = false
+        updateState(.connected)
+        guard self.generation == generation, !Task.isCancelled else { return false }
+        if refresh {
+            // Initial/resumed/recovered reads also refresh already-loaded History.
+            eventClosure?(BackgroundUpdateEvent(wallet: wallet, lt: cursor.lt, txHash: cursor.txHash))
+        }
+        return self.generation == generation && !Task.isCancelled
+    }
+
+    private func received(_ error: Swift.Error, generation: UUID) -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard self.generation == generation, !Task.isCancelled else { return false }
+        requiresRefresh = true
+        updateState(error.isNoConnectionError ? .noConnection : .disconnected)
+        return self.generation == generation && !Task.isCancelled
+    }
+
+    private func updateState(_ state: BackgroundUpdateConnectionState) {
+        guard self.state != state else { return }
+        self.state = state
     }
 
     private func logState(state: BackgroundUpdateConnectionState) {

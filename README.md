@@ -6,6 +6,24 @@ TOS Wallet provides the essential native-wallet experience: create or import a
 wallet, view the TOS balance, receive TOS, and sign and submit TOS transfers.
 The app talks directly to a TOS JSON-RPC node and includes no analytics SDK.
 
+New wallets use TOS SDK compatible recovery phrases, the current TOS V5 contract,
+and Ed25519 signing, including the
+separate signed network ID required by TOS anti-replay protection. Creation and
+import discover ConfigParam 19 from the selected node and persist that identity;
+ConfigParam 8 must report VM version 6 or newer. Sending rechecks identity and
+capability against the same node used for submission. Existing wallet
+revisions retain their original keys, addresses, and serialization. Legacy TON
+phrases require an explicit recovery choice; phrases valid in both domains
+require a format selection. A reachable TOS
+node is required when creating or importing the current wallet revision. Use
+“Configure TOS Node” on the welcome screen to set an endpoint before onboarding.
+
+Post-quantum validator consensus is compatible with these Ed25519 user wallets.
+Settings → PQ Wallets also creates separate ML-DSA-44 and experimental
+Falcon-512 padded identities, with protected seed storage, encrypted backup and a
+funded native fee-wallet transport. See [PQ signing and local validation](docs/mobile-pq-signing-20261004.md)
+for protocol profiles, tests and physical-device/production release gates.
+
 ## Build and test
 
 Requirements: macOS, Xcode 26 or newer, and an installed iOS Simulator runtime.

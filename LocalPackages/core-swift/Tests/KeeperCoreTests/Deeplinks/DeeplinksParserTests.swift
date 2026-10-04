@@ -6,6 +6,27 @@ import XCTest
 final class DeeplinksParserTests: XCTestCase {
     let parser = DeeplinkParser()
 
+    func testGeneratedTOSReceiveLinksRoundTripForNativeAndLegacyWalletFormats() throws {
+        let addresses = [
+            "UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG",
+            "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe",
+        ]
+        for address in addresses {
+            let generated = try DeeplinkGenerator().generateTransferDeeplink(with: address)
+            XCTAssertEqual(generated, "tos://transfer/\(address)")
+            let parsed = try parser.parse(string: generated)
+            XCTAssertEqual(parsed, .transfer(.sendTransfer(.init(
+                recipient: address,
+                amount: nil,
+                comment: nil,
+                jettonAddress: nil,
+                expirationTimestamp: nil,
+                successReturn: nil
+            ))))
+            XCTAssertTrue(TOSV1DeeplinkPolicy.allows(parsed))
+        }
+    }
+
     func testTransferTosWalletDeeplinkParsing() throws {
         let address = "EQD2NmD_lH5f5u1Kj3KfGyTvhZSX0Eg6qp2a5IQUKXxOG21n"
         let text = "just comment"

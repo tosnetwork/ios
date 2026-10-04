@@ -12,6 +12,7 @@ final class ImportWalletCoordinator: RouterCoordinator<NavigationControllerRoute
     var didCancel: (() -> Void)?
     var didImportWallets: (() -> Void)?
 
+    private var mnemonicFormat: WalletMnemonicFormat?
     private let network: Network
     private let analyticsProvider: AnalyticsProvider
     private let walletsUpdateAssembly: WalletsUpdateAssembly
@@ -54,7 +55,7 @@ private extension ImportWalletCoordinator {
 
         inputRecoveryPhrase.output.didInputRecoveryPhrase = { [weak self] phrase, completion in
             guard let self = self else { return }
-            self.detectActiveWallets(phrase: phrase, completion: completion)
+            self.chooseMnemonicFormat(phrase: phrase, completion: completion)
         }
 
         if router.rootViewController.viewControllers.isEmpty {
@@ -75,12 +76,39 @@ private extension ImportWalletCoordinator {
         )
     }
 
+    func chooseMnemonicFormat(phrase: [String], completion: @escaping () -> Void) {
+        let formats = WalletMnemonicFormat.validFormats(words: phrase)
+        if formats == [.tos] {
+            mnemonicFormat = .tos
+            detectActiveWallets(phrase: phrase, completion: completion)
+            return
+        }
+        let alert = UIAlertController(
+            title: formats.count > 1 ? "Recovery Phrase Format" : "Legacy Recovery Phrase",
+            message: "Legacy TON recovery preserves the existing keys and wallet address. Choose TOS only for a phrase created by a TOS wallet.",
+            preferredStyle: .alert
+        )
+        if formats.contains(.tos) {
+            alert.addAction(UIAlertAction(title: "Restore TOS Wallet", style: .default) { [weak self] _ in
+                self?.mnemonicFormat = .tos
+                self?.detectActiveWallets(phrase: phrase, completion: completion)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Restore Legacy Wallet", style: .default) { [weak self] _ in
+            self?.mnemonicFormat = .legacyTON
+            self?.detectActiveWallets(phrase: phrase, completion: completion)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completion() })
+        router.rootViewController.present(alert, animated: true)
+    }
+
     func detectActiveWallets(phrase: [String], completion: @escaping () -> Void) {
         Task {
             do {
                 let activeWallets = try await walletsUpdateAssembly.walletImportController().findActiveWallets(
                     phrase: phrase,
-                    network: network
+                    network: network,
+                    format: mnemonicFormat
                 )
                 await MainActor.run {
                     completion()
@@ -96,8 +124,8 @@ private extension ImportWalletCoordinator {
     }
 
     func handleActiveWallets(phrase: [String], activeWalletModels: [ActiveWalletModel]) {
-        if activeWalletModels.count == 1, activeWalletModels[0].revision == WalletContractVersion.currentVersion {
-            handleDidChooseRevisions(phrase: phrase, revisions: [WalletContractVersion.currentVersion])
+        if activeWalletModels.count == 1 {
+            handleDidChooseRevisions(phrase: phrase, revisions: [activeWalletModels[0].revision])
         } else {
             openChooseWalletToAdd(phrase: phrase, activeWalletModels: activeWalletModels)
         }
@@ -196,7 +224,7 @@ private extension ImportWalletCoordinator {
     ) {
         let module = customizeWalletModule()
 
-        module.output.didCustomizeWallet = { [weak self] model in
+        module.output.didCustomizeWallet = { [weak self, weak output = module.output] model in
             guard let self else { return }
             Task {
                 do {
@@ -213,6 +241,17 @@ private extension ImportWalletCoordinator {
                     Log.e("Log: Wallet import failed", extraInfo: [
                         "error": error.localizedDescription,
                     ])
+                    await MainActor.run {
+                        output?.resetSubmission()
+                        let alert = UIAlertController(title: "Wallet import failed", message: error.localizedDescription, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "Configure TOS Node", style: .default) { _ in
+                            DispatchQueue.main.async {
+                                TOSRPCNodeEditor.present(from: self.router.rootViewController, onSaved: {})
+                            }
+                        })
+                        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                        self.router.rootViewController.present(alert, animated: true)
+                    }
                 }
             }
         }
@@ -240,7 +279,8 @@ private extension ImportWalletCoordinator {
             revisions: revisions,
             metaData: metaData,
             passcode: passcode,
-            network: network
+            network: network,
+            format: mnemonicFormat
         )
     }
 }

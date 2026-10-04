@@ -56,7 +56,7 @@ private extension HistoryCoordinator {
                 keeperCoreMainAssembly: keeperCoreMainAssembly,
                 historyEventMapper: HistoryEventMapper(accountEventActionContentProvider: HistoryListAccountEventActionContentProvider()),
                 filter: .all,
-                emptyViewProvider: { filter in
+                emptyViewProvider: { [weak self] filter in
                     switch filter {
                     case .all:
                         var buttons = [TKEmptyViewController.Model.Button]()

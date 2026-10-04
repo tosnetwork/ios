@@ -47,11 +47,11 @@ struct MainnetAPIHostProvider: APIHostProvider {
 
     var basePath: String {
         get async {
-            if let environmentEndpoint = ProcessInfo.processInfo.environment["TOS_RPC_URL"] {
-                return environmentEndpoint
-            }
             if let customEndpoint = TOSRPCSettings.customEndpoint {
                 return customEndpoint
+            }
+            if let environmentEndpoint = ProcessInfo.processInfo.environment["TOS_RPC_URL"] {
+                return environmentEndpoint
             }
 #if DEBUG
             return "http://127.0.0.1:18545"
@@ -151,7 +151,13 @@ struct TOSRPCClient {
         preconditionFailure("TOS RPC retry loop exhausted without returning or throwing")
     }
 
-    private func callOnce(method: String, params: [String: Any]) async throws -> [String: Any] {
+    func callTransactions(address: Address, limit: Int = 20) async throws -> [[String: Any]] {
+        let response = try await callOnce(method: "getTransactions", params: ["address": address.toRaw(), "limit": limit], wrapArray: true)
+        guard let items = response["items"] as? [[String: Any]] else { throw Error.invalidResponse }
+        return items
+    }
+
+    private func callOnce(method: String, params: [String: Any], wrapArray: Bool = false) async throws -> [String: Any] {
         let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let endpoint = URL(string: basePath + "/jsonRPC") else {
             throw Error.invalidEndpoint
@@ -195,6 +201,10 @@ struct TOSRPCClient {
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             throw Error.invalidResponse
+        }
+        if wrapArray {
+            guard let items = envelope["result"] as? [[String: Any]] else { throw Error.invalidResponse }
+            return ["items": items]
         }
         guard let result = envelope["result"] as? [String: Any] else {
             throw Error.invalidResponse
@@ -247,6 +257,11 @@ public struct API {
 
     enum Error: Swift.Error {
         case failed
+    }
+
+    func boundTOSRPCClient() async -> TOSRPCClient {
+        let endpoint = await hostProvider.basePath
+        return TOSRPCClient(basePath: { endpoint }, urlSession: urlSession)
     }
 
     func tosRPCCall(method: String, params: [String: Any] = [:]) async throws -> [String: Any] {
@@ -457,18 +472,12 @@ extension API {
 
 extension API {
     func getSeqno(address: Address) async throws -> Int {
-        let response = try await tosRPCCall(
-            method: "getWalletInformation",
-            params: ["address": address.toRaw()]
-        )
-        return Int(integer(response["seqno"]))
+        let response = try await boundTOSRPCClient().walletInformation(address: address)
+        return Int(try TOSWalletRPC.decodeSeqno(response))
     }
 
     func getWalletInfo(address: Address) async throws -> WalletInfo {
-        let response = try await tosRPCCall(
-            method: "getWalletInformation",
-            params: ["address": address.toRaw()]
-        )
+        let response = try await boundTOSRPCClient().walletInformation(address: address)
         return WalletInfo(
             address: address,
             isWallet: response["wallet"] as? Bool ?? response["is_wallet"] as? Bool ?? false,

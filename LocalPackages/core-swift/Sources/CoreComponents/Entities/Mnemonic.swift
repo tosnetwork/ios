@@ -10,7 +10,7 @@ public struct Mnemonic: Equatable, Codable {
 
     public init(mnemonicWords: [String]) throws {
         let isNativeMnemonicValid = mnemonicWords.count == 24
-            && TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: mnemonicWords)
+            && (TonSwift.Mnemonic.mnemonicValidate(mnemonicArray: mnemonicWords) || TOSMnemonic.isValid(mnemonicWords))
         let isLegacyMnemonicValid = MnemonicLegacy.isValidBip39Mnemonic(mnemonicArray: mnemonicWords)
 
         if !isNativeMnemonicValid, !isLegacyMnemonicValid {

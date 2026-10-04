@@ -43,3 +43,7 @@ Modules/Package.resolved
 LocalPackages/**/Package.resolved
 
 .build
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

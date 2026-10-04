@@ -60,8 +60,8 @@ final class SignDataSignCoordinator: RouterCoordinator<ViewControllerRouter> {
     }
 
     func handleSign(parentCoordinator: Coordinator) async -> Result {
-        return await Task<SignDataSignCoordinator.Result, Never> { @MainActor in
-            return await withCheckedContinuation { [weak parentCoordinator] (continuation: CheckedContinuation<SignDataSignCoordinator.Result, Never>) in
+        return await Task<SignDataSignCoordinator.Result, Never> { @MainActor [self, parentCoordinator] in
+            return await withCheckedContinuation { [self, weak parentCoordinator] (continuation: CheckedContinuation<SignDataSignCoordinator.Result, Never>) in
                 didSign = { [weak parentCoordinator, weak self] in
                     continuation.resume(returning: .signed($0))
                     guard let self else { return }

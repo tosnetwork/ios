@@ -38,7 +38,7 @@ final class WatchOnlyWalletAddressInputViewModelImplementation: WatchOnlyWalletA
     }
 
     func viewDidLoad() {
-        Task {
+        Task { [weak self, controller] in
             await controller.start(didUpdateState: { [weak self] state in
                 guard let self else { return }
                 Task { @MainActor in

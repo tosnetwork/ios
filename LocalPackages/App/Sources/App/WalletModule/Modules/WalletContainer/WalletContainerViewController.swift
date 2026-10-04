@@ -107,23 +107,30 @@ private extension WalletContainerViewController {
             make.width.lessThanOrEqualTo(max(width / 2, 160))
         }
 
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
-                image: model.topBarViewModel.settingButtonConfiguration.configuration.content.icon,
-                style: .plain,
-                target: self,
-                action: #selector(didTapSettingsButton)
-            ),
-            UIBarButtonItem(
+        let settingsItem = UIBarButtonItem(
+            image: model.topBarViewModel.settingButtonConfiguration.configuration.content.icon,
+            style: .plain,
+            target: self,
+            action: #selector(didTapSettingsButton)
+        )
+        settingsItem.accessibilityIdentifier = "wallet.settings"
+        settingsItem.accessibilityLabel = "Settings"
+        var items = [settingsItem]
+        if TOSV1Scope.allowsScanner {
+            let scanItem = UIBarButtonItem(
                 image: model.topBarViewModel.leadingButtonConfiguration.content.icon,
                 style: .plain,
                 target: self,
                 action: #selector(didTapLeadingButton)
-            ),
-        ]
+            )
+            scanItem.accessibilityIdentifier = "wallet.scan"
+            scanItem.accessibilityLabel = "Scan"
+            items.append(scanItem)
+        }
+        navigationItem.rightBarButtonItems = items
 
         onTapSettingsButton = model.topBarViewModel.settingButtonConfiguration.configuration.action
-        onTapLeadingButton = model.topBarViewModel.leadingButtonConfiguration.action
+        onTapLeadingButton = TOSV1Scope.allowsScanner ? model.topBarViewModel.leadingButtonConfiguration.action : nil
     }
 
     @objc

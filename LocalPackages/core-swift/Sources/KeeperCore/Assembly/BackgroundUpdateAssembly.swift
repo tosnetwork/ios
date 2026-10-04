@@ -1,16 +1,16 @@
 import Foundation
 
 public final class BackgroundUpdateAssembly {
-    private let apiAssembly: APIAssembly
+    private let apiProvider: APIProvider
     private let storesAssembly: StoresAssembly
     private let coreAssembly: CoreAssembly
 
     init(
-        apiAssembly: APIAssembly,
+        apiProvider: APIProvider,
         storesAssembly: StoresAssembly,
         coreAssembly: CoreAssembly
     ) {
-        self.apiAssembly = apiAssembly
+        self.apiProvider = apiProvider
         self.storesAssembly = storesAssembly
         self.coreAssembly = coreAssembly
     }
@@ -22,10 +22,12 @@ public final class BackgroundUpdateAssembly {
         } else {
             let backgroundUpdate = BackgroundUpdate(
                 walletStore: storesAssembly.walletsStore
-            ) { [apiAssembly] wallet in
+            ) { [apiProvider] wallet in
                 WalletBackgroundUpdate(
                     wallet: wallet,
-                    streamingAPIProvider: apiAssembly.streamingAPIProvider
+                    snapshot: {
+                        try await apiProvider.api(wallet.network).walletBackgroundUpdateCursor(wallet: wallet)
+                    }
                 )
             }
             _backgroundUpdate = backgroundUpdate

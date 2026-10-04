@@ -12,6 +12,7 @@ public struct CustomizeWalletModel {
 
 public protocol CustomizeWalletModuleOutput: AnyObject {
     var didCustomizeWallet: ((CustomizeWalletModel) -> Void)? { get set }
+    func resetSubmission()
 }
 
 protocol CustomizeWalletViewModel: AnyObject {
@@ -55,10 +56,16 @@ final class CustomizeWalletViewModelImplementation: CustomizeWalletViewModel, Cu
         }
     }
 
+    func resetSubmission() {
+        isSubmitting = false
+        didUpdateContinueButtonIsLoadig?(false)
+        didUpdateContinueButtonIsEnabled?(isWalletNameValid)
+    }
+
     func setWalletName(_ name: String) {
-        let isNameValid = !name.isEmpty
-        self.name = isNameValid ? name : .defaultWalletName
-        didUpdateContinueButtonIsEnabled?(isNameValid)
+        isWalletNameValid = !name.isEmpty
+        self.name = isWalletNameValid ? name : .defaultWalletName
+        didUpdateContinueButtonIsEnabled?(isWalletNameValid && !isSubmitting)
         configurator.didEditName()
     }
 
@@ -75,6 +82,8 @@ final class CustomizeWalletViewModelImplementation: CustomizeWalletViewModel, Cu
     // MARK: - Dependencies
 
     private var name: String
+    private var isWalletNameValid = true
+    private var isSubmitting = false
     private var tintColor: WalletTintColor
     private var icon: WalletIcon
     private let configurator: CustomizeWalletViewModelConfigurator
@@ -118,9 +127,13 @@ private extension CustomizeWalletViewModelImplementation {
                 size: .large
             )
             continueButtonConfiguration?.content.title = .plainString(title)
+            continueButtonConfiguration?.isEnabled = isWalletNameValid && !isSubmitting
+            continueButtonConfiguration?.showsLoader = isSubmitting
             continueButtonConfiguration?.action = { [weak self] in
-                self?.didUpdateContinueButtonIsEnabled?(false)
-                self?.didUpdateContinueButtonIsLoadig?(true)
+                guard let self, self.isWalletNameValid, !self.isSubmitting else { return }
+                self.isSubmitting = true
+                self.didUpdateContinueButtonIsEnabled?(false)
+                self.didUpdateContinueButtonIsLoadig?(true)
                 action()
             }
         }

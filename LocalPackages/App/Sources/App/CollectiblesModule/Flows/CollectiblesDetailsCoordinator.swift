@@ -119,32 +119,38 @@ private extension CollectiblesDetailsCoordinator {
                 onCancel: {},
                 onInput: { passcode in
                     Task {
-                        let deeplinkParser = DeeplinkParser()
+                        do {
+                            let deeplinkParser = DeeplinkParser()
 
-                        if let deeplink = try? deeplinkParser.parse(string: url.absoluteString) {
-                            await MainActor.run {
-                                self.didRequestDeeplinkHandling?(deeplink)
+                            if let deeplink = try? deeplinkParser.parse(string: url.absoluteString) {
+                                await MainActor.run {
+                                    self.didRequestDeeplinkHandling?(deeplink)
+                                }
+
+                                return
                             }
 
-                            return
-                        }
+                            let proofProvider = TonConnectNFTProofProvider(
+                                wallet: self.wallet,
+                                nft: self.nft,
+                                mnemonicRepository: self.keeperCoreMainAssembly.secureAssembly.mnemonicsRepository()
+                            )
+                            guard let composedURL = try await proofProvider.composeTonNFTProofURL(baseURL: url, passcode: passcode) else {
+                                await MainActor.run {
+                                    let configuration = ToastPresenter.Configuration(title: TKLocales.Toast.serviceUnavailable)
+                                    ToastPresenter.showToast(configuration: configuration)
+                                }
 
-                        let proofProvider = TonConnectNFTProofProvider(
-                            wallet: self.wallet,
-                            nft: self.nft,
-                            mnemonicRepository: self.keeperCoreMainAssembly.secureAssembly.mnemonicsRepository()
-                        )
-                        guard let composedURL = try await proofProvider.composeTonNFTProofURL(baseURL: url, passcode: passcode) else {
-                            await MainActor.run {
-                                let configuration = ToastPresenter.Configuration(title: TKLocales.Toast.serviceUnavailable)
-                                ToastPresenter.showToast(configuration: configuration)
+                                return
                             }
 
-                            return
-                        }
-
-                        await MainActor.run {
-                            self.didOpenDapp?(composedURL, nil)
+                            await MainActor.run {
+                                self.didOpenDapp?(composedURL, nil)
+                            }
+                        } catch {
+                            await MainActor.run {
+                                ToastPresenter.showToast(configuration: .failed)
+                            }
                         }
                     }
                 }

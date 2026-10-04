@@ -13,7 +13,9 @@ public final class TKTabBarController: UITabBarController {
 
     public init() {
         super.init(nibName: nil, bundle: nil)
-        object_setClass(self.tabBar, TKTabBar.self)
+        if !UIApplication.useSystemBarsAppearance {
+            object_setClass(self.tabBar, TKTabBar.self)
+        }
     }
 
     @available(*, unavailable)
@@ -67,6 +69,9 @@ public extension UIApplication {
     static var useSystemBarsAppearance: Bool {
         guard #available(iOS 26.0, *) else { return false }
 
-        return Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+        // Modern UIKit owns the tab bar's adaptive hierarchy. Use its existing
+        // system appearance for every bundle instead of installing legacy blur
+        // constraints before the bar has joined the controller's view tree.
+        return true
     }
 }

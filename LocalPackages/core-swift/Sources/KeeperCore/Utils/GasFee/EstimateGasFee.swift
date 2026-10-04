@@ -76,7 +76,7 @@ public func estimateWalletContractExecutionGasFee(config: BlockchainConfig, data
         switch version {
         case .v4R2:
             gasUsed = 6615
-        case .v5Beta, .v5R1:
+        case .v5Beta, .v5R1, .tosV5R1:
             gasUsed = 8444
         default:
             throw GasFeeError.unknownWalletVersion(version)

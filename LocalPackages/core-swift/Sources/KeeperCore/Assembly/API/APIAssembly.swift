@@ -15,6 +15,9 @@ public final class APIAssembly {
         self.configurationAssembly = configurationAssembly
     }
 
+    /// PQ operations share the configured native RPC endpoint for this network.
+    public func pqAPI(network: Network) -> API { apiProvider.api(network) }
+
     // MARK: - Internal
 
     var apiProvider: APIProvider {

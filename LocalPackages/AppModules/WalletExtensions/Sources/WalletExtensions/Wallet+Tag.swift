@@ -10,6 +10,8 @@ public extension WalletContractVersion {
             "W5 BETA"
         case .v5R1:
             "W5"
+        case .tosV5R1:
+            "TOS W5"
         default: nil
         }
     }
