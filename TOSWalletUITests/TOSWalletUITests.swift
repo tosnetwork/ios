@@ -1,4 +1,5 @@
 import CoreImage
+import CryptoKit
 import UIKit
 import Vision
 import XCTest
@@ -337,12 +338,15 @@ final class TOSWalletUITests: XCTestCase {
 
         openNativeSendConfirmation(amount: "0.01")
         confirmNativeTransferWithPasscode()
-        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 >= recipientBefore + 10_000_000 })
-        XCTAssertEqual(try rpcBalance(address: recipient), recipientBefore + 10_000_000)
+        let deploymentEvents = try waitForLegacyEventIDs(address: sender, excluding: eventsBefore, count: 1)
+        let deploymentEvent = try XCTUnwrap(deploymentEvents.first)
+        try assertLegacyTransferEvent(address: sender, eventID: deploymentEvent, amount: 10_000_000, comment: comment)
+        let firstFee = try assertLegacyRecipientReceipt(sender: sender, recipient: recipient, eventID: deploymentEvent, amount: 10_000_000)
+        let firstBalance = recipientBefore.addingReportingOverflow(10_000_000 - firstFee)
+        XCTAssertFalse(firstBalance.overflow)
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == firstBalance.partialValue })
+        XCTAssertEqual(try rpcBalance(address: recipient), firstBalance.partialValue)
         assertActiveLegacyCounter(address: sender, expected: 1)
-        let deploymentEvents = try rpcEventIDs(address: sender).subtracting(eventsBefore)
-        XCTAssertEqual(deploymentEvents.count, 1)
-        try assertLegacyTransferEvent(address: sender, eventID: XCTUnwrap(deploymentEvents.first), amount: 10_000_000, comment: comment)
         XCTAssertEqual(try broadcastCount(), 1)
 
         // Reopen the saved wallet rather than deriving a replacement wallet or
@@ -355,14 +359,18 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
         openNativeSendConfirmation(amount: "0.02")
         confirmNativeTransferWithPasscode()
-        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 >= recipientBefore + 30_000_000 })
-        XCTAssertEqual(try rpcBalance(address: recipient), recipientBefore + 30_000_000)
+        let allNewEvents = try waitForLegacyEventIDs(address: sender, excluding: eventsBefore, count: 2)
+        let secondEvents = allNewEvents.subtracting(deploymentEvents)
+        XCTAssertEqual(secondEvents.count, 1)
+        let secondEvent = try XCTUnwrap(secondEvents.first)
+        try assertLegacyTransferEvent(address: sender, eventID: secondEvent, amount: 20_000_000, comment: comment)
+        let secondFee = try assertLegacyRecipientReceipt(sender: sender, recipient: recipient, eventID: secondEvent, amount: 20_000_000)
+        let finalBalance = firstBalance.partialValue.addingReportingOverflow(20_000_000 - secondFee)
+        XCTAssertFalse(finalBalance.overflow)
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == finalBalance.partialValue })
+        XCTAssertEqual(try rpcBalance(address: recipient), finalBalance.partialValue)
         XCTAssertLessThan(try rpcBalance(address: sender), senderBefore - 30_000_000)
         assertActiveLegacyCounter(address: sender, expected: 2)
-        let allNewEvents = try rpcEventIDs(address: sender).subtracting(eventsBefore)
-        XCTAssertEqual(allNewEvents.count, 2)
-        let secondEvent = try XCTUnwrap(allNewEvents.subtracting(deploymentEvents).first)
-        try assertLegacyTransferEvent(address: sender, eventID: secondEvent, amount: 20_000_000, comment: comment)
         XCTAssertEqual(try broadcastCount(), 2)
         XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 20))
         app.buttons["History"].tap()
@@ -1616,6 +1624,289 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(transfer["amount"] as? String, String(amount))
         XCTAssertEqual(transfer["comment"] as? String, comment)
         XCTAssertEqual(transfer["bounced"] as? Bool, false)
+    }
+
+    private func waitForLegacyEventIDs(address: String, excluding: Set<String>, count: Int) throws -> Set<String> {
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let events = try rpcEventIDs(address: address).subtracting(excluding)
+            if events.count >= count {
+                XCTAssertEqual(events.count, count)
+                return events
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        throw LegacyReceiptError.invalid("Timed out waiting for the legacy sender transaction")
+    }
+
+    /// Plain, no-code recipients still pay storage fees. Prove the exact message
+    /// was credited and subtract only its BOC-bound transaction fee.
+    private func assertLegacyRecipientReceipt(
+        sender: String, recipient: String, eventID: String, amount: UInt64
+    ) throws -> UInt64 {
+        let eventParts = eventID.split(separator: ":")
+        guard eventParts.count == 2 else { throw LegacyReceiptError.invalid("Malformed sender event ID") }
+        let senderTransactions = try legacyRawTransactions(address: sender)
+        let senderMatches = senderTransactions.filter { transaction in
+            guard let id = transaction["transaction_id"] as? [String: Any],
+                  let hash = id["hash"] as? String, let data = Data(base64Encoded: hash) else { return false }
+            return id["lt"] as? String == String(eventParts[0])
+                && data.map { String(format: "%02x", $0) }.joined() == String(eventParts[1]).lowercased()
+        }
+        let senderTransaction = try XCTUnwrap(
+            senderMatches.count == 1 ? senderMatches.first : nil,
+            "Sender event \(eventID) matched \(senderMatches.count) raw transactions; IDs: \(senderTransactions.compactMap { $0["transaction_id"] })"
+        )
+        let senderReceipt = try LegacyRawReceipt(senderTransaction)
+        XCTAssertEqual(senderReceipt.account, try LegacyRawReceipt.addressHash(sender))
+        let outgoing = try XCTUnwrap(senderReceipt.outgoing)
+        try outgoing.checkInternal(source: sender, destination: recipient, amount: amount)
+        let outgoingJSON = try XCTUnwrap(senderTransaction["out_msgs"] as? [[String: Any]])
+        XCTAssertEqual(outgoingJSON.count, 1)
+        let messageJSON = try XCTUnwrap(outgoingJSON.first)
+        XCTAssertEqual(messageJSON["hash"] as? String, outgoing.hash.base64EncodedString())
+        XCTAssertEqual(messageJSON["value"] as? String, String(amount))
+        XCTAssertEqual(messageJSON["bounced"] as? Bool, false)
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            let matches = try legacyRawTransactions(address: recipient).filter {
+                $0["in_msg_hash"] as? String == outgoing.hash.base64EncodedString()
+            }
+            if !matches.isEmpty {
+                XCTAssertEqual(matches.count, 1)
+                let transaction = try XCTUnwrap(matches.first)
+                let receipt = try LegacyRawReceipt(transaction)
+                XCTAssertEqual(receipt.account, try LegacyRawReceipt.addressHash(recipient))
+                XCTAssertNil(receipt.outgoing, "A plain recipient must not emit another message")
+                let incoming = try XCTUnwrap(receipt.incoming)
+                XCTAssertEqual(incoming.hash, outgoing.hash)
+                try incoming.checkInternal(source: sender, destination: recipient, amount: amount)
+                let incomingJSON = try XCTUnwrap(transaction["in_msg"] as? [String: Any])
+                XCTAssertEqual(incomingJSON["hash"] as? String, outgoing.hash.base64EncodedString())
+                for key in ["kind", "source", "destination", "value", "created_lt", "created_at"] {
+                    XCTAssertEqual(incomingJSON[key] as? NSObject, messageJSON[key] as? NSObject, "Incoming/outgoing \(key) must match")
+                }
+                XCTAssertEqual(incomingJSON["bounced"] as? Bool, false)
+                XCTAssertTrue((transaction["out_msgs"] as? [[String: Any]])?.isEmpty == true)
+                guard receipt.fee < amount else { throw LegacyReceiptError.invalid("Recipient fee consumes the gross credit") }
+                let proof: [String: Any] = [
+                    "sender_event": eventID, "recipient_transaction": transaction["transaction_id"] ?? [:],
+                    "message_hash": outgoing.hash.base64EncodedString(), "gross_nanos": String(amount),
+                    "recipient_fee_nanos": String(receipt.fee), "net_credit_nanos": String(amount - receipt.fee),
+                ]
+                let attachment = XCTAttachment(data: try JSONSerialization.data(withJSONObject: proof, options: [.prettyPrinted, .sortedKeys]), uniformTypeIdentifier: "public.json")
+                attachment.name = "Legacy recipient gross/fee/net receipt"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                return receipt.fee
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        throw LegacyReceiptError.invalid("No recipient transaction matched the sender outgoing message")
+    }
+
+    private func legacyRawTransactions(address: String) throws -> [[String: Any]] {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        var request = URLRequest(url: try XCTUnwrap(URL(string: endpoint + "/jsonRPC")))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "jsonrpc": "2.0", "id": 1, "method": "getTransactions", "params": ["address": address, "limit": 100],
+        ])
+        let data = try synchronousData(request: request, description: "Legacy raw transactions")
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(object["result"] as? [[String: Any]])
+    }
+
+    private enum LegacyReceiptError: Error { case invalid(String) }
+
+    /// Independent test-only reader for the node's ordinary, root-first, plain
+    /// V3 transaction BOCs. This is deliberately not a general-purpose codec.
+    private struct LegacyRawReceipt {
+        struct Cell {
+            let data: [UInt8]
+            let bitCount: Int
+            let refs: [Int]
+            var hash = Data()
+            var depth = 0
+
+            func checkInternal(source: String, destination: String, amount: UInt64) throws {
+                var bits = Bits(data: data, count: bitCount)
+                guard try bits.read(1) == 0, try bits.read(1) == 1,
+                      try bits.read(1) == 0, try bits.read(1) == 0 else {
+                    throw LegacyReceiptError.invalid("Expected a nonbounceable, nonbounced internal message")
+                }
+                for address in [source, destination] {
+                    guard try bits.read(2) == 2, try bits.read(1) == 0,
+                          try bits.read(8) == 0, try bits.bytes(32) == LegacyRawReceipt.addressHash(address) else {
+                        throw LegacyReceiptError.invalid("Internal message address does not match")
+                    }
+                }
+                guard try bits.coins() == amount, try bits.read(1) == 0 else {
+                    throw LegacyReceiptError.invalid("Internal message amount/currency does not match")
+                }
+                _ = try bits.coins(); _ = try bits.coins()
+                _ = try bits.read(64); _ = try bits.read(32)
+                guard try bits.read(1) == 0 else { throw LegacyReceiptError.invalid("Recipient message unexpectedly carries StateInit") }
+            }
+        }
+
+        struct Bits {
+            let data: [UInt8]
+            let count: Int
+            var position = 0
+            mutating func read(_ width: Int) throws -> UInt64 {
+                guard (0...64).contains(width), position + width <= count else { throw LegacyReceiptError.invalid("Truncated transaction bits") }
+                var result: UInt64 = 0
+                for _ in 0..<width {
+                    result = (result << 1) | UInt64((data[position / 8] >> (7 - position % 8)) & 1)
+                    position += 1
+                }
+                return result
+            }
+            mutating func skip(_ width: Int) throws {
+                guard width >= 0, position + width <= count else { throw LegacyReceiptError.invalid("Truncated transaction bits") }
+                position += width
+            }
+            mutating func bytes(_ length: Int) throws -> Data {
+                var result = Data()
+                for _ in 0..<length { result.append(UInt8(try read(8))) }
+                return result
+            }
+            mutating func coins() throws -> UInt64 {
+                let length = Int(try read(4))
+                guard length <= 8 else { throw LegacyReceiptError.invalid("Transaction fee/value exceeds UInt64") }
+                return try read(length * 8)
+            }
+            var atEnd: Bool { position == count }
+        }
+
+        let account: Data
+        let fee: UInt64
+        let incoming: Cell?
+        let outgoing: Cell?
+
+        init(_ transaction: [String: Any]) throws {
+            guard let encoded = transaction["data"] as? String, let boc = Data(base64Encoded: encoded),
+                  boc.base64EncodedString() == encoded else { throw LegacyReceiptError.invalid("Invalid transaction BOC") }
+            let cells = try Self.cells(boc)
+            guard let id = transaction["transaction_id"] as? [String: Any],
+                  let hash = id["hash"] as? String, Data(base64Encoded: hash) == cells[0].hash,
+                  let lt = id["lt"] as? String, let logicalTime = UInt64(lt), String(logicalTime) == lt else {
+                throw LegacyReceiptError.invalid("Raw transaction ID is not bound to its BOC")
+            }
+            var root = Bits(data: cells[0].data, count: cells[0].bitCount)
+            guard try root.read(4) == 7 else { throw LegacyReceiptError.invalid("Wrong transaction tag") }
+            account = try root.bytes(32)
+            guard let accountHex = transaction["account"] as? String,
+                  account.map({ String(format: "%02x", $0) }).joined() == accountHex.lowercased(),
+                  try root.read(64) == logicalTime else { throw LegacyReceiptError.invalid("Transaction account/LT mismatch") }
+            try root.skip(256 + 64 + 32)
+            let outCount = Int(try root.read(15))
+            try root.skip(4)
+            fee = try root.coins()
+            guard try root.read(1) == 0, root.atEnd, cells[0].refs.count == 3,
+                  let feeText = transaction["fee"] as? String, let jsonFee = UInt64(feeText),
+                  String(jsonFee) == feeText, jsonFee == fee else { throw LegacyReceiptError.invalid("BOC and JSON total fee differ") }
+            let messages = cells[cells[0].refs[0]]
+            var envelope = Bits(data: messages.data, count: messages.bitCount)
+            let hasIn = try envelope.read(1) == 1
+            let hasOut = try envelope.read(1) == 1
+            guard envelope.atEnd, messages.refs.count == (hasIn ? 1 : 0) + (hasOut ? 1 : 0),
+                  outCount <= 1, hasOut == (outCount == 1) else { throw LegacyReceiptError.invalid("Unexpected transaction message dictionary") }
+            incoming = hasIn ? cells[messages.refs[0]] : nil
+            if hasOut {
+                let dictionary = cells[messages.refs[hasIn ? 1 : 0]]
+                var label = Bits(data: dictionary.data, count: dictionary.bitCount)
+                let length: Int
+                var key: UInt64 = 0
+                if try label.read(1) == 0 {
+                    var unary = 0
+                    while try label.read(1) == 1 { unary += 1; guard unary <= 15 else { throw LegacyReceiptError.invalid("Invalid short dictionary label") } }
+                    length = unary
+                    key = try label.read(length)
+                } else if try label.read(1) == 0 {
+                    length = Int(try label.read(4)); key = try label.read(length)
+                } else {
+                    let repeated = try label.read(1)
+                    length = Int(try label.read(4))
+                    key = repeated == 0 ? 0 : 1
+                }
+                guard length == 15, key == 0, label.atEnd, dictionary.refs.count == 1 else {
+                    throw LegacyReceiptError.invalid("Expected exactly outgoing dictionary index zero")
+                }
+                outgoing = cells[dictionary.refs[0]]
+            } else { outgoing = nil }
+        }
+
+        static func addressHash(_ address: String) throws -> Data {
+            if address.hasPrefix("0:") {
+                let hex = Array(address.dropFirst(2))
+                guard hex.count == 64 else { throw LegacyReceiptError.invalid("Invalid raw address") }
+                var data = Data()
+                for index in stride(from: 0, to: 64, by: 2) {
+                    guard let byte = UInt8(String(hex[index...index + 1]), radix: 16) else { throw LegacyReceiptError.invalid("Invalid raw address") }
+                    data.append(byte)
+                }
+                return data
+            }
+            let base64 = address.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            guard let data = Data(base64Encoded: base64), data.count == 36, data[1] == 0 else { throw LegacyReceiptError.invalid("Invalid friendly fixture address") }
+            return data.subdata(in: 2..<34)
+        }
+
+        private static func cells(_ boc: Data) throws -> [Cell] {
+            let bytes = [UInt8](boc)
+            guard bytes.count >= 11, bytes.count <= 1_048_576, Array(bytes.prefix(4)) == [0xb5, 0xee, 0x9c, 0x72],
+                  (1...4).contains(Int(bytes[4])), (1...4).contains(Int(bytes[5])) else {
+                throw LegacyReceiptError.invalid("Unsupported raw transaction BOC header")
+            }
+            let sizeWidth = Int(bytes[4]), offsetWidth = Int(bytes[5])
+            var cursor = 6
+            func read(_ width: Int) throws -> Int {
+                guard cursor + width <= bytes.count else { throw LegacyReceiptError.invalid("Truncated BOC header/reference") }
+                var value = 0
+                for _ in 0..<width { value = (value << 8) | Int(bytes[cursor]); cursor += 1 }
+                return value
+            }
+            let count = try read(sizeWidth), roots = try read(sizeWidth), absent = try read(sizeWidth), size = try read(offsetWidth)
+            guard (1...4096).contains(count), roots == 1, absent == 0, try read(sizeWidth) == 0,
+                  cursor + size == bytes.count else { throw LegacyReceiptError.invalid("Invalid raw transaction BOC lengths/root") }
+            var result: [Cell] = []
+            for index in 0..<count {
+                let d1 = try read(1), d2 = try read(1), length = (d2 + 1) / 2
+                guard d1 <= 4, cursor + length <= bytes.count else { throw LegacyReceiptError.invalid("Unsupported/truncated transaction cell") }
+                let data = Array(bytes[cursor..<cursor + length]); cursor += length
+                let bits: Int
+                if d2 % 2 == 0 { bits = length * 8 }
+                else {
+                    guard let last = data.last, last != 0, last != 128 else { throw LegacyReceiptError.invalid("Invalid transaction top-up bits") }
+                    bits = length * 8 - last.trailingZeroBitCount - 1
+                }
+                var refs: [Int] = []
+                for _ in 0..<d1 {
+                    let ref = try read(sizeWidth)
+                    guard ref > index, ref < count else { throw LegacyReceiptError.invalid("Invalid transaction reference") }
+                    refs.append(ref)
+                }
+                result.append(Cell(data: data, bitCount: bits, refs: refs))
+            }
+            guard cursor == bytes.count else { throw LegacyReceiptError.invalid("Trailing transaction BOC bytes") }
+            for index in result.indices.reversed() {
+                let refs = result[index].refs
+                let depth = refs.map { result[$0].depth }.max().map { $0 + 1 } ?? 0
+                guard depth <= 1023 else { throw LegacyReceiptError.invalid("Excessive transaction cell depth") }
+                var representation = Data([UInt8(refs.count), UInt8((result[index].bitCount / 8) + ((result[index].bitCount + 7) / 8))])
+                representation.append(contentsOf: result[index].data)
+                for ref in refs { representation.append(UInt8(result[ref].depth >> 8)); representation.append(UInt8(result[ref].depth & 255)) }
+                for ref in refs { representation.append(result[ref].hash) }
+                result[index].hash = Data(SHA256.hash(data: representation)); result[index].depth = depth
+            }
+            var seen: Set<Int> = [], pending = [0]
+            while let index = pending.popLast() { if seen.insert(index).inserted { pending.append(contentsOf: result[index].refs) } }
+            guard seen.count == count else { throw LegacyReceiptError.invalid("Unreachable transaction cells") }
+            return result
+        }
     }
 
     private func rpcBalance(address: String) throws -> UInt64 {
