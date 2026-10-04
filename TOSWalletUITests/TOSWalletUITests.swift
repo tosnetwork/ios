@@ -1,5 +1,6 @@
 import CoreImage
 import UIKit
+import Vision
 import XCTest
 
 final class TOSWalletUITests: XCTestCase {
@@ -55,7 +56,15 @@ final class TOSWalletUITests: XCTestCase {
             launchOnboarding(appearance: appearance, contentSize: contentSize)
             XCTAssertTrue(app.staticTexts["TOS Wallet"].waitForExistence(timeout: 15))
             assertVisibleElementsFitWindow()
-            assertScreenshotHasReadableContrast(app.screenshot().image)
+            let screenshot = app.screenshot().image
+            assertScreenshotHasReadableContrast(screenshot)
+            assertOnboardingAppearance(screenshot, appearance: appearance)
+            let configureNode = app.buttons["onboarding.configureNode"]
+            XCTAssertTrue(configureNode.exists)
+            XCTAssertTrue(configureNode.isHittable)
+            XCTAssertGreaterThanOrEqual(configureNode.frame.height, 44)
+            XCTAssertEqual(configureNode.label, "Configure TOS Node")
+            assertVisibleNodeTitle(configureNode.screenshot().image)
             retainScreenshot(named: "Onboarding \(appearance) \(contentSize)")
         }
     }
@@ -600,6 +609,7 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(copyResult.value as? String, address.label)
         let share = app.descendants(matching: .any)["receive.share"]
         XCTAssertTrue(share.exists)
+        retainScreenshot(named: "Native TOS Receive")
         share.tap()
         XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5))
         XCTAssertEqual(share.value as? String, address.label)
@@ -1266,10 +1276,67 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
         app.launchArguments += [
-            "-AppleInterfaceStyle", appearance,
+            "-TKThemeIdentifier", appearance.lowercased(),
             "-UIPreferredContentSizeCategoryName", contentSize,
         ]
         app.launch()
+    }
+
+    private func assertOnboardingAppearance(
+        _ image: UIImage,
+        appearance: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let cgImage = image.cgImage,
+              let sample = cgImage.cropping(to: CGRect(
+                x: CGFloat(cgImage.width / 2), y: CGFloat(cgImage.height / 10), width: 1, height: 1
+              ))
+        else {
+            return XCTFail("Unable to inspect onboarding appearance", file: file, line: line)
+        }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let brightness = pixel.withUnsafeMutableBytes { bytes -> Int? in
+            guard let context = CGContext(
+                data: bytes.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+                bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+            context.draw(sample, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return (Int(bytes[0]) + Int(bytes[1]) + Int(bytes[2])) / 3
+        }
+        guard let brightness else {
+            return XCTFail("Unable to sample onboarding appearance", file: file, line: line)
+        }
+        if appearance == "Light" {
+            XCTAssertGreaterThan(brightness, 200, "The Light app theme must actually render a light background", file: file, line: line)
+        } else {
+            XCTAssertLessThan(brightness, 80, "The Dark app theme must actually render a dark background", file: file, line: line)
+        }
+    }
+
+    private func assertVisibleNodeTitle(
+        _ image: UIImage,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let cgImage = image.cgImage else {
+            return XCTFail("Unable to inspect the visible node action", file: file, line: line)
+        }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["en-US"]
+        request.customWords = ["TOS"]
+        do {
+            try VNImageRequestHandler(cgImage: cgImage).perform([request])
+            let visibleTitle = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                .joined(separator: " ")
+                .lowercased()
+                .filter { $0.isLetter }
+            XCTAssertEqual(visibleTitle, "configuretosnode", "The rendered node title must be complete", file: file, line: line)
+        } catch {
+            XCTFail("Unable to recognize the visible node title: \(error)", file: file, line: line)
+        }
     }
 
     private func assertVisibleElementsFitWindow(

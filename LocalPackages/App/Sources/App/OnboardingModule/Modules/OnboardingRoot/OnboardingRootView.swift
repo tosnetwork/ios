@@ -81,9 +81,20 @@ private extension OnboardingRootView {
         importButton.accessibilityTraits = .button
         termsTextView.accessibilityIdentifier = "onboarding.terms"
 
-        configureNodeButton.setTitle("Configure TOS Node", for: .normal)
-        configureNodeButton.setTitleColor(.Text.accent, for: .normal)
-        configureNodeButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .callout)
+        var nodeConfiguration = UIButton.Configuration.plain()
+        nodeConfiguration.title = "Configure TOS Node"
+        nodeConfiguration.baseForegroundColor = .Text.accent
+        nodeConfiguration.titleAlignment = .center
+        nodeConfiguration.titleLineBreakMode = .byWordWrapping
+        nodeConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0)
+        nodeConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFont.preferredFont(forTextStyle: .callout)
+            return attributes
+        }
+        configureNodeButton.configuration = nodeConfiguration
+        configureNodeButton.titleLabel?.numberOfLines = 0
+        configureNodeButton.titleLabel?.textAlignment = .center
         configureNodeButton.titleLabel?.adjustsFontForContentSizeCategory = true
         configureNodeButton.accessibilityIdentifier = "onboarding.configureNode"
         configureNodeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
