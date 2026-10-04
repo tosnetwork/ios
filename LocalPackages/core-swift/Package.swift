@@ -30,14 +30,29 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", .upToNextMinor(from: "0.3.0")),
     ],
     targets: [
+        .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
+            exclude: ["CMakeLists.txt", "PROVENANCE.json", "vendor/MLDSA-LICENSE"],
+            sources: ["tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
+                "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
+                "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",
+                "vendor/falcon/sign.c", "vendor/falcon/fft.c", "vendor/falcon/fpr.c", "vendor/falcon/rng.c"],
+            publicHeadersPath: "include", cSettings: [
+                .headerSearchPath("."), .headerSearchPath("vendor/mldsa"), .headerSearchPath("vendor/falcon"),
+                .define("MLD_CONFIG_FILE", to: "\"mldsa-config.h\""),
+                .define("FALCON_FPEMU", to: "1"), .define("FALCON_FPNATIVE", to: "0"),
+                .define("FALCON_AVX2", to: "0"), .define("FALCON_FMA", to: "0"),
+                .define("FALCON_PREFIX", to: "tos_mobile_falcon_inner"),
+                .define("FALCON_RAND_GETENTROPY", to: "0"), .define("FALCON_RAND_URANDOM", to: "0"),
+                .define("FALCON_RAND_WIN32", to: "0")]),
         .target(
             name: "CoreComponents",
-            dependencies: [
+            dependencies: ["TOSPQNative",
                 .product(name: "TonSwift", package: "ton-swift"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
+            resources: [.copy("Resources/TOSPQNotices.txt")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
@@ -49,6 +64,7 @@ let package = Package(
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
+            resources: [.copy("TestData/tos-pq-backup-vectors.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
@@ -85,7 +101,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
+            resources: [.copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

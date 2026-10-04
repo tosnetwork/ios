@@ -1,5 +1,9 @@
 # TOS iOS protocol modernization — 2026-10-04
 
+Historical modernization baseline at `cdcc1f7`, before user-wallet PQ signing.
+The following tests/claims describe that baseline; current PQ signing is documented
+in [the follow-up implementation and validation report](mobile-pq-signing-20261004.md).
+
 The functional/test head `3143594ab51e696342da9370acc2d0a2add701db` passed all
 47 real-node UI methods and the whole root Make wrapper, including runtime-secret
 and performance gates. The complete seven-package suite passed 213 methods,

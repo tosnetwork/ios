@@ -19,9 +19,10 @@ node is required when creating or importing the current wallet revision. Use
 “Configure TOS Node” on the welcome screen to set an endpoint before onboarding.
 
 Post-quantum validator consensus is compatible with these Ed25519 user wallets.
-This app does not create ML-DSA or experimental Falcon user-wallet keys. PQ user
-wallets require a separate signing and funded relay flow; they are not enabled by
-this update.
+Settings → PQ Wallets also creates separate ML-DSA-44 and experimental
+Falcon-512 padded identities, with protected seed storage, encrypted backup and a
+funded native fee-wallet transport. See [PQ signing and local validation](docs/mobile-pq-signing-20261004.md)
+for protocol profiles, tests and physical-device/production release gates.
 
 ## Build and test
 

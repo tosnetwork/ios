@@ -28,6 +28,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapV4Wallet: ((Wallet) -> Void)?
     var didTapBattery: ((Wallet) -> Void)?
     var didTapConnectedApps: ((Wallet) -> Void)?
+    var didTapPQWallets: (() -> Void)?
     var didTapRPCNode: (() -> Void)?
 
     // MARK: - SettingsListV2Configurator
@@ -210,6 +211,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             items.append(createCurrencyItem())
         }
         items.append(contentsOf: [
+            createPQWalletsItem(),
             createRPCNodeItem(),
             createLanguageItem(),
             createThemeItem(),
@@ -612,6 +614,14 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                 self?.appStoreReviewer.requestReview()
             }
         )
+    }
+
+    private func createPQWalletsItem() -> SettingsListItem {
+        let config = TKListItemCell.Configuration(listItemContentViewConfiguration: TKListItemContentView.Configuration(
+            textContentViewConfiguration: TKListItemTextContentView.Configuration(
+                titleViewConfiguration: TKListItemTitleView.Configuration(title: "PQ Wallets"))))
+        return SettingsListItem(id: "PQWalletsItem", cellConfiguration: config, accessory: .chevron,
+            onSelection: { [weak self] _ in self?.didTapPQWallets?() })
     }
 
     private func createRPCNodeItem() -> SettingsListItem {

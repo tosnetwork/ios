@@ -158,7 +158,7 @@ enum TOSWalletRPC {
         return total
     }
 
-    private static func unsignedInteger(_ number: NSNumber) -> UInt64? {
+    static func unsignedInteger(_ number: NSNumber) -> UInt64? {
         guard CFGetTypeID(number) != CFBooleanGetTypeID(), !(number is NSDecimalNumber) else { return nil }
         // Floating JSON values can round into integers before comparison, even
         // when the original token had a fractional part. Require integer storage.

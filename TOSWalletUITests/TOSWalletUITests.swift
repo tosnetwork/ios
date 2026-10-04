@@ -33,6 +33,55 @@ final class TOSWalletUITests: XCTestCase {
         app.launch()
     }
 
+    func testPQWalletsCreateDeploySignReconcileAndDeleteBothProfilesOnLocalTos() throws {
+        importFixtureWalletToHome();openSettings()
+        let row = app.descendants(matching: .any)["settings.PQWalletsItem"]
+        if !row.isHittable { app.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 10));row.tap()
+        XCTAssertTrue(app.buttons["pq.create"].waitForExistence(timeout: 15))
+        let feeLabel = app.staticTexts["pq.fee.address"]
+        XCTAssertTrue(feeLabel.waitForExistence(timeout: 10))
+        let feeAddress = feeLabel.label
+        XCTAssertNotNil(feeAddress.range(of: "^0:[a-fA-F0-9]{64}$", options: .regularExpression))
+        print("PUBLIC_PQ_UI_FEE_ADDRESS=" + feeAddress)
+        _ = try localnetTransfer(address: feeAddress, amount: 150)
+        func action(_ id: String) {
+            let control = app.buttons[id]
+            for _ in 0..<3 { if control.isHittable { break };app.swipeDown() }
+            for _ in 0..<8 { if control.isHittable { break };app.swipeUp() }
+            XCTAssertTrue(control.waitForExistence(timeout: 10));control.tap()
+        }
+        func form(_ values: [String]) {
+            for (index, value) in values.enumerated() {
+                let field = app.textFields["pq.input.\(index)"];XCTAssertTrue(field.waitForExistence(timeout: 10));field.tap();field.typeText(value)
+            }
+            app.alerts.buttons["Continue"].tap()
+        }
+        func pin() { XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 20));enterPasscode("1234") }
+        func confirm(_ title: String) { let alert = app.alerts[title];XCTAssertTrue(alert.waitForExistence(timeout: 30));alert.buttons["Confirm"].tap() }
+        for (index, profile) in ["ML-DSA-44", "Falcon-512 padded"].enumerated() {
+            action("pq.create");app.alerts.buttons[profile].tap();form(["PQ UI QA \(index + 1)"]);pin()
+            let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'pq.wallet.' AND label BEGINSWITH %@", "PQ UI QA \(index + 1)")).firstMatch
+            XCTAssertTrue(record.waitForExistence(timeout: 30))
+            let match = try XCTUnwrap(record.label.range(of: "0:[a-fA-F0-9]{64}", options: .regularExpression))
+            let address = String(record.label[match])
+            record.tap();action("pq.deploy");form(["5", "20"]);confirm("Confirm deployment");confirm("Review network fees");pin()
+            XCTAssertTrue(waitForBalance(address: address, timeout: 60) { $0 >= 19_900_000_000 })
+            action("pq.history")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'deployed'")).firstMatch.waitForExistence(timeout: 20))
+            let recipient = "0:" + String(repeating: index == 0 ? "7a" : "7b", count: 32)
+            let before = try rpcBalance(address: recipient)
+            action("pq.send");form([recipient, "0.01", "PUBLIC PQ UI \(index + 1)", "2"]);confirm("Confirm PQ transfer");pin();confirm("Review network fees");pin()
+            XCTAssertTrue(waitForBalance(address: recipient, timeout: 60) { $0 == before + 10_000_000 })
+            action("pq.history")
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'delivered'")).firstMatch.waitForExistence(timeout: 30))
+            action("pq.delete");confirm("Delete PQ UI QA \(index + 1)?");pin()
+            XCTAssertTrue(app.buttons["pq.create"].waitForExistence(timeout: 20))
+            XCTAssertFalse(record.exists)
+        }
+        retainScreenshot(named: "PQ local-chain flow completed for both profiles")
+    }
+
     func testOnboardingExposesCoreWalletEntryPoints() {
         XCTAssertTrue(app.staticTexts["TOS Wallet"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.buttons["Create New Wallet"].exists)

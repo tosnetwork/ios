@@ -1,5 +1,6 @@
 import CoreComponents
 import KeeperCore
+import TonSwift
 import Stories
 import TKAppInfo
 import TKCoordinator
@@ -115,6 +116,20 @@ private extension SettingsCoordinator {
 
         configurator.didTapConnectedApps = { [weak self] wallet in
             self?.openConnectedApps(wallet: wallet)
+        }
+
+        configurator.didTapPQWallets = { [weak self] in
+            guard let self else { return }
+            let controller = TOSPQWalletsViewController(
+                api: self.keeperCoreMainAssembly.apiAssembly.pqAPI(network: self.wallet.network), payer: self.wallet,
+                authenticate: { [weak self] in await self?.getPasscode() != nil },
+                feeSign: { [weak self] unsigned in
+                    guard let self, let passcode = await self.getPasscode() else { throw CancellationError() }
+                    let mnemonic = try await self.keeperCoreMainAssembly.secureAssembly.mnemonicsRepository().getMnemonic(wallet: self.wallet, password: passcode)
+                    let pair = try WalletMnemonic.keyPair(words: mnemonic.mnemonicWords, wallet: self.wallet)
+                    return try WalletTransferSecretKeySigner(secretKey: pair.privateKey.data).signMessage(unsigned.hash())
+                })
+            self.router.push(viewController: controller, animated: true)
         }
 
         configurator.didTapRPCNode = { [weak self, weak configurator] in

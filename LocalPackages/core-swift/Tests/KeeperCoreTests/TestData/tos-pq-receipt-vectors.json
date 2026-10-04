@@ -1,0 +1,159 @@
+{
+  "provenance": "Owned VM19 three-node localnet, native Android ML-DSA-44 signature, TOS source ee5ad71, 2026-10-04. Selected-node JSON receipts, not a light-client proof.",
+  "intent": {
+    "feeAddress": "0:4f59c3be426890f8353936ae66e9b571366330b12c50e3d0108e4c5ca73d9a37",
+    "externalHash": "n+Y0c2OifoXMxXbDe8DeMh8pJ4dENijfkGg3KxbMJF8=",
+    "moduleAddress": "EQC4H-K8qhs1YdD6XD48aXEdHXY93zJFdP1eHcwlntj1zs2N",
+    "walletAddress": "EQD6gJtqN-wgVrXqljamcltgFYUJdNyM_b0AQgSOEyyDkzLu",
+    "recipient": "EQAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIp3C",
+    "amount": 10000000
+  },
+  "fee": {
+    "transaction_type": "ordinary",
+    "aborted": false,
+    "in_msg_hash": "n+Y0c2OifoXMxXbDe8DeMh8pJ4dENijfkGg3KxbMJF8=",
+    "in_msg": {
+      "hash": "n+Y0c2OifoXMxXbDe8DeMh8pJ4dENijfkGg3KxbMJF8=",
+      "kind": "external"
+    },
+    "out_msgs": [
+      {
+        "hash": "fFtPQ0yN9VUYIc4VKrLvf/XDoDv30wQkmD5aWukwb5Q=",
+        "kind": "internal",
+        "source": "EQBPWcO-QmiQ-DU5Nq5m6bVxNmMwsSxQ49AQjkxcpz2aN9nL",
+        "destination": "EQC4H-K8qhs1YdD6XD48aXEdHXY93zJFdP1eHcwlntj1zs2N",
+        "value": "2000000000",
+        "bounced": false,
+        "created_lt": "2000000002",
+        "created_at": 1791114335
+      }
+    ],
+    "compute": {
+      "skipped": false,
+      "success": true,
+      "exit_code": 0,
+      "vm_steps": 174,
+      "account_activated": false
+    },
+    "action": {
+      "success": true,
+      "valid": true,
+      "no_funds": false,
+      "result_code": 0,
+      "total_actions": 1,
+      "skipped_actions": 0,
+      "messages_created": 1
+    },
+    "fee": "337950"
+  },
+  "module": {
+    "transaction_type": "ordinary",
+    "aborted": false,
+    "in_msg_hash": "fFtPQ0yN9VUYIc4VKrLvf/XDoDv30wQkmD5aWukwb5Q=",
+    "in_msg": {
+      "hash": "fFtPQ0yN9VUYIc4VKrLvf/XDoDv30wQkmD5aWukwb5Q=",
+      "kind": "internal",
+      "source": "EQBPWcO-QmiQ-DU5Nq5m6bVxNmMwsSxQ49AQjkxcpz2aN9nL",
+      "destination": "EQC4H-K8qhs1YdD6XD48aXEdHXY93zJFdP1eHcwlntj1zs2N",
+      "value": "2000000000",
+      "bounced": false,
+      "created_lt": "2000000002",
+      "created_at": 1791114335
+    },
+    "out_msgs": [
+      {
+        "hash": "Eh5DFqBWGWNM/fqlCqsDbE2JLA34LwUd7xqfJ8/dZgY=",
+        "kind": "internal",
+        "source": "EQC4H-K8qhs1YdD6XD48aXEdHXY93zJFdP1eHcwlntj1zs2N",
+        "destination": "EQD6gJtqN-wgVrXqljamcltgFYUJdNyM_b0AQgSOEyyDkzLu",
+        "value": "1999344650",
+        "bounced": false,
+        "created_lt": "2000000004",
+        "created_at": 1791114335
+      }
+    ],
+    "compute": {
+      "skipped": false,
+      "success": true,
+      "exit_code": 0,
+      "vm_steps": 156,
+      "account_activated": false
+    },
+    "action": {
+      "success": true,
+      "valid": true,
+      "no_funds": false,
+      "result_code": 0,
+      "total_actions": 2,
+      "skipped_actions": 0,
+      "messages_created": 1
+    },
+    "fee": "647750"
+  },
+  "wallet": {
+    "transaction_type": "ordinary",
+    "aborted": false,
+    "in_msg_hash": "Eh5DFqBWGWNM/fqlCqsDbE2JLA34LwUd7xqfJ8/dZgY=",
+    "in_msg": {
+      "hash": "Eh5DFqBWGWNM/fqlCqsDbE2JLA34LwUd7xqfJ8/dZgY=",
+      "kind": "internal",
+      "source": "EQC4H-K8qhs1YdD6XD48aXEdHXY93zJFdP1eHcwlntj1zs2N",
+      "destination": "EQD6gJtqN-wgVrXqljamcltgFYUJdNyM_b0AQgSOEyyDkzLu",
+      "value": "1999344650",
+      "bounced": false,
+      "created_lt": "2000000004",
+      "created_at": 1791114335
+    },
+    "out_msgs": [
+      {
+        "hash": "W5ayOol1zyNJoWk+QubjzC0kwZbrs4BIT6/O5maKdT4=",
+        "kind": "internal",
+        "source": "EQD6gJtqN-wgVrXqljamcltgFYUJdNyM_b0AQgSOEyyDkzLu",
+        "destination": "EQAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIp3C",
+        "value": "10000000",
+        "bounced": false,
+        "created_lt": "2000000006",
+        "created_at": 1791114335
+      }
+    ],
+    "compute": {
+      "skipped": false,
+      "success": true,
+      "exit_code": 0,
+      "vm_steps": 313,
+      "account_activated": false
+    },
+    "action": {
+      "success": true,
+      "valid": true,
+      "no_funds": false,
+      "result_code": 0,
+      "total_actions": 1,
+      "skipped_actions": 0,
+      "messages_created": 1
+    },
+    "fee": "97850"
+  },
+  "recipient": {
+    "transaction_type": "ordinary",
+    "aborted": true,
+    "in_msg_hash": "W5ayOol1zyNJoWk+QubjzC0kwZbrs4BIT6/O5maKdT4=",
+    "in_msg": {
+      "hash": "W5ayOol1zyNJoWk+QubjzC0kwZbrs4BIT6/O5maKdT4=",
+      "kind": "internal",
+      "source": "EQD6gJtqN-wgVrXqljamcltgFYUJdNyM_b0AQgSOEyyDkzLu",
+      "destination": "EQAiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIp3C",
+      "value": "10000000",
+      "bounced": false,
+      "created_lt": "2000000006",
+      "created_at": 1791114335
+    },
+    "out_msgs": [],
+    "compute": {
+      "skipped": true,
+      "skip_reason": 0
+    },
+    "action": null,
+    "fee": "1"
+  }
+}

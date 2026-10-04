@@ -151,7 +151,13 @@ struct TOSRPCClient {
         preconditionFailure("TOS RPC retry loop exhausted without returning or throwing")
     }
 
-    private func callOnce(method: String, params: [String: Any]) async throws -> [String: Any] {
+    func callTransactions(address: Address, limit: Int = 20) async throws -> [[String: Any]] {
+        let response = try await callOnce(method: "getTransactions", params: ["address": address.toRaw(), "limit": limit], wrapArray: true)
+        guard let items = response["items"] as? [[String: Any]] else { throw Error.invalidResponse }
+        return items
+    }
+
+    private func callOnce(method: String, params: [String: Any], wrapArray: Bool = false) async throws -> [String: Any] {
         let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard let endpoint = URL(string: basePath + "/jsonRPC") else {
             throw Error.invalidEndpoint
@@ -195,6 +201,10 @@ struct TOSRPCClient {
         }
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
             throw Error.invalidResponse
+        }
+        if wrapArray {
+            guard let items = envelope["result"] as? [[String: Any]] else { throw Error.invalidResponse }
+            return ["items": items]
         }
         guard let result = envelope["result"] as? [String: Any] else {
             throw Error.invalidResponse
