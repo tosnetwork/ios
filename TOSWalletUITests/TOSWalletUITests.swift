@@ -312,6 +312,70 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
     }
 
+    func testLegacyWalletDeploysAndTransfersAgainFromActiveStoredContract() throws {
+        // PUBLIC TEST DATA. This fixture must begin uninitialized on the isolated
+        // test chain; both its deployment and active send go through the App.
+        let sender = "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"
+        let recipient = "0:" + String(repeating: "4a", count: 32)
+        let comment = "Legacy 已部署 🌌"
+        XCTAssertEqual(try rpcResult(method: "getAddressInformation", params: ["address": sender])["state"] as? String, "uninitialized")
+        let senderBefore = try rpcBalance(address: sender)
+        let recipientBefore = try rpcBalance(address: recipient)
+        let eventsBefore = try rpcEventIDs(address: sender)
+        XCTAssertGreaterThan(senderBefore, 30_000_000)
+
+        launchRecoveryPhraseImport(
+            phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice",
+            comment: comment, recipient: "EQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSnAa"
+        )
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Legacy Recovery Phrase"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        try setProxyMode("normal", resetCounts: true)
+
+        openNativeSendConfirmation(amount: "0.01")
+        confirmNativeTransferWithPasscode()
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 >= recipientBefore + 10_000_000 })
+        XCTAssertEqual(try rpcBalance(address: recipient), recipientBefore + 10_000_000)
+        assertActiveLegacyCounter(address: sender, expected: 1)
+        let deploymentEvents = try rpcEventIDs(address: sender).subtracting(eventsBefore)
+        XCTAssertEqual(deploymentEvents.count, 1)
+        try assertLegacyTransferEvent(address: sender, eventID: XCTUnwrap(deploymentEvents.first), amount: 10_000_000, comment: comment)
+        XCTAssertEqual(try broadcastCount(), 1)
+
+        // Reopen the saved wallet rather than deriving a replacement wallet or
+        // attaching a new StateInit to the active account.
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+        openNativeSendConfirmation(amount: "0.02")
+        confirmNativeTransferWithPasscode()
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 >= recipientBefore + 30_000_000 })
+        XCTAssertEqual(try rpcBalance(address: recipient), recipientBefore + 30_000_000)
+        XCTAssertLessThan(try rpcBalance(address: sender), senderBefore - 30_000_000)
+        assertActiveLegacyCounter(address: sender, expected: 2)
+        let allNewEvents = try rpcEventIDs(address: sender).subtracting(eventsBefore)
+        XCTAssertEqual(allNewEvents.count, 2)
+        let secondEvent = try XCTUnwrap(allNewEvents.subtracting(deploymentEvents).first)
+        try assertLegacyTransferEvent(address: sender, eventID: secondEvent, amount: 20_000_000, comment: comment)
+        XCTAssertEqual(try broadcastCount(), 2)
+        XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 20))
+        app.buttons["History"].tap()
+        let historyAmount = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@ AND label CONTAINS[c] %@", "0.02", "TOS")
+        ).firstMatch
+        XCTAssertTrue(historyAmount.waitForExistence(timeout: 20))
+        historyAmount.tap()
+        XCTAssertTrue(app.staticTexts[comment].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSi3f"].exists)
+        retainScreenshot(named: "Legacy active transfer details")
+    }
+
     func testAmbiguousPhraseCanExplicitlyRestoreTOSWallet() {
         launchRecoveryPhraseImport(phrase: "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall")
         app.descendants(matching: .any)["mnemonic.continue"].tap()
@@ -1410,13 +1474,14 @@ final class TOSWalletUITests: XCTestCase {
 
     private func launchRecoveryPhraseImport(
         phrase: String,
-        comment: String = "TOS automated transfer"
+        comment: String = "TOS automated transfer",
+        recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
     ) {
         app.terminate()
         app = XCUIApplication()
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
         app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
-        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = recipient
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = comment
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
@@ -1511,6 +1576,46 @@ final class TOSWalletUITests: XCTestCase {
                 )
             }
         }
+    }
+
+    private func rpcResult(method: String, params: [String: Any]) throws -> [String: Any] {
+        let endpoint = ProcessInfo.processInfo.environment["TOS_LIVE_RPC_URL"] ?? "http://127.0.0.1:18545"
+        let url = try XCTUnwrap(URL(string: endpoint + "/jsonRPC"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": method, "params": params])
+        let data = try synchronousData(request: request, description: "TOS RPC \(method)")
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(envelope["result"] as? [String: Any])
+    }
+
+    private func assertActiveLegacyCounter(address: String, expected: UInt32) {
+        do {
+            let snapshot = try rpcResult(method: "getAddressInformation", params: ["address": address])
+            XCTAssertEqual(snapshot["state"] as? String, "active")
+            let information = try rpcResult(method: "getWalletInformation", params: ["address": address])
+            XCTAssertEqual(information["wallet"] as? Bool, false, "Exercise the node's actual legacy classification gap")
+            XCTAssertTrue(information["seqno"] is NSNull)
+            // An independent VM getter is test evidence only. The production
+            // compatibility reader binds code/data from one raw snapshot.
+            let getter = try rpcResult(method: "runGetMethod", params: ["address": address, "method": "seqno", "stack": []])
+            XCTAssertEqual((getter["exit_code"] as? NSNumber)?.intValue, 0)
+            XCTAssertEqual(getter["stack"] as? [[String]], [["num", String(expected)]])
+        } catch { XCTFail("Failed to verify active legacy state: \(error)") }
+    }
+
+    private func assertLegacyTransferEvent(address: String, eventID: String, amount: UInt64, comment: String) throws {
+        let event = try rpcResult(method: "getAccountEvent", params: ["address": address, "event_id": eventID])
+        let transfers = try XCTUnwrap(event["transfers"] as? [[String: Any]])
+        XCTAssertEqual(transfers.count, 1)
+        let transfer = try XCTUnwrap(transfers.first)
+        XCTAssertEqual(transfer["direction"] as? String, "outgoing")
+        XCTAssertEqual(transfer["source"] as? String, "EQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXKub")
+        XCTAssertEqual(transfer["destination"] as? String, "EQBKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSkpKSnAa")
+        XCTAssertEqual(transfer["amount"] as? String, String(amount))
+        XCTAssertEqual(transfer["comment"] as? String, comment)
+        XCTAssertEqual(transfer["bounced"] as? Bool, false)
     }
 
     private func rpcBalance(address: String) throws -> UInt64 {

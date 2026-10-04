@@ -31,21 +31,19 @@ enum TOSNetworkIdentity {
     static func decodeConfiguration(_ result: [String: Any]) throws -> Int32 {
         guard let configuration = result["config"] as? [String: Any],
               let encoded = configuration["bytes"] as? String,
-              let data = Data(base64Encoded: encoded),
-              let cells = try? Cell.fromBoc(src: data), cells.count == 1,
-              cells[0].bits.length == 32, cells[0].refs.isEmpty
+              let cell = try? TOSRPCOrdinaryBOC.decode(encoded),
+              cell.bits.length == 32, cell.refs.isEmpty
         else { throw TOSNetworkIdentityError.invalidConfiguration }
-        return Int32(try cells[0].beginParse().loadInt(bits: 32))
+        return Int32(try cell.beginParse().loadInt(bits: 32))
     }
 
     static func decodeVMVersion(_ result: [String: Any]) throws -> UInt32 {
         guard let configuration = result["config"] as? [String: Any],
               let encoded = configuration["bytes"] as? String,
-              let data = Data(base64Encoded: encoded),
-              let cells = try? Cell.fromBoc(src: data), cells.count == 1,
-              cells[0].bits.length == 104, cells[0].refs.isEmpty
+              let cell = try? TOSRPCOrdinaryBOC.decode(encoded),
+              cell.bits.length == 104, cell.refs.isEmpty
         else { throw TOSNetworkIdentityError.invalidConfiguration }
-        let slice = try cells[0].beginParse()
+        let slice = try cell.beginParse()
         guard try slice.loadUint(bits: 8) == 0xc4 else {
             throw TOSNetworkIdentityError.invalidConfiguration
         }
@@ -91,19 +89,12 @@ extension TOSRPCClient {
         let endpoint = await basePath()
         let client = TOSRPCClient(basePath: { endpoint }, urlSession: urlSession)
         try await client.verifyNetworkIdentity(wallet: wallet)
-        let account = try await client.call(method: "getWalletInformation", params: ["address": wallet.address.toRaw()])
+        let account = try await client.verifiedWalletInformation(wallet: wallet)
         // Validate active account responses before treating anything as a deployment.
         _ = try TOSWalletRPC.decodeSeqno(account)
         var params: [String: Any] = ["address": try wallet.address.toRaw(), "body": body, "ignore_chksig": true]
         if TOSWalletRPC.isUninitialized(account) {
-            // TonSwift keeps StateInit fields internal. Read its canonical TLB
-            // representation so every supported wallet revision can supply init.
-            let slice = try Builder().store(wallet.stateInit).endCell().beginParse()
-            if try slice.loadBoolean() { try slice.skip(5) }
-            if try slice.loadBoolean() { try slice.skip(2) }
-            guard let code = try slice.loadMaybeRef(), let data = try slice.loadMaybeRef() else {
-                throw TOSRPCClient.Error.invalidResponse
-            }
+            let (code, data) = try TOSLegacyWalletRPC.initialComponents(wallet: wallet)
             params["init_code"] = try code.toBoc().base64EncodedString()
             params["init_data"] = try data.toBoc().base64EncodedString()
         }

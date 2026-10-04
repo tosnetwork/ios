@@ -462,18 +462,12 @@ extension API {
 
 extension API {
     func getSeqno(address: Address) async throws -> Int {
-        let response = try await tosRPCCall(
-            method: "getWalletInformation",
-            params: ["address": address.toRaw()]
-        )
+        let response = try await boundTOSRPCClient().walletInformation(address: address)
         return Int(try TOSWalletRPC.decodeSeqno(response))
     }
 
     func getWalletInfo(address: Address) async throws -> WalletInfo {
-        let response = try await tosRPCCall(
-            method: "getWalletInformation",
-            params: ["address": address.toRaw()]
-        )
+        let response = try await boundTOSRPCClient().walletInformation(address: address)
         return WalletInfo(
             address: address,
             isWallet: response["wallet"] as? Bool ?? response["is_wallet"] as? Bool ?? false,

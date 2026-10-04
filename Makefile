@@ -94,6 +94,8 @@ TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
 TEST_DERIVED_DATA_PATH ?= $(TEST_BUILD_ROOT)/DerivedData
+TEST_CONFIGURATION ?= TosWalletDebug
+TEST_PACKAGE_RESOURCE_BUNDLE_PATH ?= $(abspath $(TEST_DERIVED_DATA_PATH))/Build/Products/$(TEST_CONFIGURATION)-iphonesimulator
 LAYOUT_SMALL_DESTINATION ?= platform=iOS Simulator,name=iPhone 17e,OS=26.5
 LAYOUT_LARGE_DESTINATION ?= platform=iOS Simulator,name=iPhone 17 Pro Max,OS=26.5
 
@@ -144,9 +146,11 @@ test_project_scheme:
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
 		TEST_RUNNER_TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \
 		TEST_RUNNER_TOS_UI_EXPECTED_RPC_URL='$(TOS_UI_RPC_URL)' \
+		TEST_RUNNER_PACKAGE_RESOURCE_BUNDLE_PATH='$(TEST_PACKAGE_RESOURCE_BUNDLE_PATH)' \
 		xcodebuild -jobs $(BUILD_JOBS) \
 		-project TosWallet.xcodeproj \
 		-scheme $(SCHEME) \
+		-configuration '$(TEST_CONFIGURATION)' \
 		-destination '$(TEST_DESTINATION)' \
 		-disableAutomaticPackageResolution \
 		-onlyUsePackageVersionsFromResolvedFile \

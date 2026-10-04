@@ -42,7 +42,7 @@ final class SendServiceImplementation: SendService {
 
     func loadSeqno(wallet: Wallet) async throws -> UInt64 {
         let client = await apiProvider.api(wallet.network).boundTOSRPCClient()
-        return UInt64(try TOSWalletRPC.decodeSeqno(await client.callForWallet(method: "getWalletInformation", params: ["address": wallet.address.toRaw()], wallet: wallet)))
+        return UInt64(try TOSWalletRPC.decodeSeqno(await client.walletInformation(wallet: wallet)))
     }
 
     func loadTransactionInfo(

@@ -624,7 +624,7 @@ public struct TransferService {
         switch transfer {
         case let .ton(amount, recipient, comment):
             let account = try? await accountService.loadAccount(network: wallet.network, address: recipient.recipientAddress.address)
-            let shouldForceBounceFalse = ["empty", "uninit", "nonexist"].contains(account?.status)
+            let shouldForceBounceFalse = ["empty", "uninit", "uninitialized", "nonexist"].contains(account?.status)
             let isMax = await {
                 do {
                     let balance = try await balanceService.loadWalletBalance(
