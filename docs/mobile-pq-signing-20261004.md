@@ -109,6 +109,11 @@ python3 scripts/test_pq_vm.py --tos-root "$TOS_ROOT" --emulator "$TOS_EMULATOR" 
   --out "$OUT/vm.json"
 ```
 
+Mobile GUI tests bind the sender output to the recipient transaction using the
+serialized BOC message hash, and assert exact net credit after the BOC-bound fee.
+An already-funded no-code recipient can pay storage fees on a repeated run; the
+tests never replace this accounting with a gross-value assertion or tolerance.
+
 The actual transaction emulator checks successful original-message forwarding,
 account action success, exact recipient credit less fees, wrong signatures,
 replay, unchanged authority on rejection, and pre-activation VM15/18 rejection.

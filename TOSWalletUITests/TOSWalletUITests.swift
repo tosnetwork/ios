@@ -72,7 +72,19 @@ final class TOSWalletUITests: XCTestCase {
             let recipient = "0:" + String(repeating: index == 0 ? "7a" : "7b", count: 32)
             let before = try rpcBalance(address: recipient)
             action("pq.send");form([recipient, "0.01", "PUBLIC PQ UI \(index + 1)", "2"]);confirm("Confirm PQ transfer");pin();confirm("Review network fees");pin()
-            XCTAssertTrue(waitForBalance(address: recipient, timeout: 60) { $0 == before + 10_000_000 })
+            XCTAssertTrue(waitForBalance(address: recipient, timeout: 60) { $0 > before })
+            let senderRows = try legacyRawTransactions(address: address).filter { row in
+                (row["out_msgs"] as? [[String: Any]])?.contains { message in
+                    message["value"] as? String == "10000000" && message["bounced"] as? Bool == false
+                } == true
+            }
+            XCTAssertEqual(senderRows.count, 1)
+            let senderID = try XCTUnwrap(try XCTUnwrap(senderRows.first)["transaction_id"] as? [String: Any])
+            let lt = try XCTUnwrap(senderID["lt"] as? String)
+            let hash = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(senderID["hash"] as? String)))
+            let eventID = lt + ":" + hash.map { String(format: "%02x", $0) }.joined()
+            let recipientFee = try assertLegacyRecipientReceipt(sender: address, recipient: recipient, eventID: eventID, amount: 10_000_000)
+            XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 == before + 10_000_000 - recipientFee })
             action("pq.history")
             XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'delivered'")).firstMatch.waitForExistence(timeout: 30))
             action("pq.delete");confirm("Delete PQ UI QA \(index + 1)?");pin()
