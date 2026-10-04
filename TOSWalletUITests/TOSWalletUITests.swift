@@ -72,7 +72,11 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["Later"].waitForExistence(timeout: 5))
         app.descendants(matching: .any)["Later"].tap()
         XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 5))
-        app.descendants(matching: .any)["Continue"].tap()
+        let walletName = app.textFields["Wallet Name"]
+        XCTAssertTrue(walletName.exists)
+        let nameBeforeFailure = walletName.value as? String
+        XCTAssertNotNil(nameBeforeFailure)
+        app.buttons["wallet.customize.continue"].tap()
         let failure = app.alerts["Wallet creation failed"]
         XCTAssertTrue(failure.waitForExistence(timeout: 15))
         failure.buttons["Configure TOS Node"].tap()
@@ -82,9 +86,40 @@ final class TOSWalletUITests: XCTestCase {
         field.typeText(ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "http://127.0.0.1:18645")
         app.buttons["Save"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Customize your Wallet"].exists)
-        app.descendants(matching: .any)["Continue"].tap()
+        XCTAssertEqual(walletName.value as? String, nameBeforeFailure)
+        let retry = app.buttons["wallet.customize.continue"]
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        retry.tap()
         assertNativeWalletHome()
         XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
+    }
+
+    func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
+        launchRecoveryPhraseImport(phrase: fixtureMnemonic)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        let walletName = app.textFields["Wallet Name"]
+        let nameBeforeFailure = try XCTUnwrap(walletName.value as? String)
+        let retry = app.buttons["wallet.customize.continue"]
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        try setProxyMode("offline", resetCounts: true)
+        defer { try? setProxyMode("normal", resetCounts: false) }
+        retry.tap()
+        let failure = app.alerts["Wallet import failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 15))
+        failure.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].exists)
+        XCTAssertEqual(walletName.value as? String, nameBeforeFailure)
+        XCTAssertTrue(waitForEnabled(retry, expected: true))
+        try setProxyMode("normal", resetCounts: false)
+        retry.tap()
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCIJpqaXsswJiYI5vuG-K49U06Md9WprgFAzlIXGWoM_oQG"].waitForExistence(timeout: 10))
     }
 
     func testBackgroundPrivacyShieldAppearsAndForegroundRestores() {

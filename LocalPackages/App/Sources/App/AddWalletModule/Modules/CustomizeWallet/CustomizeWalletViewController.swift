@@ -1,3 +1,4 @@
+import TKLocalize
 import TKUIKit
 import UIKit
 
@@ -24,6 +25,10 @@ final class CustomizeWalletViewController: GenericViewViewController<CustomizeWa
         super.viewDidLoad()
 
         customView.textInputControl.delegate = self
+        customView.continueButton.isAccessibilityElement = true
+        customView.continueButton.accessibilityIdentifier = "wallet.customize.continue"
+        customView.continueButton.accessibilityLabel = TKLocales.Actions.continueAction
+        customView.continueButton.accessibilityTraits = .button
         setupBindings()
         setupGestures()
         setupViewActions()
@@ -75,7 +80,8 @@ private extension CustomizeWalletViewController {
         }
 
         viewModel.didUpdateContinueButtonIsEnabled = { [weak customView] isEnabled in
-            customView?.continueButton.isEnabled = isEnabled
+            customView?.continueButton.configuration.isEnabled = isEnabled
+            customView?.continueButton.accessibilityTraits = isEnabled ? .button : [.button, .notEnabled]
         }
 
         viewModel.didUpdateContinueButtonIsLoadig = { [weak customView] isLoading in

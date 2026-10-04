@@ -224,7 +224,7 @@ private extension ImportWalletCoordinator {
     ) {
         let module = customizeWalletModule()
 
-        module.output.didCustomizeWallet = { [weak self] model in
+        module.output.didCustomizeWallet = { [weak self, weak output = module.output] model in
             guard let self else { return }
             Task {
                 do {
@@ -242,6 +242,7 @@ private extension ImportWalletCoordinator {
                         "error": error.localizedDescription,
                     ])
                     await MainActor.run {
+                        output?.resetSubmission()
                         let alert = UIAlertController(title: "Wallet import failed", message: error.localizedDescription, preferredStyle: .alert)
                         alert.addAction(UIAlertAction(title: "Configure TOS Node", style: .default) { _ in
                             DispatchQueue.main.async {

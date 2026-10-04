@@ -116,7 +116,7 @@ private extension CreateWalletCoordinator {
     ) {
         let module = customizeWalletModule()
 
-        module.output.didCustomizeWallet = { [weak self] model in
+        module.output.didCustomizeWallet = { [weak self, weak output = module.output] model in
             guard let self else { return }
             Task {
                 let trace = Trace(name: "create_wallet")
@@ -142,6 +142,7 @@ private extension CreateWalletCoordinator {
                         "error": error.localizedDescription,
                     ])
                     await MainActor.run {
+                        output?.resetSubmission()
                         let alert = UIAlertController(
                             title: "Wallet creation failed",
                             message: error.localizedDescription,
