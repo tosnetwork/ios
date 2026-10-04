@@ -291,7 +291,9 @@ final class TOSWalletUITests: XCTestCase {
         let existingWallet = app.cells.containing(.staticText, identifier: "Existing Wallet").firstMatch
         XCTAssertTrue(existingWallet.waitForExistence(timeout: 5))
         assertV1ImportOptionsAreHidden()
-        existingWallet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let chevron = existingWallet.images["Icons/16/ic-chevron-right-16"]
+        XCTAssertTrue(chevron.waitForExistence(timeout: 5))
+        chevron.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.descendants(matching: .any)["Paste"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["Continue"].exists)

@@ -87,6 +87,7 @@ final class AddWalletOptionPickerViewController: GenericViewViewController<AddWa
             let cell = collectionView.dequeueConfiguredReusableCell(using: listCellRegistration, for: indexPath, item: itemIdentifier.cellConfiguration)
             let accessoryView = TKListItemIconAccessoryView()
             accessoryView.configuration = .chevron
+            accessoryView.isUserInteractionEnabled = false
             cell.defaultAccessoryViews = [accessoryView]
             return cell
         }
