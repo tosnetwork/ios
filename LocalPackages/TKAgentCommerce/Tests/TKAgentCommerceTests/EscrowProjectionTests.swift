@@ -44,9 +44,10 @@ final class EscrowProjectionTests: XCTestCase {
     }
 
     private struct SettlementExpectation: Decodable {
-        let released: Bool
-        let refunded: Bool
-        let providerCreditAtomic: String
+        let releasePending: Bool
+        let refundPending: Bool
+        let requestedReleaseAtomic: String
+        let requestedRefundAtomic: String
     }
 
     private func loadVectors() throws -> Vectors {
@@ -139,27 +140,84 @@ final class EscrowProjectionTests: XCTestCase {
             XCTAssertEqual(funding.settledAtomic, try parseAtomicAmount(wantFunding.settledAtomic), testCase.name)
             XCTAssertEqual(funding.receiptCommitment, wantFunding.receiptCommitment, testCase.name)
 
-            XCTAssertEqual(settlement.released, wantSettlement.released, testCase.name)
-            XCTAssertEqual(settlement.refunded, wantSettlement.refunded, testCase.name)
-            XCTAssertEqual(settlement.providerCreditAtomic,
-                           try parseAtomicAmount(wantSettlement.providerCreditAtomic), testCase.name)
+            XCTAssertEqual(settlement.releasePending, wantSettlement.releasePending, testCase.name)
+            XCTAssertEqual(settlement.refundPending, wantSettlement.refundPending, testCase.name)
+            XCTAssertEqual(settlement.requestedReleaseAtomic,
+                           try parseAtomicAmount(wantSettlement.requestedReleaseAtomic), testCase.name)
+            XCTAssertEqual(settlement.requestedRefundAtomic,
+                           try parseAtomicAmount(wantSettlement.requestedRefundAtomic), testCase.name)
 
             XCTAssertEqual(try EscrowProjection.isExactlyFunded(state, quotedAtomic: quoted),
                            try XCTUnwrap(testCase.exactlyFundedAtQuote, testCase.name), testCase.name)
         }
     }
 
-    func testFundedIsNeverReleased() throws {
+    func testFundedIsNeverReleasePending() throws {
         let vectors = try loadVectors()
         let funded = try XCTUnwrap(runtime(try vectorCase(vectors, "funded")))
         XCTAssertEqual(funded.status, EscrowStatus.funded.rawValue)
         let settlement = try EscrowProjection.settlement(funded)
-        XCTAssertFalse(settlement.released)
-        XCTAssertFalse(settlement.refunded)
-        XCTAssertEqual(settlement.providerCreditAtomic, 0)
+        XCTAssertFalse(settlement.releasePending)
+        XCTAssertFalse(settlement.refundPending)
+        XCTAssertEqual(settlement.requestedReleaseAtomic, 0)
+        XCTAssertEqual(settlement.requestedRefundAtomic, 0)
         XCTAssertFalse(try EscrowProjection.funding(funded).awaitingFunding)
         XCTAssertTrue(try EscrowProjection.isExactlyFunded(funded, quotedAtomic: 25_000_000))
         XCTAssertFalse(try EscrowProjection.isExactlyFunded(funded, quotedAtomic: 24_999_999))
+    }
+
+    private static let settlementVectorKeys: Set<String> = [
+        "release_pending", "refund_pending", "requested_release_atomic", "requested_refund_atomic",
+    ]
+
+    private func rawSettlementKeys() throws -> [String: Set<String>] {
+        let url = try XCTUnwrap(Bundle.module.url(
+            forResource: "mobile_buyer_escrow_projection_v2", withExtension: "json"))
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
+        var keys: [String: Set<String>] = [:]
+        for item in cases {
+            guard let view = item["settlement_view"] as? [String: Any] else { continue }
+            keys[try XCTUnwrap(item["name"] as? String)] = Set(view.keys)
+        }
+        return keys
+    }
+
+    func testSettlementViewReportsRequestsNeverDelivery() throws {
+        // A payout can be refused while the escrow stays pending, so no field may
+        // present a pending payout as delivered, paid or credited.
+        let view = try EscrowProjection.settlement(nil)
+        let fields = Set(Mirror(reflecting: view).children.compactMap { $0.label })
+        XCTAssertEqual(fields, ["releasePending", "refundPending",
+                                "requestedReleaseAtomic", "requestedRefundAtomic"])
+        let vectorKeys = try rawSettlementKeys()
+        XCTAssertFalse(vectorKeys.isEmpty)
+        for (name, keys) in vectorKeys {
+            XCTAssertEqual(keys, Self.settlementVectorKeys, name)
+        }
+        let forbidden = ["credit", "paid", "deliver", "released", "refunded", "received"]
+        for name in fields.union(Self.settlementVectorKeys) {
+            for word in forbidden {
+                XCTAssertFalse(name.lowercased().contains(word), "\(name) claims \(word)")
+            }
+        }
+    }
+
+    func testRequestedAmountsAreReportedOnlyForTheirPendingStatus() throws {
+        let vectors = try loadVectors()
+        for testCase in vectors.cases where testCase.expectError == nil && testCase.present {
+            let settlement = try EscrowProjection.settlement(runtime(testCase))
+            let name = testCase.name
+            XCTAssertEqual(settlement.requestedReleaseAtomic != 0, name == "release_pending", name)
+            XCTAssertEqual(settlement.requestedRefundAtomic != 0, name == "refund_pending", name)
+            XCTAssertEqual(settlement.releasePending, name == "release_pending", name)
+            XCTAssertEqual(settlement.refundPending, name == "refund_pending", name)
+        }
+        let release = try EscrowProjection.settlement(runtime(try vectorCase(vectors, "release_pending")))
+        XCTAssertEqual(release.requestedReleaseAtomic, 25_000_000)
+        let refund = try EscrowProjection.settlement(runtime(try vectorCase(vectors, "refund_pending")))
+        XCTAssertEqual(refund.requestedRefundAtomic, 25_000_000)
     }
 
     func testSettlementInProgressIsNotDispatchable() throws {
