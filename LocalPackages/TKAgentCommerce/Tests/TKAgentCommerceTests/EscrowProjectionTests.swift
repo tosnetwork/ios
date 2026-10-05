@@ -171,6 +171,23 @@ final class EscrowProjectionTests: XCTestCase {
         }
     }
 
+    func testFundingGateCountsOnlyTheFundedStatus() throws {
+        let vectors = try loadVectors()
+        let quoted = try parseAtomicAmount(vectors.quotedAtomic)
+        for testCase in vectors.cases {
+            let expected = testCase.expectError == nil && testCase.exactlyFundedAtQuote == true
+            XCTAssertEqual(EscrowProjection.countsAsFunding(runtime(testCase), quotedAtomic: quoted),
+                           expected, testCase.name)
+        }
+        XCTAssertTrue(EscrowProjection.countsAsFunding(try ContractEscrowStates.state("funded"),
+                                                       quotedAtomic: quoted))
+        for name in ["pending_acceptance", "awaiting_funding", "release_pending", "refund_pending"] {
+            XCTAssertFalse(EscrowProjection.countsAsFunding(try ContractEscrowStates.state(name),
+                                                            quotedAtomic: quoted), name)
+        }
+        XCTAssertFalse(EscrowProjection.countsAsFunding(nil, quotedAtomic: quoted))
+    }
+
     func testMissingEscrowIsNotFundable() throws {
         let funding = try EscrowProjection.funding(nil)
         XCTAssertFalse(funding.found)

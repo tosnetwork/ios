@@ -195,4 +195,14 @@ public enum EscrowProjection {
         let state = try validate(escrow)
         return state.status == .funded && quotedAtomic > 0 && state.funded == quotedAtomic
     }
+
+    /// countsAsFunding is the funding gate for one finalized observation: it is
+    /// true only when the observed escrow is exactly funded at the quoted amount.
+    /// A missing escrow, any other status (including a pending release or refund,
+    /// which still record the funded amount), and a state the projection refuses
+    /// all count as not funded, so a bad observation can only delay funding,
+    /// never confirm it.
+    public static func countsAsFunding(_ escrow: EscrowRuntimeState?, quotedAtomic: UInt64) -> Bool {
+        (try? isExactlyFunded(escrow, quotedAtomic: quotedAtomic)) == true
+    }
 }
