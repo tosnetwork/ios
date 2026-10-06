@@ -90,6 +90,9 @@ archive_v1_release:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
+# Expected guard-deletion failures need XCTest receipts, not a full sysdiagnose.
+# Other suites retain the usual diagnostics; callers may override either mode.
+TEST_DIAGNOSTICS ?= $(if $(findstring TOSV5R2,$(TEST_ONLY)),never,on-failure)
 TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
@@ -158,6 +161,7 @@ test_project_scheme:
 		-onlyUsePackageVersionsFromResolvedFile \
 		-skipPackageUpdates \
 		-parallel-testing-enabled NO \
+		-collect-test-diagnostics $(TEST_DIAGNOSTICS) \
 		-derivedDataPath $(TEST_DERIVED_DATA_PATH) \
 		-resultBundlePath "$$result_bundle" \
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
