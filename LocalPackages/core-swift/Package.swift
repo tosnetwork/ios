@@ -31,13 +31,14 @@ let package = Package(
     ],
     targets: [
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
-            exclude: ["CMakeLists.txt", "PROVENANCE.json", "vendor/MLDSA-LICENSE"],
-            sources: ["tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
+            exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
+            sources: ["tos_v5r2.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
+                "vendor/slhdsa/sha2_256.c", "vendor/slhdsa/sha2_512.c", "tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
                 "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
                 "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",
                 "vendor/falcon/sign.c", "vendor/falcon/fft.c", "vendor/falcon/fpr.c", "vendor/falcon/rng.c"],
             publicHeadersPath: "include", cSettings: [
-                .headerSearchPath("."), .headerSearchPath("vendor/mldsa"), .headerSearchPath("vendor/falcon"),
+                .headerSearchPath("."), .headerSearchPath("vendor/mldsa"), .headerSearchPath("vendor/falcon"), .headerSearchPath("vendor/slhdsa"),
                 .define("MLD_CONFIG_FILE", to: "\"mldsa-config.h\""),
                 .define("FALCON_FPEMU", to: "1"), .define("FALCON_FPNATIVE", to: "0"),
                 .define("FALCON_AVX2", to: "0"), .define("FALCON_FMA", to: "0"),
