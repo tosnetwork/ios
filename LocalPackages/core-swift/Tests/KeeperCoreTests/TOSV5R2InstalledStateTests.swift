@@ -1,4 +1,5 @@
 import XCTest
+import BigInt
 import TonSwift
 import CoreComponents
 @testable import KeeperCore
@@ -34,11 +35,13 @@ final class TOSV5R2InstalledStateTests: XCTestCase {
             XCTAssertThrowsError(try TOSV5R2WalletData.parse(cell, birth: b), "Invalid wallet accepted")
         }
     }
-    private func account(extra: UInt8 = 0, code: Cell, data: Cell, address: Address, split: Bool = false, trailing: Bool = false) throws -> Cell {
+    private func account(extra: UInt8 = 0, code: Cell, data: Cell, address: Address, split: Bool = false, trailing: Bool = false, balance: Data = Data(), debt: Data? = nil) throws -> Cell {
         let b = try Builder().store(bit: true).store(address).store(uint: 0, bits: 3).store(uint: 0, bits: 3).store(uint: extra, bits: 3)
         if extra == 1 { try b.store(data: Data(repeating: 4, count: 32)) }
-        try b.store(uint: 100, bits: 32).store(bit: false).store(uint: 0, bits: 64)
-            .store(uint: 0, bits: 4).store(bit: false).store(bit: true).store(bit: split)
+        try b.store(uint: 100, bits: 32).store(bit: debt != nil)
+        if let debt { try b.store(uint: debt.count, bits: 4).store(data: debt) }
+        try b.store(uint: 0, bits: 64).store(uint: balance.count, bits: 4).store(data: balance)
+            .store(bit: false).store(bit: true).store(bit: split)
         if split { try b.store(uint: 1, bits: 5) }
         try b.store(bit: false).store(bit: true).store(ref: code).store(bit: true).store(ref: data).store(bit: false)
         if trailing { try b.store(bit: false) }
@@ -57,6 +60,17 @@ final class TOSV5R2InstalledStateTests: XCTestCase {
                           account(code: code, data: data, address: address, trailing: true)] {
             XCTAssertThrowsError(try TOSV5R2AccountState.data(value.toBoc(), expectedAddress: address, expectedCode: code), "Invalid account accepted")
         }
+    }
+    func testBalanceAndDebtPreserveUnsignedCoins() throws {
+        let code = try byte(1), data = try byte(2), address = Address(workchain: 0, hash: Data(repeating: 3, count: 32))
+        let boc = try account(code: code, data: data, address: address, balance: Data(repeating: 255, count: 15), debt: Data([128])).toBoc()
+        let snapshot = try TOSV5R2AccountState.snapshot(boc, expectedAddress: address, expectedCode: code)
+        XCTAssertEqual(snapshot.balance, (BigUInt(1) << 120) - 1)
+        XCTAssertEqual(snapshot.storageDebt, BigUInt(128))
+        XCTAssertEqual(snapshot.lastPaid, 100)
+        XCTAssertEqual(snapshot.data.hash(), data.hash())
+        let empty = try account(code: code, data: data, address: address).toBoc()
+        XCTAssertEqual(try TOSV5R2AccountState.snapshot(empty, expectedAddress: address, expectedCode: code).balance, 0)
     }
     func testVaultCounterAndImmutableBits() throws {
         let expected = try birth().vaultData

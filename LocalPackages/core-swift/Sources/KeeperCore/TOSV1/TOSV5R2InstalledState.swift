@@ -1,4 +1,5 @@
 import Foundation
+import BigInt
 import TonSwift
 import CoreComponents
 
@@ -29,7 +30,15 @@ public struct TOSV5R2WalletData {
 
 public enum TOSV5R2AccountState {
     /// TOS block.tlb StorageUsed + StorageExtraInfo; the old TON Account codec is insufficient.
+    /// Raw observations only; pending storage/execution fees still need to be calculated.
+    public struct Snapshot {
+        public let data: Cell, balance: BigUInt, storageDebt: BigUInt
+        public let lastPaid: UInt32
+    }
     public static func data(_ boc: Data, expectedAddress: Address, expectedCode: Cell) throws -> Cell {
+        try snapshot(boc, expectedAddress: expectedAddress, expectedCode: expectedCode).data
+    }
+    public static func snapshot(_ boc: Data, expectedAddress: Address, expectedCode: Cell) throws -> Snapshot {
         guard (1...67_108_864).contains(boc.count), expectedAddress.workchain == 0 else { throw TOSPQError.invalidInput }
         let roots = try Cell.fromBoc(src: boc)
         guard roots.count == 1, !roots[0].isExotic, roots[0].level == 0 else { throw TOSPQError.invalidInput }
@@ -47,10 +56,14 @@ public enum TOSV5R2AccountState {
         case 1: try s.skip(256)
         default: throw TOSPQError.invalidInput
         }
-        try s.skip(32)
-        if try s.loadBoolean() { let bytes = Int(try s.loadUint(bits: 4)); try s.skip(bytes * 8) }
+        func coins() throws -> BigUInt {
+            let bytes = Int(try s.loadUint(bits: 4))
+            return bytes == 0 ? BigUInt(0) : BigUInt(try s.loadBytes(bytes))
+        }
+        let lastPaid = UInt32(try s.loadUint(bits: 32))
+        let storageDebt = try s.loadBoolean() ? coins() : BigUInt(0)
         try s.skip(64)
-        let balanceBytes = Int(try s.loadUint(bits: 4)); try s.skip(balanceBytes * 8)
+        let balance = try coins()
         if try s.loadBoolean() { _ = try s.loadRef() }
         guard try s.loadBoolean(), try s.loadBoolean() == false, try s.loadBoolean() == false, try s.loadBoolean() else { throw TOSPQError.invalidInput }
         let code = try s.loadRef()
@@ -59,7 +72,7 @@ public enum TOSV5R2AccountState {
         guard try s.loadBoolean() == false, !code.isExotic, code.level == 0, code.hash() == expectedCode.hash(),
               !data.isExotic, data.level == 0 else { throw TOSPQError.keyBinding }
         try s.endParse()
-        return data
+        return Snapshot(data: data, balance: balance, storageDebt: storageDebt, lastPaid: lastPaid)
     }
     public static func vaultCounter(_ data: Cell, expected: Cell) throws -> UInt32 {
         guard !data.isExotic, data.level == 0 else { throw TOSPQError.invalidInput }
@@ -81,9 +94,11 @@ public struct TOSV5R2InstalledWallet {
     private let vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32
     private let globalID: Int32, walletAddress: Address, moduleAddress: Address
     private let installedRoute: TOSV5R2InstalledRoute
-    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32, globalID: Int32, walletAddress: Address, moduleAddress: Address, installedRoute: TOSV5R2InstalledRoute) {
+    public let walletAccount: TOSV5R2AccountState.Snapshot, moduleAccount: TOSV5R2AccountState.Snapshot, vaultAccount: TOSV5R2AccountState.Snapshot
+    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32, globalID: Int32, walletAddress: Address, moduleAddress: Address, installedRoute: TOSV5R2InstalledRoute, walletAccount: TOSV5R2AccountState.Snapshot, moduleAccount: TOSV5R2AccountState.Snapshot, vaultAccount: TOSV5R2AccountState.Snapshot) {
         self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy; self.vaultTime = vaultTime; self.epoch0 = epoch0; self.walletTime = walletTime
         self.globalID = globalID; self.walletAddress = walletAddress; self.moduleAddress = moduleAddress; self.installedRoute = installedRoute
+        self.walletAccount = walletAccount; self.moduleAccount = moduleAccount; self.vaultAccount = vaultAccount
     }
     /// Chain eligibility only; custody, fee and signed-action gates still apply.
     public func requirePrimaryExecution(policyProof: TOSV5R2ProofBridge.BoundRead, now: Int64, maximumAge: Int64) throws {
@@ -131,15 +146,18 @@ public struct TOSV5R2InstalledWallet {
                              now: Int64, maximumAge: Int64) throws -> Self {
         try wallet.requireLive(now: now, maximumAge: maximumAge)
         try wallet.requireSameCheckpoint(module); try wallet.requireSameCheckpoint(vault)
-        func data(_ proof: TOSV5R2ProofBridge.BoundRead, address: Address, initCell: Cell) throws -> Cell {
+        func account(_ proof: TOSV5R2ProofBridge.BoundRead, address: Address, initCell: Cell) throws -> TOSV5R2AccountState.Snapshot {
             let code = try initCell.beginParse().loadRef()
             let text = "0:" + address.hash.map { String(format: "%02x", $0) }.joined()
-            return try TOSV5R2AccountState.data(proof.accountState(expectedAddress: text, expectedCodeHash: code.hash()),
+            return try TOSV5R2AccountState.snapshot(proof.accountState(expectedAddress: text, expectedCodeHash: code.hash()),
                                                expectedAddress: address, expectedCode: code)
         }
-        let wd = try data(wallet, address: birth.address, initCell: birth.walletInit)
-        let md = try data(module, address: route.moduleAddress, initCell: route.moduleInit)
-        let vd = try data(vault, address: route.vaultAddress, initCell: route.vaultInit)
+        let walletAccount = try account(wallet, address: birth.address, initCell: birth.walletInit)
+        let wd = walletAccount.data
+        let moduleAccount = try account(module, address: route.moduleAddress, initCell: route.moduleInit)
+        let md = moduleAccount.data
+        let vaultAccount = try account(vault, address: route.vaultAddress, initCell: route.vaultInit)
+        let vd = vaultAccount.data
         guard md.hash() == route.moduleData.hash() else { throw TOSPQError.keyBinding }
         let identity = try md.beginParse(); try identity.skip(8)
         let globalID = Int32(try identity.loadInt(bits: 32))
@@ -156,6 +174,6 @@ public struct TOSV5R2InstalledWallet {
         return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth, module: route.moduleInit, metadata: route.metadata),
                         nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: route.vaultData),
                         walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0,
-                        walletTime: walletTime, globalID: globalID, walletAddress: birth.address, moduleAddress: route.moduleAddress, installedRoute: route)
+                        walletTime: walletTime, globalID: globalID, walletAddress: birth.address, moduleAddress: route.moduleAddress, installedRoute: route, walletAccount: walletAccount, moduleAccount: moduleAccount, vaultAccount: vaultAccount)
     }
 }
