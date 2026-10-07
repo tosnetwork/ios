@@ -96,6 +96,7 @@ let package = Package(
             path: "Sources/KeeperCore",
             resources: [
                 .copy("PackageResources/DefaultRemoteConfiguration.json"),
+                .copy("PackageResources/V5R2ReviewCandidate"),
                 .copy("PackageResources/known_accounts.json"),
             ]
         ),
