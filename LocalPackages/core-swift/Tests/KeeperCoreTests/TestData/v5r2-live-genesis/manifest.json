@@ -52,6 +52,26 @@
     "wallet/request.json": {
       "bytes": 355,
       "sha256": "75dcfcf0ee5df31c562379f3a9c22f77068fc600a8a3d0d91291638d06b8f2d3"
+    },
+    "policy/request.json": {
+      "bytes": 160,
+      "sha256": "3171f69badfaa880d20dc1438ad5657eb51796e3b4e30170aa262ceda92b3804"
+    },
+    "policy/material/masterchain-info.tl": {
+      "bytes": 184,
+      "sha256": "7c9f9753533c6fbe05d404e4db155ed9873a0bb4e12cf037e3dfe4f7103b5ecc"
+    },
+    "policy/material/config.tl": {
+      "bytes": 1804,
+      "sha256": "c9022daa53758d2416981039fc402234a725a07d4282ff252244bb17aa7e15bb"
+    },
+    "policy/material/account.tl": {
+      "bytes": 2392,
+      "sha256": "e096685746c42ab393f017e4bde0e7f6b7261477b28cf4b6f1460de6fed07fbf"
+    },
+    "policy/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "e0d87f70e9ce3e6a54766b18beab4b05f02d7d7f25de0f23689bdbf9edebbd94"
     }
   }
 }

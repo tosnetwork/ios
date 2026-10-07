@@ -46,13 +46,14 @@ final class TOSV5R2LiveGenesisProofTests: XCTestCase {
         let now = try XCTUnwrap(manifest["controlled_now"] as? NSNumber).int64Value
         func prove(_ role: String) throws -> TOSV5R2ProofBridge.BoundRead {
             let session = try TOSV5R2ProofSession(walletID: UUID(), locallyProvisionedAnchor: read("anchor.json"), baseDirectory: directory)
-            let replies = try [read(role + "/material/chain-0000.tl"), read(role + "/material/account.tl")]
+            let names = role == "policy" ? ["masterchain-info.tl", "chain-0000.tl", "config.tl", "account.tl"] : ["chain-0000.tl", "account.tl"]
+            let replies = try names.map { try read(role + "/material/" + $0) }
             var calls = 0
             let result = try session.enrollBound(request: read(role + "/request.json"), now: now) { _, capacity in
                 guard calls < replies.count, replies[calls].count <= capacity else { throw TOSPQError.invalidInput }
                 defer { calls += 1 }; return replies[calls]
             }
-            XCTAssertEqual(calls, 2)
+            XCTAssertEqual(calls, names.count)
             return result
         }
         let walletProof = try prove("wallet"), moduleProof = try prove("module"), vaultProof = try prove("vault")
@@ -60,6 +61,16 @@ final class TOSV5R2LiveGenesisProofTests: XCTestCase {
         XCTAssertEqual(installed.state.epoch, 1); XCTAssertEqual(installed.nextFeeLeaf, 0)
         XCTAssertEqual(installed.walletAccount.balance, BigUInt(1_000_000_000_000_000))
         try installed.requireFeeProof(now: now, maximumAge: 300)
+        let policyProof = try prove("policy")
+        try installed.requirePrimaryExecution(policyProof: policyProof, now: now, maximumAge: 300)
+        try installed.requirePrimaryCustody(primary, policyProof: policyProof, now: now, maximumAge: 300)
+        let actions = try Builder().endCell()
+        let request = try installed.primaryExecuteRequest(policyProof: policyProof, actions: actions, validUntil: UInt32(now + 60), now: now, maximumAge: 300)
+        XCTAssertEqual(request.role, .primary)
+        var badKey = primary; badKey[0] ^= 1
+        XCTAssertThrowsError(try installed.requirePrimaryCustody(badKey, policyProof: policyProof, now: now, maximumAge: 300), "Wrong current PRIMARY key accepted")
+        XCTAssertThrowsError(try installed.primaryExecuteRequest(policyProof: policyProof, actions: actions, validUntil: UInt32(now), now: now, maximumAge: 300), "Expired PRIMARY request accepted")
+
         XCTAssertThrowsError(try walletProof.requireLive(now: now + 301, maximumAge: 300), "Expired proof passed freshness gate")
     }
 }
