@@ -60,4 +60,49 @@ public enum TOSV5R2ProofBridge {
         return Data(output.prefix(used))
     }
 
+    /// Blocking transport; callers must enforce bounded receive, timeout and cancellation.
+    public typealias Transport = (Data, Int) throws -> Data
+    private final class QueryContext {
+        let transport: Transport
+        var failure: Error?
+        init(_ transport: @escaping Transport) { self.transport = transport }
+    }
+    internal static func acquirePersisted(directory: URL, initialize: Bool, anchor: Data, request: Data,
+                                          now: Int64, transport: @escaping Transport) throws -> Data {
+        guard now > 0, (1...1_048_576).contains(anchor.count), (1...1_048_576).contains(request.count),
+              !directory.path.utf8.contains(0) else { throw TOSPQError.invalidInput }
+        let context = QueryContext(transport)
+        let opaque = Unmanaged.passUnretained(context).toOpaque()
+        let callback: tos_proof_query_callback = { opaque, query, querySize, response, capacity, used in
+            guard let opaque, let query, let response, let used,
+                  (1...16384).contains(querySize), (1...67_108_864).contains(capacity) else { return -1 }
+            used.pointee = 0
+            let context = Unmanaged<QueryContext>.fromOpaque(opaque).takeUnretainedValue()
+            do {
+                let bytes = try context.transport(Data(bytes: query, count: querySize), capacity)
+                guard !bytes.isEmpty, bytes.count <= capacity else { throw TOSPQError.invalidInput }
+                bytes.copyBytes(to: response, count: bytes.count)
+                used.pointee = bytes.count
+                return 0
+            } catch {
+                context.failure = error
+                return -1
+            }
+        }
+        var output = Data(count: 67_108_864), used = 0
+        let status = withExtendedLifetime(context) {
+            directory.path.withCString { path in anchor.withUnsafeBytes { a in request.withUnsafeBytes { r in
+                output.withUnsafeMutableBytes { out in
+                    tos_proof_acquire_verify_live_persisted(path, initialize ? 1 : 0,
+                        a.bindMemory(to: CChar.self).baseAddress, a.count,
+                        r.bindMemory(to: CChar.self).baseAddress, r.count, now, callback, opaque,
+                        out.bindMemory(to: CChar.self).baseAddress, out.count, &used)
+                }
+            } } }
+        }
+        if let failure = context.failure { throw failure }
+        guard status == 0, used > 0, used <= output.count else { throw TOSPQError.invalidInput }
+        return Data(output.prefix(used))
+    }
+
 }

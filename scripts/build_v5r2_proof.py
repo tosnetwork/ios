@@ -19,13 +19,22 @@ def main():
         revision = (repo / 'scripts/v5r2-proof-revision.txt').read_text().strip()
         if not re.fullmatch(r'[0-9a-f]{40}', revision):
             raise RuntimeError('Expected an immutable proof source revision')
-        source = Path(os.environ.get('TOS_PROOF_ROOT', cache / 'source')).resolve()
+        default_source = (cache / 'source').resolve()
+        source = Path(os.environ.get('TOS_PROOF_ROOT', default_source)).resolve()
         if not source.exists():
             subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', 'https://github.com/tosnetwork/tos.git', str(source)], check=True)
             subprocess.run(['git', '-C', str(source), 'checkout', '--detach', revision], check=True)
             subprocess.run(['git', '-C', str(source), 'submodule', 'update', '--init', '--recursive'], check=True)
-        if subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip() != revision or subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain'], text=True).strip():
-            raise RuntimeError('Proof source must be clean and match the pinned revision')
+        head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+        if subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain'], text=True).strip():
+            raise RuntimeError('Proof source contains local changes')
+        if head != revision and source == default_source:
+            subprocess.run(['git', '-C', str(source), 'fetch', 'origin', revision], check=True)
+            subprocess.run(['git', '-C', str(source), 'checkout', '--detach', revision], check=True)
+            subprocess.run(['git', '-C', str(source), 'submodule', 'update', '--init', '--recursive'], check=True)
+            head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+        if head != revision:
+            raise RuntimeError('Provided proof source does not match the pinned revision')
         builds = Path(os.environ.get('TOS_PROOF_BUILD_ROOT', cache / 'build')).resolve()
         host = Path(os.environ.get('TOS_PROOF_HOST_BUILD', builds / 'host')).resolve()
         if not (host / 'CMakeCache.txt').exists():

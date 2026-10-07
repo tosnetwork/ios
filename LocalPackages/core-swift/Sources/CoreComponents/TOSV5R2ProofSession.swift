@@ -29,4 +29,11 @@ public final class TOSV5R2ProofSession {
     public func read(request: Data, now: Int64, material: [TOSV5R2ProofBridge.Material]) throws -> Data {
         try TOSV5R2ProofBridge.verifyPersisted(directory: directory, initialize: false, anchor: anchor, request: request, now: now, material: material)
     }
+    public func enroll(request: Data, now: Int64, transport: @escaping TOSV5R2ProofBridge.Transport) throws -> Data {
+        try TOSV5R2ProofBridge.acquirePersisted(directory: directory, initialize: true, anchor: anchor, request: request, now: now, transport: transport)
+    }
+    public func read(request: Data, now: Int64, transport: @escaping TOSV5R2ProofBridge.Transport) throws -> Data {
+        try TOSV5R2ProofBridge.acquirePersisted(directory: directory, initialize: false, anchor: anchor, request: request, now: now, transport: transport)
+    }
+
 }

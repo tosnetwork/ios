@@ -27,4 +27,32 @@ final class TOSV5R2ProofSessionTests: XCTestCase {
         try FileManager.default.removeItem(at: state)
         XCTAssertThrowsError(try reopened.enroll(request: request, now: 1791200932, material: initial))
     }
+    func testAcquisitionCommitsBeforeReturningAndPropagatesTransportFailure() throws {
+        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "v5r2-proof", withExtension: nil))
+        func bytes(_ path: String) throws -> Data { try Data(contentsOf: fixture.appendingPathComponent(path)) }
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let id = UUID()
+        let session = try TOSV5R2ProofSession(walletID: id, locallyProvisionedAnchor: bytes("anchor.json"), baseDirectory: base)
+        let replies = try ["live/masterchain-info.tl", "historical/chain-0000.tl", "live/config.tl"].map(bytes)
+        var queries = 0
+        let result = try session.enroll(request: bytes("live-request.json"), now: 1791200932) { query, capacity in
+            XCTAssertFalse(query.isEmpty)
+            guard queries < replies.count else { throw TOSPQError.invalidInput }
+            let reply = replies[queries]; queries += 1
+            XCTAssertLessThanOrEqual(reply.count, capacity)
+            return reply
+        }
+        XCTAssertEqual(queries, 3)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: result) as? [String: Any])
+        XCTAssertEqual(object["status"] as? String, "verified")
+        let state = base.appendingPathComponent("v5r2-proof-checkpoints/" + id.uuidString + "/checkpoint.json")
+        let saved = try Data(contentsOf: state)
+        enum TransportFailure: Error { case stopped }
+        XCTAssertThrowsError(try session.read(request: bytes("live-request.json"), now: 1791200932) { _, _ in
+            throw TransportFailure.stopped
+        }) { XCTAssertTrue($0 is TransportFailure) }
+        XCTAssertEqual(try Data(contentsOf: state), saved)
+    }
+
 }
