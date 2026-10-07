@@ -7,6 +7,7 @@ public struct TOSV5R2FeeStateError: Error { public let status: Int32 }
 /// Single-writer local state. The caller must authenticate route/time/counters and enrollment.
 /// Preview and cached bytes do not authorize signing or broadcast.
 public final class TOSV5R2FeeState {
+    private struct FeeSecret { let seed: UnsafePointer<UInt8>?; let path: UnsafePointer<UInt8>? }
     private var handle: UInt64
     private let lock = NSLock()
     private init(handle: UInt64) { self.handle = handle }
@@ -54,6 +55,31 @@ public final class TOSV5R2FeeState {
         lock.lock(); defer { lock.unlock() }
         if handle == 0 { return }
         try Self.check(tos_fee_state_close(handle)); handle = 0
+    }
+    /// Consumes seed. Enrollment and current chain observations must be authenticated before this call.
+    public func signOnceAndWipe(time: UInt32, chainNext: UInt32, leaf: UInt32, digest: Data,
+                               publicKey: Data, seed: inout Data, path: Data) throws -> Data {
+        defer { seed.resetBytes(in: 0..<seed.count) }
+        guard seed.count == 48, path.count == 640, publicKey.count == 60, digest.count == 32 else {
+            throw TOSV5R2FeeStateError(status: -1)
+        }
+        return try session { h in
+            var output = Data(count: 2832)
+            let rc = Self.pointer(seed) { s in Self.pointer(path) { p in Self.pointer(publicKey) { k in Self.pointer(digest) { d in
+                var secret = FeeSecret(seed: s, path: p)
+                return withUnsafeMutablePointer(to: &secret) { context in output.withUnsafeMutableBytes { out in
+                    tos_fee_state_sign_once(h, time, chainNext, leaf, d, k, { opaque, key, q, hash, result, size in
+                        guard let opaque else { return 0 }
+                        let secret = opaque.assumingMemoryBound(to: FeeSecret.self).pointee
+                        return tos_wallet_lms_fee_sign_reserved(secret.seed, 48, q, hash, 32,
+                            secret.path, 640, key, 60, result, size)
+                    }, { _, key, q, hash, sig, size in
+                        tos_wallet_lms_fee_verify(q, hash, 32, sig, size, key, 60)
+                    }, UnsafeMutableRawPointer(context), out.bindMemory(to: UInt8.self).baseAddress, 2832)
+                }}
+            }}}}
+            try Self.check(rc); return output
+        }
     }
     public func cacheVerified(token: UInt64, publicKey: Data, signature: Data) throws {
         guard publicKey.count == 60, signature.count == 2832 else { throw TOSV5R2FeeStateError(status: -1) }
