@@ -32,4 +32,12 @@ final class TOSV5R2InstalledRouteTests: XCTestCase {
             XCTAssertThrowsError(try TOSV5R2InstalledRoute.successor(birth: original, next: next), "Incompatible successor accepted")
         }
     }
+    func testCustodyFollowsCurrentModuleInsteadOfBirthKey() throws {
+        let original = try birth(), next = try birth(tree: 1)
+        try TOSV5R2InstalledRoute.initial(original).requirePrimaryKey(Data(count: 1312))
+        let current = try TOSV5R2InstalledRoute.successor(birth: original, next: next)
+        try current.requirePrimaryKey(Data(repeating: 1, count: 1312))
+        XCTAssertThrowsError(try current.requirePrimaryKey(Data(count: 1312)), "Birth key accepted after rotation")
+        XCTAssertThrowsError(try current.requirePrimaryKey(Data(count: 32)), "Wrong key size accepted")
+    }
 }

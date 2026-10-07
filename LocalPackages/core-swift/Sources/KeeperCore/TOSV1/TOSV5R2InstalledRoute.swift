@@ -6,6 +6,12 @@ import CoreComponents
 public struct TOSV5R2InstalledRoute {
     public let moduleData: Cell, moduleInit: Cell, metadata: Cell, vaultData: Cell, vaultInit: Cell
     public let moduleAddress: Address, vaultAddress: Address
+    /// Local identity check; installed module authentication is a separate requirement.
+    public func requirePrimaryKey(_ publicKey: Data) throws {
+        let data = try moduleData.beginParse()
+        guard publicKey.count == 1312, data.remainingRefs == 1,
+              try TOSPQWallet.byteChain(publicKey).hash() == data.loadRef().hash() else { throw TOSPQError.keyBinding }
+    }
     private init(moduleData: Cell, moduleInit: Cell, metadata: Cell, vaultData: Cell, vaultInit: Cell, moduleAddress: Address, vaultAddress: Address) {
         self.moduleData = moduleData; self.moduleInit = moduleInit; self.metadata = metadata
         self.vaultData = vaultData; self.vaultInit = vaultInit; self.moduleAddress = moduleAddress; self.vaultAddress = vaultAddress

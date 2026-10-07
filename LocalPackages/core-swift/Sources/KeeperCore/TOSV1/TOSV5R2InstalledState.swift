@@ -80,9 +80,10 @@ public struct TOSV5R2InstalledWallet {
     private let walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64
     private let vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32
     private let globalID: Int32, walletAddress: Address, moduleAddress: Address
-    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32, globalID: Int32, walletAddress: Address, moduleAddress: Address) {
+    private let installedRoute: TOSV5R2InstalledRoute
+    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32, globalID: Int32, walletAddress: Address, moduleAddress: Address, installedRoute: TOSV5R2InstalledRoute) {
         self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy; self.vaultTime = vaultTime; self.epoch0 = epoch0; self.walletTime = walletTime
-        self.globalID = globalID; self.walletAddress = walletAddress; self.moduleAddress = moduleAddress
+        self.globalID = globalID; self.walletAddress = walletAddress; self.moduleAddress = moduleAddress; self.installedRoute = installedRoute
     }
     /// Chain eligibility only; custody, fee and signed-action gates still apply.
     public func requirePrimaryExecution(policyProof: TOSV5R2ProofBridge.BoundRead, now: Int64, maximumAge: Int64) throws {
@@ -93,6 +94,12 @@ public struct TOSV5R2InstalledWallet {
         let roots = try Cell.fromBoc(src: policyProof.provenConfigParam(48))
         guard roots.count == 1 else { throw TOSPQError.invalidInput }
         try TOSV5R2RetirementPolicy.requirePrimary(roots[0], network: network, now: UInt32(now))
+    }
+    /// Custody must match module data already authenticated by tuple binding.
+    public func requirePrimaryCustody(_ publicKey: Data, policyProof: TOSV5R2ProofBridge.BoundRead,
+                                      now: Int64, maximumAge: Int64) throws {
+        try requirePrimaryExecution(policyProof: policyProof, now: now, maximumAge: maximumAge)
+        try installedRoute.requirePrimaryKey(publicKey)
     }
     /// Wire construction only; reviewed actions, custody, solvency and delivery still require validation.
     public func primaryExecuteRequest(policyProof: TOSV5R2ProofBridge.BoundRead, actions: Cell, validUntil: UInt32,
@@ -149,6 +156,6 @@ public struct TOSV5R2InstalledWallet {
         return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth, module: route.moduleInit, metadata: route.metadata),
                         nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: route.vaultData),
                         walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0,
-                        walletTime: walletTime, globalID: globalID, walletAddress: birth.address, moduleAddress: route.moduleAddress)
+                        walletTime: walletTime, globalID: globalID, walletAddress: birth.address, moduleAddress: route.moduleAddress, installedRoute: route)
     }
 }
