@@ -8,9 +8,13 @@ public struct TOSV5R2FeeStateError: Error { public let status: Int32 }
 /// Preview and cached bytes do not authorize signing or broadcast.
 public final class TOSV5R2FeeState {
     private struct FeeSecret { let seed: UnsafePointer<UInt8>?; let path: UnsafePointer<UInt8>? }
+    private struct Route: Equatable {
+        let globalID: Int32; let network: Data; let vault: Data; let tree: Data; let epoch: UInt32
+    }
+    private let route: Route
     private var handle: UInt64
     private let lock = NSLock()
-    private init(handle: UInt64) { self.handle = handle }
+    private init(handle: UInt64, route: Route) { self.handle = handle; self.route = route }
     deinit { if handle != 0 { _ = tos_fee_state_close(handle) } }
 
     private static func check(_ status: Int32) throws {
@@ -35,7 +39,10 @@ public final class TOSV5R2FeeState {
             tos_fee_state_open(p, path.count, globalID, n, v, t, epoch0, provenTime, &output)
         }}}}
         try check(rc)
-        return TOSV5R2FeeState(handle: output)
+        return TOSV5R2FeeState(handle: output, route: Route(globalID: globalID, network: network, vault: vault, tree: treeID, epoch: epoch0))
+    }
+    internal func matchesRoute(globalID: Int32, network: Data, vault: Data, tree: Data, epoch: UInt32) -> Bool {
+        route == Route(globalID: globalID, network: network, vault: vault, tree: tree, epoch: epoch)
     }
     public func preview(time: UInt32, chainNext: UInt32) throws -> UInt32 {
         try session { h in
