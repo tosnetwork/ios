@@ -51,6 +51,22 @@ final class TOSV5R2ProofSessionTests: XCTestCase {
         XCTAssertThrowsError(try result.requireLive(now: 1791201932, maximumAge: 300))
         XCTAssertThrowsError(try result.requireLive(now: 1791200931, maximumAge: 300))
         XCTAssertThrowsError(try result.configParam(34, expectedCellHash: Data(repeating: 0, count: 32)))
+        let fixed = try result.requestAtCheckpoint(configIndices: [34], maximumAge: 300)
+        let fixedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: fixed) as? [String: Any])
+        XCTAssertNotNil(fixedObject["target"], "Fixed checkpoint target missing")
+        let target = try XCTUnwrap(fixedObject["target"] as? [String: Any])
+        XCTAssertEqual(Set(target.keys), Set(["workchain", "shard", "seqno", "root_hash", "file_hash"]))
+        let fixedReplies = try ["live/chain-0000.tl", "live/config.tl"].map(bytes)
+        var fixedCalls = 0
+        let atPoint = try session.readBound(request: fixed, now: 1791200932) { _, capacity in
+            guard fixedCalls < fixedReplies.count else { throw TOSPQError.invalidInput }
+            let reply = fixedReplies[fixedCalls]; fixedCalls += 1
+            XCTAssertLessThanOrEqual(reply.count, capacity)
+            return reply
+        }
+        XCTAssertEqual(fixedCalls, 2)
+        try result.requireSameCheckpoint(atPoint)
+        try atPoint.requireLive(now: 1791200932, maximumAge: 300)
         let state = base.appendingPathComponent("v5r2-proof-checkpoints/" + id.uuidString + "/checkpoint.json")
         let saved = try Data(contentsOf: state)
         enum TransportFailure: Error { case stopped }

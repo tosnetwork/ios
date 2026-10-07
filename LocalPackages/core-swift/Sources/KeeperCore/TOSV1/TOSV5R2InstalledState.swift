@@ -78,8 +78,9 @@ public enum TOSV5R2AccountState {
 public struct TOSV5R2InstalledWallet {
     public let state: TOSV5R2WalletData, nextFeeLeaf: UInt32
     private let walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64
-    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64) {
-        self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy
+    private let vaultTime: UInt32, epoch0: UInt32
+    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32) {
+        self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy; self.vaultTime = vaultTime; self.epoch0 = epoch0
     }
     /// Chain eligibility only; custody, fee and signed-action gates still apply.
     public func requirePrimaryExecution(policyProof: TOSV5R2ProofBridge.BoundRead, now: Int64, maximumAge: Int64) throws {
@@ -90,6 +91,12 @@ public struct TOSV5R2InstalledWallet {
         let roots = try Cell.fromBoc(src: policyProof.provenConfigParam(48))
         guard roots.count == 1 else { throw TOSPQError.invalidInput }
         try TOSV5R2RetirementPolicy.requirePrimary(roots[0], network: network, now: UInt32(now))
+    }
+    public func requireFeeProof(now: Int64, maximumAge: Int64) throws {
+        try walletProof.requireLive(now: now, maximumAge: maximumAge)
+        guard now >= 0, now <= Int64(UInt32.max), maximumAge > 0, maximumAge < 3600 else { throw TOSPQError.invalidInput }
+        try TOSV5R2FeeProofTime.check(master: walletProof.masterchainTime(), shard: vaultTime,
+                                   now: UInt32(now), maximumAge: UInt32(maximumAge), epoch0: epoch0)
     }
     public static func bindInitial(birth: TOSV5R2Genesis, wallet: TOSV5R2ProofBridge.BoundRead,
                                    module: TOSV5R2ProofBridge.BoundRead, vault: TOSV5R2ProofBridge.BoundRead,
@@ -109,8 +116,13 @@ public struct TOSV5R2InstalledWallet {
         let identity = try md.beginParse(); try identity.skip(40)
         let network = try identity.loadBytes(32); try identity.skip(8 + 256)
         let policy = try identity.loadUint(bits: 8)
+        let metadata = try birth.metadata.beginParse(); try metadata.skip(272)
+        let epoch0 = UInt32(try metadata.loadUint(bits: 32))
+        let vaultAddress = "0:" + birth.vaultAddress.hash.map { String(format: "%02x", $0) }.joined()
+        let vaultCode = try birth.vaultInit.beginParse().loadRef().hash()
+        let vaultTime = try vault.accountTime(expectedAddress: vaultAddress, expectedCodeHash: vaultCode)
         return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth),
                         nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: birth.vaultData),
-                        walletProof: wallet, network: network, policy: policy)
+                        walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0)
     }
 }

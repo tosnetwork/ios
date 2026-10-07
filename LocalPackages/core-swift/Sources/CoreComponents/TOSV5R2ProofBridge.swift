@@ -143,6 +143,33 @@ public enum TOSV5R2ProofBridge {
                   !bytes.isEmpty else { throw TOSPQError.keyBinding }
             return bytes
         }
+        public func requestAtCheckpoint(account: String? = nil, configIndices: [Int] = [], maximumAge: Int64) throws -> Data {
+            guard (1...604800).contains(maximumAge), configIndices.count <= 64,
+                  configIndices.allSatisfy({ $0 >= 0 && $0 <= Int(Int32.max) }), Set(configIndices).count == configIndices.count,
+                  account != nil || !configIndices.isEmpty,
+                  account == nil || account!.range(of: "^0:[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  let target = value["target"] as? [String: Any] else { throw TOSPQError.invalidInput }
+            var exact: [String: Any] = [:]
+            for field in ["workchain", "shard", "seqno", "root_hash", "file_hash"] {
+                guard let entry = target[field] else { throw TOSPQError.invalidInput }
+                exact[field] = entry
+            }
+            var request: [String: Any] = ["mode": "live", "target": exact, "max_age_seconds": maximumAge]
+            if let account { request["account"] = account }
+            if !configIndices.isEmpty { request["config_params"] = configIndices }
+            return try JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])
+        }
+        public func masterchainTime() throws -> UInt32 {
+            guard let target = value["target"] as? [String: Any], let time = target["gen_utime"] as? Int64,
+                  time >= 0, time <= Int64(UInt32.max) else { throw TOSPQError.invalidInput }
+            return UInt32(time)
+        }
+        public func accountTime(expectedAddress: String, expectedCodeHash: Data) throws -> UInt32 {
+            _ = try accountState(expectedAddress: expectedAddress, expectedCodeHash: expectedCodeHash)
+            guard let account = value["account"] as? [String: Any], let time = account["gen_utime"] as? Int64,
+                  time >= 0, time <= Int64(UInt32.max) else { throw TOSPQError.invalidInput }
+            return UInt32(time)
+        }
         /// Authenticated dynamic chain state; schema and policy checks remain mandatory.
         public func provenConfigParam(_ index: Int) throws -> Data {
             guard index >= 0, let params = value["config_params"] as? [[String: Any]] else { throw TOSPQError.keyBinding }
