@@ -32,8 +32,8 @@ final class TOSV5R2WalletsViewController: UIViewController {
         refresh()
     }
     override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); operation?.cancel() }
-    @objc private func conceal() { view.isHidden = true }
-    @objc private func reveal() { view.isHidden = false }
+    @objc private func conceal() { view.isHidden = true; presentedViewController?.view.isHidden = true }
+    @objc private func reveal() { view.isHidden = false; presentedViewController?.view.isHidden = false }
     private func label(_ text: String, id: String) {
         let item = UILabel(); item.text = text; item.numberOfLines = 0; item.accessibilityIdentifier = id
         item.font = .preferredFont(forTextStyle: .body); item.adjustsFontForContentSizeCategory = true; stack.addArrangedSubview(item)
@@ -60,7 +60,14 @@ final class TOSV5R2WalletsViewController: UIViewController {
             stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0); $0.removeFromSuperview() }
             label("Development candidate. Network verification and recovery funding are pending. Import does not mark an account ready.", id: "v5r2.pending")
             button("Import public recovery manifest", id: "v5r2.import") { [weak self] in self?.importManifest() }
-            for record in records { label("\(record.name)\n\(record.address.toRaw())", id: "v5r2.account.\(record.id)") }
+            for record in records {
+                label("\(record.name)\n\(record.address.toRaw())", id: "v5r2.account.\(record.id)")
+                for role in [TOSV5R2Role.primary, .rescue] {
+                    button(role == .primary ? "Restore PRIMARY key" : "Restore SLH key", id: "v5r2.restore.\(role.rawValue).\(record.id)") { [weak self] in
+                        self?.chooseRestore(record: record, role: role)
+                    }
+                }
+            }
         }
     }
     private func importManifest() {
@@ -76,6 +83,43 @@ final class TOSV5R2WalletsViewController: UIViewController {
                 _ = try await self.store.registerInitial(name: values[0], manifest: Data(values[2].utf8), independentlyKnownWallet: Address.parse(values[1]))
                 // Reload after this operation has released the busy gate.
                 DispatchQueue.main.async { [weak self] in self?.refresh() }
+            }
+        })
+        present(alert, animated: true)
+    }
+    private func chooseRestore(record: TOSV5R2WalletRecord, role: TOSV5R2Role) {
+        let alert = UIAlertController(title: "Restore initial role", message: "Keep the SLH recovery key on an independent device. A stored key does not establish current chain authority.", preferredStyle: .alert)
+        for (title, profile) in [("Native TOS mnemonic", TOSV5R2SeedKeychain.MasterProfile.nativeMnemonic), ("Raw 32-byte master", .rawMaster32)] {
+            alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in self?.restore(record: record, role: role, profile: profile) })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel)); present(alert, animated: true)
+    }
+    private func restore(record: TOSV5R2WalletRecord, role: TOSV5R2Role, profile: TOSV5R2SeedKeychain.MasterProfile) {
+        let native = profile == .nativeMnemonic
+        let alert = UIAlertController(title: native ? "Native TOS role recovery" : "Raw master role recovery", message: "Re-enter the independently known wallet address. Only the initial manifest key is restored.", preferredStyle: .alert)
+        for (i, hint) in ["Independently known wallet address", native ? "12 or 24 recovery words" : "64 hexadecimal characters", "Exact mnemonic password (optional)"].enumerated() {
+            if i == 2 && !native { continue }
+            alert.addTextField { field in
+                field.placeholder = hint; field.accessibilityIdentifier = "v5r2.secret.\(i)"
+                field.autocorrectionType = .no; field.autocapitalizationType = .none
+                field.isSecureTextEntry = i > 0
+            }
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in alert.textFields?.forEach { $0.text = nil } })
+        alert.addAction(UIAlertAction(title: "Restore", style: .default) { [weak self] _ in
+            guard let self, !busy, let fields = alert.textFields, fields.count >= 2 else { return }
+            let address = fields[0].text ?? ""
+            let input = TOSV5R2RecoveryInput(material: Data((fields[1].text ?? "").utf8), password: Data((fields.count == 3 ? fields[2].text ?? "" : "").utf8))
+            fields.forEach { $0.text = nil }
+            run { [self, input] in
+                defer { input.wipe() }
+                let known = try Address.parse(address)
+                guard known == record.address else { throw TOSPQError.keyBinding }
+                try input.derive(profile: profile)
+                try Task.checkCancellation()
+                _ = try await self.store.restoreInitialRole(id: record.id, independentlyKnownWallet: known, role: role, master: &input.master, inputProfile: profile)
+                let done = UIAlertController(title: "Initial role stored", message: "Network verification and recovery funding are still pending.", preferredStyle: .alert)
+                done.addAction(UIAlertAction(title: "OK", style: .default)); self.present(done, animated: true)
             }
         })
         present(alert, animated: true)
