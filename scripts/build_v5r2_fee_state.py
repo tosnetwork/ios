@@ -3,8 +3,67 @@
 
 import plistlib
 import pathlib
+import hashlib
 import shutil
 import subprocess
+
+
+def digest(path):
+    value = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            value.update(chunk)
+    return value.digest()
+
+
+def unchanged(frameworks, output):
+    """Compare actual fresh build bytes, never an mtime or cached success stamp."""
+    identifiers = ["ios-arm64", "ios-arm64_x86_64-simulator"]
+    try:
+        with (output / "Info.plist").open("rb") as file:
+            info = plistlib.load(file)
+        entries = info["AvailableLibraries"]
+        if (
+            info.get("CFBundlePackageType") != "XFWK"
+            or info.get("XCFrameworkFormatVersion") != "1.0"
+        ):
+            return False
+        if len(entries) != 2 or {
+            entry["LibraryIdentifier"] for entry in entries
+        } != set(identifiers):
+            return False
+        for entry in entries:
+            if (
+                entry["LibraryPath"] != "TOSFeeState.framework"
+                or entry["SupportedPlatform"] != "ios"
+            ):
+                return False
+            simulator = entry["LibraryIdentifier"] == identifiers[1]
+            if (entry.get("SupportedPlatformVariant") == "simulator") != simulator:
+                return False
+            if set(entry["SupportedArchitectures"]) != (
+                {"arm64", "x86_64"} if simulator else {"arm64"}
+            ):
+                return False
+        for framework, identifier in zip(frameworks, identifiers):
+            destination = output / identifier / "TOSFeeState.framework"
+            expected = {
+                p.relative_to(framework) for p in framework.rglob("*") if p.is_file()
+            }
+            actual = {
+                p.relative_to(destination)
+                for p in destination.rglob("*")
+                if p.is_file()
+            }
+            if expected != actual or not expected:
+                return False
+            for relative in expected:
+                path = destination / relative
+                if path.is_symlink() or digest(framework / relative) != digest(path):
+                    return False
+        return True
+    except (OSError, KeyError, TypeError, ValueError):
+        return False
 
 
 def main():
@@ -71,6 +130,9 @@ def main():
         frameworks.append(framework)
     output = root / "LocalPackages/core-swift/Generated/TOSFeeState.xcframework"
     output.parent.mkdir(parents=True, exist_ok=True)
+    if unchanged(frameworks, output):
+        print("V5R2 fee XCFramework bytes unchanged; retaining existing outputs")
+        return
     if output.exists():
         shutil.rmtree(output)
     subprocess.run(
