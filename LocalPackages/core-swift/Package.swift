@@ -30,6 +30,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", .upToNextMinor(from: "0.3.0")),
     ],
     targets: [
+        .binaryTarget(name: "TOSProofVerify", path: "Generated/TOSProofVerify.xcframework"),
         .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
             exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "V5R2-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/lms-reference/license.txt", "vendor/lms-reference/SOURCE.json", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
@@ -49,7 +50,7 @@ let package = Package(
             cxxSettings: [.headerSearchPath("."), .headerSearchPath("vendor/lms-reference"), .headerSearchPath("vendor/slhdsa"), .define("TOS_LMS_PORTABLE_SHA256", to: "1")]),
         .target(
             name: "CoreComponents",
-            dependencies: ["TOSPQNative", "TOSFeeState",
+            dependencies: ["TOSPQNative", "TOSFeeState", "TOSProofVerify",
                 .product(name: "TonSwift", package: "ton-swift"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "TKKeychain", package: "TKKeychain"),
@@ -67,7 +68,7 @@ let package = Package(
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
-            resources: [.copy("TestData/tos-pq-backup-vectors.json")],
+            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/v5r2-proof"), .copy("TestData/v5r2-proof-PROVENANCE.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]

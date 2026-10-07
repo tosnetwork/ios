@@ -1,0 +1,37 @@
+{
+  "source_revision": "4788dd8fcb7193fec11d15fd0c6134b332e75c7c",
+  "source": "test/pq-native/data/proof-verify-real",
+  "public_test_material_only": true,
+  "files": [
+    {
+      "file": "anchor.json",
+      "bytes": 231,
+      "sha256": "801060e72bc1b9a79d1e89303c904c69f8f2d2b948fc7f42f678e991dbf052d7"
+    },
+    {
+      "file": "historical/account.tl",
+      "bytes": 10776,
+      "sha256": "24b2c64d6fb950b64542b3cb766af4d38bb851ad76be205e55687aef6ef95e14"
+    },
+    {
+      "file": "historical/chain-0000.tl",
+      "bytes": 74768,
+      "sha256": "0b32ee4d6d82ef02e92b2dd9fdd89fcfbd574f54ce3ffd1502c67e2cd8464583"
+    },
+    {
+      "file": "historical/config.tl",
+      "bytes": 7152,
+      "sha256": "50417c259f66985c86ce7d6d2d4a719f57d0e377b4acee47be064ba547013674"
+    },
+    {
+      "file": "historical/exec-config.tl",
+      "bytes": 19432,
+      "sha256": "b669a1c592fcc87ad834a7cd1451012889c6aca361247012c50ceca06981ebeb"
+    },
+    {
+      "file": "historical-request.json",
+      "bytes": 447,
+      "sha256": "d3584f7217c088516dae68c59d7a112129b824324073896ff24274b950d7cf8d"
+    }
+  ]
+}

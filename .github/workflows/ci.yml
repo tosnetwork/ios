@@ -21,7 +21,7 @@ jobs:
         run: python3 scripts/select_ci_xcode.py
 
       - name: Install build formatter
-        run: brew install xcbeautify
+        run: brew install xcbeautify cmake ninja autoconf automake libtool pkg-config
 
       - name: Install pinned V5R2 Rust toolchain and platform targets
         shell: bash

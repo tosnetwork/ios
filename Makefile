@@ -46,7 +46,10 @@ BUILD_JOBS ?= 4
 prepare_v5r2_fee_state:
 	python3 scripts/build_v5r2_fee_state.py
 
-compile: prepare_v5r2_fee_state
+prepare_v5r2_proof:
+	python3 scripts/build_v5r2_proof.py
+
+compile: prepare_v5r2_fee_state prepare_v5r2_proof
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
@@ -136,7 +139,7 @@ test_all:
 	$(MAKE) test_tkchart_package
 	$(MAKE) test_tkagentcommerce
 
-test_project_scheme: prepare_v5r2_fee_state
+test_project_scheme: prepare_v5r2_fee_state prepare_v5r2_proof
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
