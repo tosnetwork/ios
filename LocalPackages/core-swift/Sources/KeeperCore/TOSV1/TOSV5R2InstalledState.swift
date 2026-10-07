@@ -101,6 +101,16 @@ public struct TOSV5R2InstalledWallet {
     public static func bindInitial(birth: TOSV5R2Genesis, wallet: TOSV5R2ProofBridge.BoundRead,
                                    module: TOSV5R2ProofBridge.BoundRead, vault: TOSV5R2ProofBridge.BoundRead,
                                    now: Int64, maximumAge: Int64) throws -> Self {
+        try bind(birth: birth, route: .initial(birth), wallet: wallet, module: module, vault: vault, now: now, maximumAge: maximumAge)
+    }
+    public static func bindSuccessor(birth: TOSV5R2Genesis, next: TOSV5R2Genesis, wallet: TOSV5R2ProofBridge.BoundRead,
+                                     module: TOSV5R2ProofBridge.BoundRead, vault: TOSV5R2ProofBridge.BoundRead,
+                                     now: Int64, maximumAge: Int64) throws -> Self {
+        try bind(birth: birth, route: .successor(birth: birth, next: next), wallet: wallet, module: module, vault: vault, now: now, maximumAge: maximumAge)
+    }
+    private static func bind(birth: TOSV5R2Genesis, route: TOSV5R2InstalledRoute, wallet: TOSV5R2ProofBridge.BoundRead,
+                             module: TOSV5R2ProofBridge.BoundRead, vault: TOSV5R2ProofBridge.BoundRead,
+                             now: Int64, maximumAge: Int64) throws -> Self {
         try wallet.requireLive(now: now, maximumAge: maximumAge)
         try wallet.requireSameCheckpoint(module); try wallet.requireSameCheckpoint(vault)
         func data(_ proof: TOSV5R2ProofBridge.BoundRead, address: Address, initCell: Cell) throws -> Cell {
@@ -110,19 +120,19 @@ public struct TOSV5R2InstalledWallet {
                                                expectedAddress: address, expectedCode: code)
         }
         let wd = try data(wallet, address: birth.address, initCell: birth.walletInit)
-        let md = try data(module, address: birth.moduleAddress, initCell: birth.moduleInit)
-        let vd = try data(vault, address: birth.vaultAddress, initCell: birth.vaultInit)
-        guard md.hash() == birth.moduleData.hash() else { throw TOSPQError.keyBinding }
+        let md = try data(module, address: route.moduleAddress, initCell: route.moduleInit)
+        let vd = try data(vault, address: route.vaultAddress, initCell: route.vaultInit)
+        guard md.hash() == route.moduleData.hash() else { throw TOSPQError.keyBinding }
         let identity = try md.beginParse(); try identity.skip(40)
         let network = try identity.loadBytes(32); try identity.skip(8 + 256)
         let policy = try identity.loadUint(bits: 8)
-        let metadata = try birth.metadata.beginParse(); try metadata.skip(272)
+        let metadata = try route.metadata.beginParse(); try metadata.skip(272)
         let epoch0 = UInt32(try metadata.loadUint(bits: 32))
-        let vaultAddress = "0:" + birth.vaultAddress.hash.map { String(format: "%02x", $0) }.joined()
-        let vaultCode = try birth.vaultInit.beginParse().loadRef().hash()
+        let vaultAddress = "0:" + route.vaultAddress.hash.map { String(format: "%02x", $0) }.joined()
+        let vaultCode = try route.vaultInit.beginParse().loadRef().hash()
         let vaultTime = try vault.accountTime(expectedAddress: vaultAddress, expectedCodeHash: vaultCode)
-        return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth),
-                        nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: birth.vaultData),
+        return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth, module: route.moduleInit, metadata: route.metadata),
+                        nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: route.vaultData),
                         walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0)
     }
 }
