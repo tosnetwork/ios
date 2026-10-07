@@ -30,6 +30,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", .upToNextMinor(from: "0.3.0")),
     ],
     targets: [
+        .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
             exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "V5R2-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
             sources: ["vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_v5r2.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
@@ -48,7 +49,7 @@ let package = Package(
             cxxSettings: [.headerSearchPath("vendor/slhdsa"), .define("TOS_LMS_PORTABLE_SHA256", to: "1")]),
         .target(
             name: "CoreComponents",
-            dependencies: ["TOSPQNative",
+            dependencies: ["TOSPQNative", "TOSFeeState",
                 .product(name: "TonSwift", package: "ton-swift"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "TKKeychain", package: "TKKeychain"),

@@ -47,3 +47,6 @@ LocalPackages/**/Package.resolved
 # Generated Python bytecode
 __pycache__/
 *.py[cod]
+
+# Source-built native fee state binary
+LocalPackages/core-swift/Generated/
