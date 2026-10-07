@@ -47,7 +47,9 @@ public actor TOSV5R2WalletStore {
         defaults.set(try JSONEncoder().encode(records), forKey: registry)
     }
     private func unlock() async throws {
+        try Task.checkCancellation()
         guard try await authenticate() else { throw TOSPQError.keyBinding }
+        try Task.checkCancellation()
     }
     public func registerInitial(name: String, manifest: Data, independentlyKnownWallet: Address) async throws -> TOSV5R2WalletRecord {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.utf8.count <= 128 else { throw TOSPQError.invalidInput }

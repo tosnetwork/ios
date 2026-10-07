@@ -4,6 +4,12 @@ import TonSwift
 import CoreComponents
 @testable import KeeperCore
 
+private actor R2AuthenticationProbe {
+    private var calls = 0
+    func accept() -> Bool { calls += 1; return true }
+    func count() -> Int { calls }
+}
+
 final class TOSV5R2WalletStoreTests: XCTestCase {
     func testInitialRegistryAuthenticationAndDuplicateIdentity() async throws {
         let suite = "v5r2-qa-\(UUID().uuidString)"
@@ -62,6 +68,36 @@ final class TOSV5R2WalletStoreTests: XCTestCase {
         }
         XCTAssertEqual(firstWrites, 1)
         let afterFirstWrites = try await allowed.list(); XCTAssertEqual(afterFirstWrites.count, 1)
+        defaults.removePersistentDomain(forName: suite)
+        let cancelled = Task {
+            try await allowed.registerInitial(name: "cancelled task", manifest: m.toJson(), independentlyKnownWallet: m.genesis.address)
+        }
+        cancelled.cancel()
+        do { _ = try await cancelled.value; XCTFail("cancelled task persisted") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let afterCancellation = try await allowed.list(); XCTAssertTrue(afterCancellation.isEmpty)
+        let cancelsDuringAuthentication = try TOSV5R2WalletStore(defaults: defaults, authenticate: {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return true
+        })
+        let cancelledDuring = Task {
+            try await cancelsDuringAuthentication.registerInitial(name: "cancelled during auth", manifest: m.toJson(), independentlyKnownWallet: m.genesis.address)
+        }
+        do { _ = try await cancelledDuring.value; XCTFail("authentication cancellation persisted") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let afterAuthenticationCancellation = try await allowed.list(); XCTAssertTrue(afterAuthenticationCancellation.isEmpty)
+        let probe = R2AuthenticationProbe()
+        let probesAuthentication = try TOSV5R2WalletStore(defaults: defaults, authenticate: { await probe.accept() })
+        let cancelledBefore = Task {
+            try await probesAuthentication.registerInitial(name: "cancelled before auth", manifest: m.toJson(), independentlyKnownWallet: m.genesis.address)
+        }
+        cancelledBefore.cancel()
+        do { _ = try await cancelledBefore.value; XCTFail("pre-auth cancellation persisted") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let prompted = await probe.count(); XCTAssertEqual(prompted, 0, "Cancelled task must not prompt authentication")
+
+
+
 
     }
 }
