@@ -29,6 +29,22 @@ final class TOSV5R2WalletStoreTests: XCTestCase {
         let record = try await allowed.registerInitial(name: "QA R2", manifest: m.toJson(), independentlyKnownWallet: m.genesis.address)
         let reopened = try TOSV5R2WalletStore(defaults: defaults, authenticate: { true })
         let records = try await reopened.list(); XCTAssertEqual(records.map(\.id), [record.id])
+        let anchor = Data("{\"kind\":\"zerostate\",\"workchain\":-1,\"shard\":\"8000000000000000\",\"seqno\":0,\"root_hash\":\"1BDB1208416A1103BDB7FF6082F7EFFE047BAC45313E27D4043CA04D16377B64\",\"file_hash\":\"C9F382C9119EB7F3AB3BD6AE88FA1AF59AB500BDA3B5D794480E83EE24477686\"}".utf8)
+        let proofDirectory = try XCTUnwrap(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first)
+            .appendingPathComponent("v5r2-proof-checkpoints/" + record.id.uuidString)
+        defer { try? FileManager.default.removeItem(at: proofDirectory) }
+        let noQueries: TOSV5R2ProofBridge.Transport = { _, _ in XCTFail("Missing/auth-refused observation queried endpoint"); throw TOSPQError.keyBinding }
+        do {
+            _ = try await denied.observeInitial(id: record.id, independentlyKnownWallet: m.genesis.address, locallyProvisionedAnchor: anchor,
+                initialize: false, primaryExecution: false, transport: noQueries)
+            XCTFail("Unauthenticated proof observation accepted")
+        } catch { guard let error = error as? TOSPQError, case .keyBinding = error else { XCTFail("Proof authentication gate bypassed"); throw error } }
+        do {
+            _ = try await allowed.observeInitial(id: record.id, independentlyKnownWallet: m.genesis.address, locallyProvisionedAnchor: anchor,
+                initialize: false, primaryExecution: false, transport: noQueries)
+            XCTFail("Missing checkpoint accepted")
+        } catch { guard let error = error as? TOSPQError, case .invalidInput = error else { throw error } }
+
         do { _ = try await allowed.registerInitial(name: "duplicate", manifest: m.toJson(), independentlyKnownWallet: m.genesis.address); XCTFail("duplicate accepted") }
         catch { guard let error = error as? TOSPQError, case .keyBinding = error else { throw error } }
         let duplicateOutcomes = await withTaskGroup(of: Bool.self) { group in
