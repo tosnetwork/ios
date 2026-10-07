@@ -1,0 +1,1 @@
+{"mode": "live", "max_age_seconds": 300, "target": {"workchain": -1, "shard": "8000000000000000", "seqno": 15, "root_hash": "b31bf7a512ed4b475900862b271d8b7485a874f5f5a49b4a688dd9fedac880f2", "file_hash": "630fb86997e7a5de4b7990f4c9d2c7bc523c7e98a64561f99948cc89453c6687"}, "account": "0:dd02789a5ea99fed55149491e689ea12951adf923f1cd9e866e81d4237adf746"}

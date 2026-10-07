@@ -1,0 +1,7 @@
+{
+  "capture_source": "1f4093262d5cd0b34ba4a265b72668208dc133fb",
+  "ci_run": "https://github.com/tosnetwork/tos/actions/runs/37622783176",
+  "scope": "Actual PQ candidate genesis wallet/module/vault proofs. Instrumentation uses controlled capture time and independently enrolled proof sessions; not current live operation, custody, signing or payment acceptance.",
+  "manifest_sha256": "a5d615ccc61de2c4f217bb390bdf56e58663a2c62030ff4adc831c75970ec91b",
+  "material_policy": "Public proof material and account code/state only; no private keys or seeds."
+}
