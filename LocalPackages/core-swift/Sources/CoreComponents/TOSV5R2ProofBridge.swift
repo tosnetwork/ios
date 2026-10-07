@@ -143,6 +143,14 @@ public enum TOSV5R2ProofBridge {
                   !bytes.isEmpty else { throw TOSPQError.keyBinding }
             return bytes
         }
+        /// Authenticated dynamic chain state; schema and policy checks remain mandatory.
+        public func provenConfigParam(_ index: Int) throws -> Data {
+            guard index >= 0, let params = value["config_params"] as? [[String: Any]] else { throw TOSPQError.keyBinding }
+            let matches = params.filter { $0["index"] as? Int == index }
+            guard matches.count == 1, let encoded = matches[0]["boc"] as? String,
+                  let bytes = Data(base64Encoded: encoded), !bytes.isEmpty else { throw TOSPQError.keyBinding }
+            return bytes
+        }
         public func configParam(_ index: Int, expectedCellHash: Data) throws -> Data {
             guard index >= 0, expectedCellHash.count == 32,
                   let params = value["config_params"] as? [[String: Any]] else { throw TOSPQError.keyBinding }

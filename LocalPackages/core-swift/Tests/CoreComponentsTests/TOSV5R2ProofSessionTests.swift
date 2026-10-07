@@ -46,6 +46,8 @@ final class TOSV5R2ProofSessionTests: XCTestCase {
         XCTAssertEqual(queries, 3)
         try result.requireLive(now: 1791200932, maximumAge: 300)
         try result.requireSameCheckpoint(result)
+        XCTAssertFalse(try result.provenConfigParam(34).isEmpty)
+        XCTAssertThrowsError(try result.provenConfigParam(48), "Unproven configuration accepted")
         XCTAssertThrowsError(try result.requireLive(now: 1791201932, maximumAge: 300))
         XCTAssertThrowsError(try result.requireLive(now: 1791200931, maximumAge: 300))
         XCTAssertThrowsError(try result.configParam(34, expectedCellHash: Data(repeating: 0, count: 32)))

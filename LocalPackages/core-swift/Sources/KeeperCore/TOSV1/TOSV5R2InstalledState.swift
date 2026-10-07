@@ -77,7 +77,20 @@ public enum TOSV5R2AccountState {
 /// and signing/action checks are additional gates; this does not confer readiness.
 public struct TOSV5R2InstalledWallet {
     public let state: TOSV5R2WalletData, nextFeeLeaf: UInt32
-    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32) { self.state = state; self.nextFeeLeaf = nextFeeLeaf }
+    private let walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64
+    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64) {
+        self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy
+    }
+    /// Chain eligibility only; custody, fee and signed-action gates still apply.
+    public func requirePrimaryExecution(policyProof: TOSV5R2ProofBridge.BoundRead, now: Int64, maximumAge: Int64) throws {
+        try walletProof.requireLive(now: now, maximumAge: maximumAge)
+        try walletProof.requireSameCheckpoint(policyProof)
+        guard policy == 1, state.retired & 2 == 0, state.seqno < UInt32.max, state.primaryNonce < UInt64.max,
+              now >= 0, now <= Int64(UInt32.max) else { throw TOSPQError.keyBinding }
+        let roots = try Cell.fromBoc(src: policyProof.provenConfigParam(48))
+        guard roots.count == 1 else { throw TOSPQError.invalidInput }
+        try TOSV5R2RetirementPolicy.requirePrimary(roots[0], network: network, now: UInt32(now))
+    }
     public static func bindInitial(birth: TOSV5R2Genesis, wallet: TOSV5R2ProofBridge.BoundRead,
                                    module: TOSV5R2ProofBridge.BoundRead, vault: TOSV5R2ProofBridge.BoundRead,
                                    now: Int64, maximumAge: Int64) throws -> Self {
@@ -93,7 +106,11 @@ public struct TOSV5R2InstalledWallet {
         let md = try data(module, address: birth.moduleAddress, initCell: birth.moduleInit)
         let vd = try data(vault, address: birth.vaultAddress, initCell: birth.vaultInit)
         guard md.hash() == birth.moduleData.hash() else { throw TOSPQError.keyBinding }
+        let identity = try md.beginParse(); try identity.skip(40)
+        let network = try identity.loadBytes(32); try identity.skip(8 + 256)
+        let policy = try identity.loadUint(bits: 8)
         return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth),
-                        nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: birth.vaultData))
+                        nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: birth.vaultData),
+                        walletProof: wallet, network: network, policy: policy)
     }
 }
