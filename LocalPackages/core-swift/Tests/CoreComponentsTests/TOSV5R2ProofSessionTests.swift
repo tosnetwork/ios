@@ -36,7 +36,7 @@ final class TOSV5R2ProofSessionTests: XCTestCase {
         let session = try TOSV5R2ProofSession(walletID: id, locallyProvisionedAnchor: bytes("anchor.json"), baseDirectory: base)
         let replies = try ["live/masterchain-info.tl", "historical/chain-0000.tl", "live/config.tl"].map(bytes)
         var queries = 0
-        let result = try session.enroll(request: bytes("live-request.json"), now: 1791200932) { query, capacity in
+        let result = try session.enrollBound(request: bytes("live-request.json"), now: 1791200932) { query, capacity in
             XCTAssertFalse(query.isEmpty)
             guard queries < replies.count else { throw TOSPQError.invalidInput }
             let reply = replies[queries]; queries += 1
@@ -44,8 +44,11 @@ final class TOSV5R2ProofSessionTests: XCTestCase {
             return reply
         }
         XCTAssertEqual(queries, 3)
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: result) as? [String: Any])
-        XCTAssertEqual(object["status"] as? String, "verified")
+        try result.requireLive(now: 1791200932, maximumAge: 300)
+        try result.requireSameCheckpoint(result)
+        XCTAssertThrowsError(try result.requireLive(now: 1791201932, maximumAge: 300))
+        XCTAssertThrowsError(try result.requireLive(now: 1791200931, maximumAge: 300))
+        XCTAssertThrowsError(try result.configParam(34, expectedCellHash: Data(repeating: 0, count: 32)))
         let state = base.appendingPathComponent("v5r2-proof-checkpoints/" + id.uuidString + "/checkpoint.json")
         let saved = try Data(contentsOf: state)
         enum TransportFailure: Error { case stopped }

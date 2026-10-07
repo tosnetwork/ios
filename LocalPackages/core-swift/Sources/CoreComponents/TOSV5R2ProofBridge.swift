@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import TOSProofVerify
 
 /// Raw proof boundary; the caller must provision a trusted anchor and bind the proven wallet/configuration.
@@ -103,6 +104,66 @@ public enum TOSV5R2ProofBridge {
         if let failure = context.failure { throw failure }
         guard status == 0, used > 0, used <= output.count else { throw TOSPQError.invalidInput }
         return Data(output.prefix(used))
+    }
+
+    /// A capability produced only by native verification. Binding alone does not authorize signing.
+    public final class BoundRead {
+        private let value: [String: Any]
+        private let anchorDigest: Data
+        private let checkpoint: Data
+        fileprivate init(verified: Data, request: Data, anchor: Data) throws {
+            guard let object = try JSONSerialization.jsonObject(with: verified) as? [String: Any],
+                  object["status"] as? String == "verified", object["interface"] as? String == "tos-proof-verify/1",
+                  object["request_sha256"] as? String == Self.hex(Data(SHA256.hash(data: request))),
+                  let target = object["target"] as? [String: Any] else { throw TOSPQError.invalidInput }
+            value = object
+            anchorDigest = Data(SHA256.hash(data: anchor))
+            checkpoint = try JSONSerialization.data(withJSONObject: target, options: [.sortedKeys])
+        }
+        private static func hex(_ bytes: Data) -> String { bytes.map { String(format: "%02x", $0) }.joined() }
+        /// Repeat at authorization using the local clock and configured age limit.
+        public func requireLive(now: Int64, maximumAge: Int64) throws {
+            guard now > 0, (1...604800).contains(maximumAge), value["mode"] as? String == "live",
+                  let live = value["live"] as? [String: Any], let verifiedNow = live["now"] as? Int64,
+                  let nativeLimit = live["max_age_seconds"] as? Int64,
+                  let target = value["target"] as? [String: Any], let timestamp = target["gen_utime"] as? Int64,
+                  now >= verifiedNow, maximumAge <= nativeLimit,
+                  (-60...maximumAge).contains(now - timestamp) else { throw TOSPQError.invalidInput }
+        }
+        public func requireSameCheckpoint(_ other: BoundRead) throws {
+            guard anchorDigest == other.anchorDigest, checkpoint == other.checkpoint else { throw TOSPQError.keyBinding }
+        }
+        public func accountState(expectedAddress: String, expectedCodeHash: Data) throws -> Data {
+            guard expectedAddress.range(of: "^-?[0-9]+:[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  expectedCodeHash.count == 32, let account = value["account"] as? [String: Any],
+                  account["exists"] as? Bool == true, account["active"] as? Bool == true,
+                  account["address"] as? String == expectedAddress,
+                  account["code_hash"] as? String == Self.hex(expectedCodeHash),
+                  let encoded = account["state_boc"] as? String, let bytes = Data(base64Encoded: encoded),
+                  !bytes.isEmpty else { throw TOSPQError.keyBinding }
+            return bytes
+        }
+        public func configParam(_ index: Int, expectedCellHash: Data) throws -> Data {
+            guard index >= 0, expectedCellHash.count == 32,
+                  let params = value["config_params"] as? [[String: Any]] else { throw TOSPQError.keyBinding }
+            let matches = params.filter { $0["index"] as? Int == index }
+            guard matches.count == 1, matches[0]["cell_hash"] as? String == Self.hex(expectedCellHash),
+                  let encoded = matches[0]["boc"] as? String, let bytes = Data(base64Encoded: encoded),
+                  !bytes.isEmpty else { throw TOSPQError.keyBinding }
+            return bytes
+        }
+    }
+    public static func verifyHistoricalBound(anchor: Data, request: Data, now: Int64, material: [Material]) throws -> BoundRead {
+        guard (1...1_048_576).contains(request.count),
+              let object = try JSONSerialization.jsonObject(with: request) as? [String: Any],
+              object["mode"] as? String == "historical" else { throw TOSPQError.invalidInput }
+        let result = try verify(anchor: anchor, request: request, state: Data(), now: now, material: material)
+        return try BoundRead(verified: result.verified, request: request, anchor: anchor)
+    }
+    internal static func acquireBound(directory: URL, initialize: Bool, anchor: Data, request: Data,
+                                      now: Int64, transport: @escaping Transport) throws -> BoundRead {
+        let result = try acquirePersisted(directory: directory, initialize: initialize, anchor: anchor, request: request, now: now, transport: transport)
+        return try BoundRead(verified: result, request: request, anchor: anchor)
     }
 
 }

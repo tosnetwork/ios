@@ -36,4 +36,11 @@ public final class TOSV5R2ProofSession {
         try TOSV5R2ProofBridge.acquirePersisted(directory: directory, initialize: false, anchor: anchor, request: request, now: now, transport: transport)
     }
 
+    public func enrollBound(request: Data, now: Int64, transport: @escaping TOSV5R2ProofBridge.Transport) throws -> TOSV5R2ProofBridge.BoundRead {
+        try TOSV5R2ProofBridge.acquireBound(directory: directory, initialize: true, anchor: anchor, request: request, now: now, transport: transport)
+    }
+    public func readBound(request: Data, now: Int64, transport: @escaping TOSV5R2ProofBridge.Transport) throws -> TOSV5R2ProofBridge.BoundRead {
+        try TOSV5R2ProofBridge.acquireBound(directory: directory, initialize: false, anchor: anchor, request: request, now: now, transport: transport)
+    }
+
 }
