@@ -21,7 +21,7 @@ final class OnboardingRootView: UIView, ConfigurableView {
     let createButton = TKButton()
     let importButton = TKButton()
     let configureNodeButton = UIButton(type: .system)
-    let v5r2Button = UIButton(type: .system)
+    let quantumButton = UIButton(type: .system)
     let termsTextView: UITextView = {
         let textView = UITextView()
         textView.isEditable = false
@@ -99,12 +99,12 @@ private extension OnboardingRootView {
         configureNodeButton.titleLabel?.adjustsFontForContentSizeCategory = true
         configureNodeButton.accessibilityIdentifier = "onboarding.configureNode"
         configureNodeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-        var r2Configuration = UIButton.Configuration.plain()
-        r2Configuration.title = "V5R2 accounts"
-        v5r2Button.configuration = r2Configuration
-        v5r2Button.accessibilityIdentifier = "onboarding.v5r2"
-        v5r2Button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
-        bottomControlsContainer.setViews([createButton, importButton, v5r2Button, configureNodeButton, termsTextView])
+        var quantumConfiguration = UIButton.Configuration.plain()
+        quantumConfiguration.title = "Quantum accounts"
+        quantumButton.configuration = quantumConfiguration
+        quantumButton.accessibilityIdentifier = "onboarding.quantum"
+        quantumButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        bottomControlsContainer.setViews([createButton, importButton, quantumButton, configureNodeButton, termsTextView])
 
         addSubview(coverImageView)
         addSubview(titleDescriptionView)

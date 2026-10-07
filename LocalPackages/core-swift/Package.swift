@@ -33,8 +33,8 @@ let package = Package(
         .binaryTarget(name: "TOSProofVerify", path: "Generated/TOSProofVerify.xcframework"),
         .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
-            exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "V5R2-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/lms-reference/license.txt", "vendor/lms-reference/SOURCE.json", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
-            sources: ["vendor/lms/wallet-lms-sign-c.cpp", "vendor/lms-reference/hss_derive.c", "vendor/lms-reference/hss_zeroize.c", "vendor/lms-reference/lm_common.c", "vendor/lms-reference/lm_ots_common.c", "vendor/lms-reference/lm_ots_sign.c", "vendor/lms-reference/endian.c", "vendor/lms-reference/hash.c", "vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_v5r2.c", "tos_v5r2_kdf.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
+            exclude: ["CMakeLists.txt", "PROVENANCE.json", "Quantum-PROVENANCE.json", "Quantum-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/lms-reference/license.txt", "vendor/lms-reference/SOURCE.json", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
+            sources: ["vendor/lms/wallet-lms-sign-c.cpp", "vendor/lms-reference/hss_derive.c", "vendor/lms-reference/hss_zeroize.c", "vendor/lms-reference/lm_common.c", "vendor/lms-reference/lm_ots_common.c", "vendor/lms-reference/lm_ots_sign.c", "vendor/lms-reference/endian.c", "vendor/lms-reference/hash.c", "vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_quantum.c", "tos_quantum_kdf.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
                 "vendor/slhdsa/sha2_256.c", "vendor/slhdsa/sha2_512.c", "tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
                 "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
                 "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",
@@ -73,7 +73,7 @@ let package = Package(
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
-            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/v5r2-proof"), .copy("TestData/v5r2-proof-PROVENANCE.json")],
+            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-proof-PROVENANCE.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
@@ -102,7 +102,7 @@ let package = Package(
             path: "Sources/KeeperCore",
             resources: [
                 .copy("PackageResources/DefaultRemoteConfiguration.json"),
-                .copy("PackageResources/V5R2ReviewCandidate"),
+                .copy("PackageResources/QuantumReviewCandidate"),
                 .copy("PackageResources/known_accounts.json"),
             ]
         ),
@@ -111,7 +111,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/v5r2-live-genesis"), .copy("TestData/tos-v5r2-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
+            resources: [.copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

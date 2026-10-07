@@ -43,13 +43,13 @@ tonconnect_generate:
 BUILD_DIR := ./build
 BUILD_JOBS ?= 4
 
-prepare_v5r2_fee_state:
-	python3 scripts/build_v5r2_fee_state.py
+prepare_quantum_fee_state:
+	python3 scripts/build_quantum_fee_state.py
 
-prepare_v5r2_proof:
-	python3 scripts/build_v5r2_proof.py
+prepare_quantum_proof:
+	python3 scripts/build_quantum_proof.py
 
-compile: prepare_v5r2_fee_state prepare_v5r2_proof
+compile: prepare_quantum_fee_state prepare_quantum_proof
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
@@ -98,7 +98,7 @@ TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
 # Expected guard-deletion failures need XCTest receipts, not a full sysdiagnose.
 # Other suites retain the usual diagnostics; callers may override either mode.
-TEST_DIAGNOSTICS ?= $(if $(findstring TOSV5R2,$(TEST_ONLY)),never,on-failure)
+TEST_DIAGNOSTICS ?= $(if $(findstring TOSQuantum,$(TEST_ONLY)),never,on-failure)
 TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
@@ -141,7 +141,7 @@ test_all:
 
 TEST_ACTION ?= $(if $(TEST_RUN_FILE),test-without-building,test)
 
-test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_v5r2_fee_state prepare_v5r2_proof)
+test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof)
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \

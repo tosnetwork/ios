@@ -69,9 +69,9 @@ final class TOSPQWalletsViewController: UIViewController {
             let records = try await store.list();clear();current = nil
             let feeAddress = try payer.address.toRaw()
             label("Fee wallet: \(payer.metaData.label)");label(feeAddress, id: "pq.fee.address")
-            button("V5R2 accounts", id: "pq.v5r2") { [weak self] in
+            button("Quantum accounts", id: "pq.quantum") { [weak self] in
                 guard let self else { return }
-                do { navigationController?.pushViewController(try TOSV5R2WalletsViewController(authenticate: authenticate), animated: true) }
+                do { navigationController?.pushViewController(try TOSQuantumWalletsViewController(authenticate: authenticate), animated: true) }
                 catch { showError() }
             }
             button("Create PQ wallet", id: "pq.create") { [weak self] in self?.chooseAlgorithm(restore: false) }

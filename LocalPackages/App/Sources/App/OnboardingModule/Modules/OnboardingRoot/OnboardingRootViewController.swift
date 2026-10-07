@@ -20,20 +20,20 @@ final class OnboardingRootViewController: GenericViewViewController<OnboardingRo
 
         customView.termsTextView.delegate = self
         customView.configureNodeButton.addTarget(self, action: #selector(configureNode), for: .touchUpInside)
-        customView.v5r2Button.addTarget(self, action: #selector(openV5R2), for: .touchUpInside)
+        customView.quantumButton.addTarget(self, action: #selector(openQuantum), for: .touchUpInside)
         setupBindings()
         viewModel.viewDidLoad()
     }
 }
 
 private extension OnboardingRootViewController {
-    @objc func openV5R2() {
+    @objc func openQuantum() {
         do {
-            let controller = try TOSV5R2WalletsViewController(authenticate: {
+            let controller = try TOSQuantumWalletsViewController(authenticate: {
                 let context = LAContext()
                 defer { context.invalidate() }
                 guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return false }
-                return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Access V5R2 wallet material")) == true
+                return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Access Quantum wallet material")) == true
             })
             let navigation = UINavigationController(rootViewController: controller)
             controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak navigation] _ in navigation?.dismiss(animated: true) })

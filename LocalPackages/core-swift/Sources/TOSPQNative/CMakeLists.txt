@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(tos_mobile_pq LANGUAGES C)
 set(F vendor/falcon)
-add_library(tospq STATIC tos_v5r2.c vendor/slhdsa/slh_dsa.c vendor/slhdsa/slh_sha2.c
+add_library(tospq STATIC tos_quantum.c vendor/slhdsa/slh_dsa.c vendor/slhdsa/slh_sha2.c
  vendor/slhdsa/sha2_256.c vendor/slhdsa/sha2_512.c tos_pq.c falcon512-native.c vendor/mldsa/mldsa_native.c
  ${F}/falcon.c ${F}/codec.c ${F}/common.c ${F}/shake.c ${F}/vrfy.c
  ${F}/keygen.c ${F}/sign.c ${F}/fft.c ${F}/fpr.c ${F}/rng.c)

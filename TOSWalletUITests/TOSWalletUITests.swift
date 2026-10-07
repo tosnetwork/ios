@@ -34,10 +34,10 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testR2InitialAccountScreenShowsPendingGatesOffline() throws {
-        let r2 = app.buttons["onboarding.v5r2"]
-        XCTAssertTrue(r2.waitForExistence(timeout: 15)); r2.tap()
-        XCTAssertTrue(app.buttons["v5r2.import"].waitForExistence(timeout: 15))
-        let pending = app.staticTexts["v5r2.pending"]
+        let quantum = app.buttons["onboarding.quantum"]
+        XCTAssertTrue(quantum.waitForExistence(timeout: 15)); quantum.tap()
+        XCTAssertTrue(app.buttons["quantum.import"].waitForExistence(timeout: 15))
+        let pending = app.staticTexts["quantum.pending"]
         XCTAssertTrue(pending.exists)
         XCTAssertTrue(pending.label.contains("Network verification and recovery funding are pending"))
     }

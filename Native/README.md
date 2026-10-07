@@ -1,7 +1,7 @@
-# V5R2 fee state source build
+# Quantum fee state source build
 
 `fee-state-bundle` is exported from the shared TOS Rust implementation using
-`scripts/export-v5r2-fee-state.py` in that repository. Its manifest records source
+`scripts/export-quantum-fee-state.py` in that repository. Its manifest records source
 hashes and the standalone lockfile retains the canonical dependency versions.
 Do not fork the journal/schedule/cache logic in this repository.
 
@@ -12,7 +12,7 @@ cd Native/fee-state-bundle
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 ```
 
-From the repository root, `make prepare_v5r2_fee_state` builds an ignored
+From the repository root, `make prepare_quantum_fee_state` builds an ignored
 XCFramework from source for device and both simulator architectures. `make
 compile` and `make test_project_scheme` run this prerequisite automatically.
 Run it before opening the project directly in Xcode on a fresh checkout.
