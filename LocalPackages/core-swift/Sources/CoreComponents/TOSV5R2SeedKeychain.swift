@@ -4,6 +4,7 @@ import Security
 /// Local role custody. Independent rescue custody requires keeping its record on the separate device.
 /// Keychain presence does not authorize a transaction or establish a live chain route.
 public final class TOSV5R2SeedKeychain {
+    public enum MasterProfile { case nativeMnemonic, rawMaster32 }
     public struct Context {
         public let network: Data
         public let globalID: Int32
@@ -16,6 +17,28 @@ public final class TOSV5R2SeedKeychain {
     }
     private let lock = NSLock()
     public init() {}
+    /// Initial binding only. Native mnemonic validation precedes this call;
+    /// successful storage neither returns a signer nor approves current authority.
+    public func restoreDerivedAndWipe(id: UUID, role: TOSV5R2Role, context: Context, master: inout Data,
+                                     inputProfile: MasterProfile, declaredProfile: MasterProfile,
+                                     expectedPublicKey: Data) throws -> Data {
+        var seed = try Self.deriveBoundAndWipe(role: role, context: context, master: &master,
+            inputProfile: inputProfile, declaredProfile: declaredProfile, expectedPublicKey: expectedPublicKey)
+        defer { seed.resetBytes(in: 0..<seed.count) }
+        return try importAndWipe(id: id, role: role, context: context, seed: &seed)
+    }
+    internal static func deriveBoundAndWipe(role: TOSV5R2Role, context: Context, master: inout Data,
+                                           inputProfile: MasterProfile, declaredProfile: MasterProfile,
+                                           expectedPublicKey: Data) throws -> Data {
+        defer { master.resetBytes(in: 0..<master.count) }
+        guard inputProfile == declaredProfile, expectedPublicKey.count == role.publicKeySize else { throw TOSPQError.keyBinding }
+        var seed = try TOSV5R2Kdf.deriveAndWipe(material: role == .primary ? .primary : .rescue,
+            master: &master, network: context.network, globalID: context.globalID, account: context.account, generation: context.generation)
+        do {
+            guard try TOSV5R2Signer.publicKey(role: role, seed: seed) == expectedPublicKey else { throw TOSPQError.keyBinding }
+            return seed
+        } catch { seed.resetBytes(in: 0..<seed.count); throw error }
+    }
     private func query(id: UUID, role: TOSV5R2Role) -> [CFString: Any] {
         [kSecClass: kSecClassGenericPassword, kSecAttrService: "network.tos.wallet.v5r2.seed.v1",
          kSecAttrAccount: "\(role.rawValue).\(id.uuidString)", kSecAttrSynchronizable: false]
