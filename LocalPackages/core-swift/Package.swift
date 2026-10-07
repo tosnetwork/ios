@@ -33,7 +33,7 @@ let package = Package(
         .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
             exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "V5R2-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
-            sources: ["vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_v5r2.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
+            sources: ["vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_v5r2.c", "tos_v5r2_kdf.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
                 "vendor/slhdsa/sha2_256.c", "vendor/slhdsa/sha2_512.c", "tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
                 "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
                 "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",

@@ -2,6 +2,7 @@
 #define TOS_V5R2_NATIVE_H
 #include <stddef.h>
 #include "tos_lms_fee.h"
+#include "tos_v5r2_kdf.h"
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
