@@ -13,8 +13,8 @@ with `TOS_PROOF_BUILD_ROOT`. Without overrides the builder uses a source checkou
 and build cache under `.native/v5r2-proof`. CMake, Ninja, Xcode command-line tools,
 and native dependency build tools are required.
 
-The Swift bridge currently validates raw proof results only. Current wallet
-account/configuration binding, authenticated transport, trusted-anchor
-provisioning, and the iOS private no-backup checkpoint session remain separate
-unfinished steps. Framework construction and simulator tests do not establish
+The Swift bridge validates raw proof results. The per-wallet checkpoint session
+uses private directories excluded from backup and commits native live state
+before returning results. Current wallet account/configuration binding,
+authenticated transport, and trusted-anchor provisioning remain unfinished. Framework construction and simulator tests do not establish
 physical-device custody or transaction authorization acceptance.

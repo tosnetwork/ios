@@ -1,5 +1,5 @@
 {
-  "source_revision": "4788dd8fcb7193fec11d15fd0c6134b332e75c7c",
+  "source_revision": "ab0207275ed08261e9ec45634c46ab7c92263548",
   "source": "test/pq-native/data/proof-verify-real",
   "public_test_material_only": true,
   "files": [
@@ -32,6 +32,31 @@
       "file": "historical-request.json",
       "bytes": 447,
       "sha256": "d3584f7217c088516dae68c59d7a112129b824324073896ff24274b950d7cf8d"
+    },
+    {
+      "file": "live/chain-0000.tl",
+      "bytes": 15116,
+      "sha256": "74838f9ebeac4cfd4f9d173c4c795c8d23f4039b467ef1b8e2eb2c775b9ee168"
+    },
+    {
+      "file": "live/config.tl",
+      "bytes": 7152,
+      "sha256": "50417c259f66985c86ce7d6d2d4a719f57d0e377b4acee47be064ba547013674"
+    },
+    {
+      "file": "live/descent-0000.tl",
+      "bytes": 3744,
+      "sha256": "15dd1be31165a4304ffa0cbd98c051b2df777512514ba12a277b9ac95c27bb44"
+    },
+    {
+      "file": "live/masterchain-info.tl",
+      "bytes": 184,
+      "sha256": "567c5e140e487c5fa681ee2ffbb2eb45cf71a5be9ff0c8dd99d452e4b2e44bc1"
+    },
+    {
+      "file": "live-request.json",
+      "bytes": 59,
+      "sha256": "293372097f700fadefd117f66e02bbddd050421d9cda78320aefe799a075f039"
     }
   ]
 }
