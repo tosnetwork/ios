@@ -52,4 +52,34 @@ final class TOSV5R2GenesisTests: XCTestCase {
         XCTAssertThrowsError(try w.successorFor(wallet: Address(workchain: -1, hash: hash(100))))
         XCTAssertThrowsError(try w.successorFor(wallet: w.moduleAddress))
     }
+    func testAllSuccessorVaultIdentitiesMatchIndependentVectors() throws {
+        do {
+            let w = try create(policy: .ready, walletId: 42, tree: 456)
+            let next = try w.successorFor(wallet: Address(workchain: 0, hash: Data(hex: "0000000000000000000000000000000000000000000000000000000000000064")))
+            XCTAssertEqual(next.vaultInit.hash(), Data(hex: "c616901d34d08eebcee377f6bbd44be27463d294d3368636ac8071b55bfd223b"))
+            XCTAssertEqual(next.vaultInit.refs[1].hash(), Data(hex: "b9334f25f72bf4923cd4c450d47777bba89a98ec6df1fe083a76645bbef1e622"))
+            XCTAssertEqual(next.configHash, Data(hex: "d18325849c3c2aa35d89abc8c216954c3934ff007e285a91244f175c31fd29f9"))
+        }
+        do {
+            let w = try create(policy: .required, walletId: 42, tree: 456)
+            let next = try w.successorFor(wallet: Address(workchain: 0, hash: Data(hex: "0000000000000000000000000000000000000000000000000000000000000064")))
+            XCTAssertEqual(next.vaultInit.hash(), Data(hex: "1ae955effa177cfb429cce6e3dead9ff09f978b8c1b192248341b6696201027e"))
+            XCTAssertEqual(next.vaultInit.refs[1].hash(), Data(hex: "0e8a69fbee3d9b5df5a4914e6a0f93e116bc749abe54f79bc01ee29400974386"))
+            XCTAssertEqual(next.configHash, Data(hex: "d31917c93dd4c7bb692a147e52cc0c1e239da830817660eee7ad4153926f4967"))
+        }
+        do {
+            let w = try create(policy: .ready, walletId: 43, tree: 456)
+            let next = try w.successorFor(wallet: Address(workchain: 0, hash: Data(hex: "0000000000000000000000000000000000000000000000000000000000000065")))
+            XCTAssertEqual(next.vaultInit.hash(), Data(hex: "2c9a67e64cdcc302fcb7bd25029c966352e68087bfa7742e88b8b7634f36a9f8"))
+            XCTAssertEqual(next.vaultInit.refs[1].hash(), Data(hex: "b6f689c7adc966beebda591ba5b6394f33b3b5ef6874988fc6f20d46a72570b7"))
+            XCTAssertEqual(next.configHash, Data(hex: "610f8bb0d0516602ae55d4d650f0e2d5741bea4f602319150172556ee8900ab4"))
+        }
+        do {
+            let w = try create(policy: .ready, walletId: 42, tree: 457)
+            let next = try w.successorFor(wallet: Address(workchain: 0, hash: Data(hex: "0000000000000000000000000000000000000000000000000000000000000064")))
+            XCTAssertEqual(next.vaultInit.hash(), Data(hex: "02f1bf187c695faf2387d365e09b8f8e166d2cb4ae4163fd68c6f5dbbc057431"))
+            XCTAssertEqual(next.vaultInit.refs[1].hash(), Data(hex: "79cd92f323dff126874ec02ab294adca4b834ad80e15dfc9dbe4a99f3061d4ef"))
+            XCTAssertEqual(next.configHash, Data(hex: "d932551660dc34e01ca7127d6cbd54aab08d63f6e3bb04e5aa648888fac82d68"))
+        }
+    }
 }
