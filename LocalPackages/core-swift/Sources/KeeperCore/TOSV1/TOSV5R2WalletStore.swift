@@ -110,6 +110,26 @@ public actor TOSV5R2WalletStore {
                                                successor: successor, transport: transport, maximumAge: maximumAge)
         return try await worker.preparePrimaryExecute(initialize: initialize, actions: actions, validUntil: validUntil)
     }
+    /// Proof-bound initial custody check; returns unsigned AUTH and performs no fee reservation or broadcast.
+    public func prepareInitialPrimaryWithCustody(id: UUID, independentlyKnownWallet: Address,
+                                                locallyProvisionedAnchor: Data, initialize: Bool, actions: Cell,
+                                                validUntil: UInt32, transport: @escaping TOSV5R2ProofBridge.Transport,
+                                                maximumAge: Int64 = 30) async throws -> TOSV5R2Auth {
+        try TOSV5R2Auth.validateActions(actions)
+        guard TimeInterval(validUntil) > Date().timeIntervalSince1970 else { throw TOSPQError.invalidInput }
+        let worker = try await proofCoordinator(id: id, wallet: independentlyKnownWallet, anchor: locallyProvisionedAnchor,
+                                               successor: nil, transport: transport, maximumAge: maximumAge)
+        guard let record = try list().first(where: { $0.id == id }), record.address == independentlyKnownWallet else { throw TOSPQError.keyBinding }
+        let initial = try TOSV5R2InitialRecovery.parseAndReconstruct(record.manifest, codes: codes, pins: pins, expectedWallet: independentlyKnownWallet)
+        guard let object = try JSONSerialization.jsonObject(with: record.manifest) as? [String: Any],
+              let network = object["network"] as? String, let global = object["global_id"] as? NSNumber else { throw TOSPQError.invalidInput }
+        let context = try TOSV5R2SeedKeychain.Context(network: Data(hex: network), globalID: global.int32Value,
+            account: initial.derivation.account_index, generation: initial.derivation.key_generation)
+        let custody = keychain
+        return try await worker.preparePrimaryExecute(initialize: initialize, actions: actions, validUntil: validUntil) {
+            try custody.publicKey(id: id, role: .primary, context: context)
+        }
+    }
     private func proofCoordinator(id: UUID, wallet: Address, anchor: Data, successor: TOSV5R2Genesis?,
                                   transport: @escaping TOSV5R2ProofBridge.Transport, maximumAge: Int64) async throws -> TOSV5R2ProofCoordinator {
         guard (1...1_048_576).contains(anchor.count), (1...3599).contains(maximumAge) else { throw TOSPQError.invalidInput }

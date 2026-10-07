@@ -48,6 +48,16 @@ final class TOSV5R2WalletStoreTests: XCTestCase {
         } catch { guard let error = error as? TOSPQError, case .invalidInput = error else { throw error } }
 
         do {
+            _ = try await denied.prepareInitialPrimaryWithCustody(id: record.id, independentlyKnownWallet: m.genesis.address,
+                locallyProvisionedAnchor: anchor, initialize: false, actions: actions, validUntil: deadline, transport: noQueries)
+            XCTFail("Unauthenticated custody preparation accepted")
+        } catch { guard let error = error as? TOSPQError, case .keyBinding = error else { XCTFail("Custody authentication gate bypassed"); throw error } }
+        do {
+            _ = try await allowed.prepareInitialPrimaryWithCustody(id: record.id, independentlyKnownWallet: m.genesis.address,
+                locallyProvisionedAnchor: anchor, initialize: false, actions: actions, validUntil: deadline, transport: noQueries)
+            XCTFail("Custody accessed without checkpoint")
+        } catch { guard let error = error as? TOSPQError, case .invalidInput = error else { throw error } }
+        do {
             _ = try await denied.observeInitial(id: record.id, independentlyKnownWallet: m.genesis.address, locallyProvisionedAnchor: anchor,
                 initialize: false, primaryExecution: false, transport: noQueries)
             XCTFail("Unauthenticated proof observation accepted")

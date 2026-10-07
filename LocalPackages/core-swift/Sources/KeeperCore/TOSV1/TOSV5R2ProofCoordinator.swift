@@ -76,7 +76,8 @@ internal final class TOSV5R2ProofCoordinator: @unchecked Sendable {
         try await perform { [self] in try run(initialize: initialize, primaryExecution: primaryExecution).0 }
     }
     /// Produces an unsigned request only; custody and fee reservation happen later.
-    func preparePrimaryExecute(initialize: Bool, actions: Cell, validUntil: UInt32) async throws -> TOSV5R2Auth {
+    func preparePrimaryExecute(initialize: Bool, actions: Cell, validUntil: UInt32,
+                               custodyPublicKey: (() throws -> Data)? = nil) async throws -> TOSV5R2Auth {
         try TOSV5R2Auth.validateActions(actions)
         guard Int64(validUntil) > (try now()) else { throw TOSPQError.invalidInput }
         return try await perform { [self] in
@@ -84,6 +85,9 @@ internal final class TOSV5R2ProofCoordinator: @unchecked Sendable {
             guard let policy else { throw TOSPQError.keyBinding }
             let request = try installed.primaryExecuteRequest(policyProof: policy, actions: actions,
                 validUntil: validUntil, now: now(), maximumAge: maximumAge)
+            if let custodyPublicKey {
+                try installed.requirePrimaryCustody(custodyPublicKey(), policyProof: policy, now: now(), maximumAge: maximumAge)
+            }
             try installed.requireFeeProof(now: now(), maximumAge: maximumAge)
             try installed.requirePrimaryExecution(policyProof: policy, now: now(), maximumAge: maximumAge)
             guard Int64(validUntil) > (try now()) else { throw TOSPQError.invalidInput }

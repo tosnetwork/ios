@@ -139,7 +139,9 @@ test_all:
 	$(MAKE) test_tkchart_package
 	$(MAKE) test_tkagentcommerce
 
-test_project_scheme: prepare_v5r2_fee_state prepare_v5r2_proof
+TEST_ACTION ?= $(if $(TEST_RUN_FILE),test-without-building,test)
+
+test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_v5r2_fee_state prepare_v5r2_proof)
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
@@ -159,21 +161,20 @@ test_project_scheme: prepare_v5r2_fee_state prepare_v5r2_proof
 		TEST_RUNNER_TOS_UI_EXPECTED_RPC_URL='$(TOS_UI_RPC_URL)' \
 		TEST_RUNNER_PACKAGE_RESOURCE_BUNDLE_PATH='$(TEST_PACKAGE_RESOURCE_BUNDLE_PATH)' \
 		xcodebuild -jobs $(BUILD_JOBS) \
-		-project TosWallet.xcodeproj \
-		-scheme $(SCHEME) \
-		-configuration '$(TEST_CONFIGURATION)' \
+		$(if $(TEST_RUN_FILE),-xctestrun "$(TEST_RUN_FILE)",-project TosWallet.xcodeproj -scheme $(SCHEME) -configuration '$(TEST_CONFIGURATION)') \
 		-destination '$(TEST_DESTINATION)' \
 		-disableAutomaticPackageResolution \
 		-onlyUsePackageVersionsFromResolvedFile \
 		-skipPackageUpdates \
 		-parallel-testing-enabled NO \
 		-collect-test-diagnostics $(TEST_DIAGNOSTICS) \
-		-derivedDataPath $(TEST_DERIVED_DATA_PATH) \
+		$(if $(TEST_RUN_FILE),,-derivedDataPath $(TEST_DERIVED_DATA_PATH)) \
 		-resultBundlePath "$$result_bundle" \
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
 		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
-		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
+		$(if $(TEST_HOST),TEST_HOST="$(TEST_HOST)",) \
+		$(TEST_ACTION) $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
 
 test_core_swift: SCHEME=WalletCore
 test_core_swift: test_project_scheme

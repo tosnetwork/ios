@@ -62,6 +62,11 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "TOSCustodyHostedTests",
+            dependencies: ["CoreComponents"],
+            swiftSettings: [.treatAllWarnings(as: .error)]
+        ),
+        .testTarget(
             name: "CoreComponentsTests",
             dependencies: [
                 "CoreComponents",

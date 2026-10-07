@@ -75,8 +75,8 @@ public final class TOSV5R2SeedKeychain {
         guard status == errSecSuccess else { throw TOSPQError.keychain(status) }
         return publicKey
     }
-    public func sign(id: UUID, role: TOSV5R2Role, context: Context, expectedPublicKey: Data,
-                     purpose: TOSV5R2Purpose, digest: Data) throws -> Data {
+    private func withSeed<Result>(id: UUID, role: TOSV5R2Role, context: Context,
+                                  body: (Data) throws -> Result) throws -> Result {
         lock.lock(); defer { lock.unlock() }
         var q = query(id: id, role: role); q[kSecReturnData] = true
         var value: CFTypeRef?
@@ -85,8 +85,20 @@ public final class TOSV5R2SeedKeychain {
         defer { record.resetBytes(in: 0..<record.count) }
         var seed = try Self.seed(record: record, id: id, role: role, context: context)
         defer { seed.resetBytes(in: 0..<seed.count) }
-        return try TOSV5R2Signer.sign(role: role, purpose: purpose, seed: seed,
-                                     expectedPublicKey: expectedPublicKey, digest: digest)
+        return try body(seed)
+    }
+    /// Requires the same protected record access as signing; never returns seed material.
+    public func publicKey(id: UUID, role: TOSV5R2Role, context: Context) throws -> Data {
+        try withSeed(id: id, role: role, context: context) {
+            try TOSV5R2Signer.publicKey(role: role, seed: $0)
+        }
+    }
+    public func sign(id: UUID, role: TOSV5R2Role, context: Context, expectedPublicKey: Data,
+                     purpose: TOSV5R2Purpose, digest: Data) throws -> Data {
+        try withSeed(id: id, role: role, context: context) {
+            try TOSV5R2Signer.sign(role: role, purpose: purpose, seed: $0,
+                                  expectedPublicKey: expectedPublicKey, digest: digest)
+        }
     }
     public func delete(id: UUID, role: TOSV5R2Role) throws {
         lock.lock(); defer { lock.unlock() }
