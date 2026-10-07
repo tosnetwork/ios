@@ -1,0 +1,11 @@
+{
+  "source_repository": "tosnetwork/tos",
+  "source_commit": "c70675ee7",
+  "source_directory": "crypto/pq",
+  "files": {
+    "lms-fee.cpp": "8acad863da2539542d4ec22d7ba1c326b63a13464326ff74df5cbc4df0388d0f",
+    "lms-fee.h": "601bda498c7a67bc870b4248bd2036a2a14287f17e8dbb4c83dc7bb670885443",
+    "mldsa44.h": "9e4ee02c21e546a926567d3a5eb3a135796c7d695260d0056d933dd7cf64c59f",
+    "wallet-lms-fee-c.cpp": "ed866ea8337dc92765b17eaf07848f16f43e45931797795fcb95c0fb133960e5"
+  }
+}

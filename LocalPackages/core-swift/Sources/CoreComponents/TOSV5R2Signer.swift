@@ -57,3 +57,14 @@ public enum TOSV5R2Signer {
         }}}
     }
 }
+
+/// Pure fee signature verification. Enrollment, expiry and broadcast require authenticated chain state.
+public enum TOSV5R2FeeVerifier {
+    public static func verify(leaf: UInt32, publicKey: Data, digest: Data, signature: Data) -> Bool {
+        guard leaf < (1 << 20), publicKey.count == 60, digest.count == 32, signature.count == 2832 else { return false }
+        return publicKey.withUnsafeBytes { k in digest.withUnsafeBytes { d in signature.withUnsafeBytes { s in
+            tos_wallet_lms_fee_verify(leaf, d.bindMemory(to: UInt8.self).baseAddress, 32,
+                s.bindMemory(to: UInt8.self).baseAddress, 2832, k.bindMemory(to: UInt8.self).baseAddress, 60) == 1
+        }}}
+    }
+}

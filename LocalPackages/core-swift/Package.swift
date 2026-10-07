@@ -31,8 +31,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
-            exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
-            sources: ["tos_v5r2.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
+            exclude: ["CMakeLists.txt", "PROVENANCE.json", "V5R2-PROVENANCE.json", "V5R2-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
+            sources: ["vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_v5r2.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
                 "vendor/slhdsa/sha2_256.c", "vendor/slhdsa/sha2_512.c", "tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
                 "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
                 "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",
@@ -44,7 +44,8 @@ let package = Package(
                 .define("FALCON_AVX2", to: "0"), .define("FALCON_FMA", to: "0"),
                 .define("FALCON_PREFIX", to: "tos_mobile_falcon_inner"),
                 .define("FALCON_RAND_GETENTROPY", to: "0"), .define("FALCON_RAND_URANDOM", to: "0"),
-                .define("FALCON_RAND_WIN32", to: "0")]),
+                .define("FALCON_RAND_WIN32", to: "0")],
+            cxxSettings: [.headerSearchPath("vendor/slhdsa"), .define("TOS_LMS_PORTABLE_SHA256", to: "1")]),
         .target(
             name: "CoreComponents",
             dependencies: ["TOSPQNative",
@@ -148,5 +149,6 @@ let package = Package(
             ]
         ),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v5],
+    cxxLanguageStandard: .cxx17
 )
