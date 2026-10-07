@@ -1,0 +1,77 @@
+{
+  "scope": "PUBLIC TEST: raw genesis tuple proofs for native mobile re-verification; not fresh live operation or custody acceptance",
+  "controlled_now": 1791377972,
+  "target": {
+    "workchain": -1,
+    "shard": "8000000000000000",
+    "seqno": 15,
+    "root_hash": "b31bf7a512ed4b475900862b271d8b7485a874f5f5a49b4a688dd9fedac880f2",
+    "file_hash": "630fb86997e7a5de4b7990f4c9d2c7bc523c7e98a64561f99948cc89453c6687"
+  },
+  "files": {
+    "anchor.json": {
+      "bytes": 231,
+      "sha256": "611263cc0e9a111d6ca8eb76ddfc78c8d5368f64e12e4cde808c5c9a6b78afaa"
+    },
+    "module/material/account.tl": {
+      "bytes": 6872,
+      "sha256": "b2dd6c658449eaaf47231a41ff70a10455e633e97c5218c78f2014f020c31b8c"
+    },
+    "module/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "e0d87f70e9ce3e6a54766b18beab4b05f02d7d7f25de0f23689bdbf9edebbd94"
+    },
+    "module/request.json": {
+      "bytes": 355,
+      "sha256": "9bcf25d93c90ac93d4dc06443dff908506eed4be819966b5f265573ab8062274"
+    },
+    "public-genesis-accounts.json": {
+      "bytes": 52433,
+      "sha256": "e7fe14c5ad9fbe5cc331b5144142eefdde0a93dc620a92d2395869ed82b793cb"
+    },
+    "vault/material/account.tl": {
+      "bytes": 3424,
+      "sha256": "116860c14c66e165bcdac0e26ab408491e571c45d0127ac083b7de0807966b17"
+    },
+    "vault/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "e0d87f70e9ce3e6a54766b18beab4b05f02d7d7f25de0f23689bdbf9edebbd94"
+    },
+    "vault/request.json": {
+      "bytes": 355,
+      "sha256": "3bbda10b04be15d5d78ee3a802c7ed130a919a8272d9c1a8ba3822dd24f922df"
+    },
+    "wallet/material/account.tl": {
+      "bytes": 9312,
+      "sha256": "5a550b83d105fe64768253242893c9534e03670a04f12efaa1a9d8b3b8d81954"
+    },
+    "wallet/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "e0d87f70e9ce3e6a54766b18beab4b05f02d7d7f25de0f23689bdbf9edebbd94"
+    },
+    "wallet/request.json": {
+      "bytes": 355,
+      "sha256": "75dcfcf0ee5df31c562379f3a9c22f77068fc600a8a3d0d91291638d06b8f2d3"
+    },
+    "policy/request.json": {
+      "bytes": 160,
+      "sha256": "3171f69badfaa880d20dc1438ad5657eb51796e3b4e30170aa262ceda92b3804"
+    },
+    "policy/material/masterchain-info.tl": {
+      "bytes": 184,
+      "sha256": "7c9f9753533c6fbe05d404e4db155ed9873a0bb4e12cf037e3dfe4f7103b5ecc"
+    },
+    "policy/material/config.tl": {
+      "bytes": 1804,
+      "sha256": "c9022daa53758d2416981039fc402234a725a07d4282ff252244bb17aa7e15bb"
+    },
+    "policy/material/account.tl": {
+      "bytes": 2392,
+      "sha256": "e096685746c42ab393f017e4bde0e7f6b7261477b28cf4b6f1460de6fed07fbf"
+    },
+    "policy/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "e0d87f70e9ce3e6a54766b18beab4b05f02d7d7f25de0f23689bdbf9edebbd94"
+    }
+  }
+}

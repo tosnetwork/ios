@@ -1,0 +1,50 @@
+{
+  "source_repository": "tosnetwork/tos",
+  "source_commit": "c70675ee7",
+  "source_directory": "crypto/pq",
+  "files": {
+    "lms-fee.cpp": "8acad863da2539542d4ec22d7ba1c326b63a13464326ff74df5cbc4df0388d0f",
+    "lms-fee.h": "601bda498c7a67bc870b4248bd2036a2a14287f17e8dbb4c83dc7bb670885443",
+    "mldsa44.h": "9e4ee02c21e546a926567d3a5eb3a135796c7d695260d0056d933dd7cf64c59f",
+    "wallet-lms-fee-c.cpp": "ed866ea8337dc92765b17eaf07848f16f43e45931797795fcb95c0fb133960e5"
+  },
+  "reserved_signing": {
+    "source_repository": "tosnetwork/tos",
+    "source_commit": "bbc1e37ec",
+    "scope": "Reference derivation/signing primitives with EXT_SHA256_H choosing the local SHA adapter; no stateful HSS API",
+    "files": {
+      "vendor/lms-reference/hss.h": "44bd50d44d1abc0b2928758818d23284837691112433f0c89976dc00964e4127",
+      "vendor/lms-reference/lm_ots_common.c": "8f807a4cce19ce165bcdaac18d49a08951202e38fd7f601d21f24138a6904dbd",
+      "vendor/lms-reference/hss_verify.h": "f221354dc3a9b992ee8cc44df781487ae1599f14add12f086166a66fceb54c02",
+      "vendor/lms-reference/hss_sign_inc.h": "eda887461af3ce3a466690798e1c97b94353eeb48b37b7a12fd1be5d9195ad2b",
+      "vendor/lms-reference/config.h": "17b50f6bd48b6e657fc6dc2c8baf76fa9a53fc9b4b2cdaaa93939b178a1bb10e",
+      "vendor/lms-reference/SOURCE.json": "6cd6773426df8edca1a721975499916b0947ed2fdaf8ef2089b325da4ae0e1d5",
+      "vendor/lms-reference/hss_derive.c": "f15377eade2b6237617254a33fcea39fdeba817a0cdea1e81b30260088db9b5d",
+      "vendor/lms-reference/hss_internal.h": "e9edfc2f1ea2999819d92d6c71714925760aa8e0d6b92faa717c6b2404af94a3",
+      "vendor/lms-reference/endian.h": "9680941b2189c191442b91f8e84c099afe9537c288e52ae4d096c45a889d4d5c",
+      "vendor/lms-reference/hss_thread.h": "bad363a629a0842ff3605cce1bcde42a5c46671155a1cf0ee8a9c05fa86e0bd1",
+      "vendor/lms-reference/hss_common.h": "a0029b0b59fe1ee70ad2883ab093611e64a0947d134aabb52be96112b33a033a",
+      "vendor/lms-reference/sha256.h": "6c26814482c7eb74ffe9b1a7cf8d05cf483fa386ca96d5ee90097f682c963128",
+      "vendor/lms-reference/lm_common.c": "97acd718ed44a007b731c19d48748cc4eafd2e0af8716de5e660f33dd292ba0f",
+      "vendor/lms-reference/hss_zeroize.c": "ae6594248a04790e692ddb46a0aadd7c41a1f2f9360d61718c2c4456ebbe3fc0",
+      "vendor/lms-reference/hss_verify_inc.h": "d5600836c8f7daf0526e2178452b74e3c79bc67f323de48a75ed9719c73922e7",
+      "vendor/lms-reference/hash.c": "69ae3720e45d7efa1778d7d88e52f8c0e515d8fa977bf9b9534ad700af146aaa",
+      "vendor/lms-reference/lm_verify.h": "7131c642a4778f3b78c4743e5b88b5d59a144725aa3e59978ec17a147908293c",
+      "vendor/lms-reference/lm_ots_common.h": "c8e6ad6b972cad749042bcc4a06266dfebee1158a6cddd471661e2296d901bee",
+      "vendor/lms-reference/common_defs.h": "3b004f851b30bf95d2370445473af82c4fe4a96d5f22cfba479c0a7f7d797fd5",
+      "vendor/lms-reference/lm_ots_sign.c": "820ebfc2fec1a640df0b8eab3c56f528f90b3cc10ed7fbc95aad7f6c12d1fe1d",
+      "vendor/lms-reference/hss_reserve.h": "d6d27386bed656ea7fcf5040bb5c0dfa1c5f5236e380312c925a7b4ed266f99b",
+      "vendor/lms-reference/lm_ots.h": "8a76840ecd6f9c4075d7639e1c0e2f07a4827d6f9e3e6b2a918fa9c9fef4dd59",
+      "vendor/lms-reference/license.txt": "becfee09d72fb931a6a73153db6688175b63dfb80e16a92a98520ca5a138ca64",
+      "vendor/lms-reference/endian.c": "76d2a636c7c2d8754a8a12fc430cc9a6bd4bd0b16ae69618a22328dcc2df2a0c",
+      "vendor/lms-reference/hss_derive.h": "9d13cbd19d96f9b5af2f6a7410f1e126c0980e59a1dd0ea319f614c758f8b892",
+      "vendor/lms-reference/hss_aux.h": "4be69859201d66c9c58fce7cfb423535c60d42722e35a869b952fef25e60d0c0",
+      "vendor/lms-reference/lm_ots_verify.h": "6ce19c8ef36c8936ee34088a031acf9ace38cd22b1e2e8e5053d355959b4d68c",
+      "vendor/lms-reference/lm_common.h": "90b2d676f8eb41d24b930d206c2cfc74d87fa045344d5d7f3dda7cd35f8be056",
+      "vendor/lms-reference/hash.h": "d16296148d483ecb4752fa4f033d0e0c185f12c1319533067af72f00c1fa96f4",
+      "vendor/lms-reference/hss_zeroize.h": "eecd00e8d0c0d19dd223d61fd832a7d10b31cccf403c199828a2495154a6b1e9",
+      "tos_lms_sha256.h": "101239dfa7138d4fc4ff998ec56f4fb27f1ee39f79b211a67035aa41aed7ef26",
+      "vendor/lms/wallet-lms-sign-c.cpp": "5d5b132aae98c45056ddbd62f83e3a8ed782fb67b4d8db36654b9e7836615b19"
+    }
+  }
+}

@@ -47,3 +47,9 @@ LocalPackages/**/Package.resolved
 # Generated Python bytecode
 __pycache__/
 *.py[cod]
+
+# Source-built native fee state binary
+LocalPackages/core-swift/Generated/
+
+# Source-built embedded proof dependency cache
+.native/quantum-proof/

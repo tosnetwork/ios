@@ -21,7 +21,15 @@ jobs:
         run: python3 scripts/select_ci_xcode.py
 
       - name: Install build formatter
-        run: brew install xcbeautify
+        run: brew install xcbeautify cmake ninja autoconf automake libtool pkg-config
+
+      - name: Install pinned Quantum Rust toolchain and platform targets
+        shell: bash
+        run: |
+          Quantum_RUST_CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' Native/fee-state-bundle/rust-toolchain.toml)
+          test -n "$Quantum_RUST_CHANNEL"
+          rustup toolchain install "$Quantum_RUST_CHANNEL" --profile minimal --component rustfmt --component clippy
+          rustup target add --toolchain "$Quantum_RUST_CHANNEL" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 
       - name: Build app
         run: make compile
