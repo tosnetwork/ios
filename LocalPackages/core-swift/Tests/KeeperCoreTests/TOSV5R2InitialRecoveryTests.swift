@@ -49,4 +49,19 @@ final class TOSV5R2InitialRecoveryTests: XCTestCase {
             guard let value = error as? TOSPQError, case .invalidInput = value else { XCTFail("Expected generic encoding rejection"); return }
         }
     }
+    func testPreparedPublicMetadataMatchesCorpusAndRoundTrips() throws {
+        let (text, codes, pins, address) = try setup()
+        var network = Data(count: 32); network[31] = 123
+        var tree = Data(count: 32); tree[30] = 1; tree[31] = 0xc8
+        let key: Data = Data(hex: "000000010000000800000003" + String(repeating: "33", count: 16) + String(repeating: "44", count: 32))
+        let d = TOSV5R2InitialRecovery.Derivation(account: 0, generation: 0, primary: .rawMaster32, rescue: .rawMaster32, fee: .rawMaster32)
+        let m = try TOSV5R2InitialRecovery.prepare(codes: codes, pins: pins, globalId: 42, network: network, walletId: 42,
+            primaryKey: Data(repeating: 0x11, count: 1312), rescueKey: Data(repeating: 0x22, count: 32), policy: .ready,
+            tree: tree, feeKey: key, epoch0: 1779992790, derivation: d)
+        let expected = try JSONSerialization.jsonObject(with: Data(text.replacingOccurrences(of: "18446744073709551615", with: "null").utf8)) as? NSDictionary
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: m.toJson()) as? NSDictionary, expected)
+        XCTAssertEqual(try TOSV5R2InitialRecovery.parseAndReconstruct(m.toJson(), codes: codes, pins: pins, expectedWallet: address).genesis.address, address)
+        var copy = m.toJson(); copy.resetBytes(in: 0..<copy.count)
+        XCTAssertEqual(try TOSV5R2InitialRecovery.parseAndReconstruct(m.toJson(), codes: codes, pins: pins, expectedWallet: address).genesis.address, address)
+    }
 }

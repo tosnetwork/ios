@@ -8,10 +8,16 @@ public struct TOSV5R2InitialRecovery {
     public struct Derivation: Decodable {
         public let account_index: UInt32, key_generation: UInt32
         public let primary_seed_profile: SeedProfile, rescue_seed_profile: SeedProfile, fee_seed_profile: SeedProfile
+        public init(account: UInt32, generation: UInt32, primary: SeedProfile, rescue: SeedProfile, fee: SeedProfile) {
+            account_index = account; key_generation = generation
+            primary_seed_profile = primary; rescue_seed_profile = rescue; fee_seed_profile = fee
+        }
     }
     public let genesis: TOSV5R2Genesis
     public let derivation: Derivation
     public let lastObservedEpoch: UInt64?
+    private let encoded: Data
+    public func toJson() -> Data { encoded }
     private struct Wire: Decodable {
         let schema: String, kdf: String, derivation: Derivation, workchain: Int32, global_id: Int32
         let network: String, wallet_id: UInt32, primary_key: String, rescue_key: String, policy: String
@@ -25,13 +31,40 @@ public struct TOSV5R2InitialRecovery {
         "module_code", "vault_code", "wallet_state_init", "module_state_init", "vault_state_init", "fee_config_hash", "last_observed_epoch"]
     private static let derivationFields: Set<String> = ["account_index", "key_generation", "primary_seed_profile", "rescue_seed_profile", "fee_seed_profile"]
 
+    /// Public creation metadata only. Keys must still pass possession and funded recovery gates.
+    public static func prepare(codes: TOSV5R2Codes, pins: TOSV5R2CodePins, globalId: Int32, network: Data,
+                               walletId: UInt32, primaryKey: Data, rescueKey: Data, policy: TOSV5R2Policy,
+                               tree: Data, feeKey: Data, epoch0: UInt32, derivation: Derivation) throws -> TOSV5R2InitialRecovery {
+        let g = try TOSV5R2Genesis(codes: codes, pins: pins, globalId: globalId, network: network,
+            walletId: walletId, primaryKey: primaryKey, rescueKey: rescueKey, policy: policy,
+            feeTreeId: tree, feePublicKey: feeKey, epoch0: epoch0)
+        func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+        let object: [String: Any] = [
+            "schema": "TOS-WALLET-V5R2-INITIAL-RECOVERY-v1", "kdf": "TOS-WALLET-DUALROOT-KDF-v1",
+            "derivation": ["account_index": derivation.account_index, "key_generation": derivation.key_generation,
+                "primary_seed_profile": derivation.primary_seed_profile.rawValue, "rescue_seed_profile": derivation.rescue_seed_profile.rawValue,
+                "fee_seed_profile": derivation.fee_seed_profile.rawValue] as [String: Any],
+            "workchain": 0, "global_id": globalId, "network": hex(network), "wallet_id": walletId,
+            "primary_key": hex(primaryKey), "rescue_key": hex(rescueKey),
+            "policy": policy == .ready ? "RESCUE_READY" : "SLH_REQUIRED",
+            "fee_profile": "HSS-L1-LMS-SHA256-M32-H20-LMOTS-SHA256-N32-W4",
+            "fee_tree_id": hex(tree), "fee_public_key": hex(feeKey), "fee_epoch0": epoch0,
+            "wallet_code": hex(pins.wallet), "module_code": hex(pins.module), "vault_code": hex(pins.vault),
+            "wallet_state_init": hex(g.walletInit.hash()), "module_state_init": hex(g.moduleInit.hash()),
+            "vault_state_init": hex(g.vaultInit.hash()), "fee_config_hash": hex(g.configHash), "last_observed_epoch": NSNull()
+        ]
+        let encoded = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        return try parseAndReconstruct(encoded, codes: codes, pins: pins, expectedWallet: g.address)
+    }
+
     /// Pins and expected wallet are independently trusted inputs, never read from the manifest itself.
     public static func parseAndReconstruct(_ encoded: Data, codes: TOSV5R2Codes, pins: TOSV5R2CodePins,
                                           expectedWallet: Address) throws -> TOSV5R2InitialRecovery {
-        guard encoded.count <= 16 * 1024, expectedWallet.workchain == 0,
-              let text = String(data: encoded, encoding: .utf8) else { throw TOSPQError.invalidInput }
+        guard encoded.count <= 16 * 1024, expectedWallet.workchain == 0 else { throw TOSPQError.invalidInput }
+        let stable = encoded.withUnsafeBytes { Data($0) }
+        guard let text = String(data: stable, encoding: .utf8) else { throw TOSPQError.invalidInput }
         let wire: Wire
-        do { try checkStructure(text); wire = try JSONDecoder().decode(Wire.self, from: encoded) }
+        do { try checkStructure(text); wire = try JSONDecoder().decode(Wire.self, from: stable) }
         catch { throw TOSPQError.invalidInput } // Never propagate input-bearing parser diagnostics.
         guard wire.schema == "TOS-WALLET-V5R2-INITIAL-RECOVERY-v1", wire.kdf == "TOS-WALLET-DUALROOT-KDF-v1",
               wire.workchain == 0, wire.fee_profile == "HSS-L1-LMS-SHA256-M32-H20-LMOTS-SHA256-N32-W4" else { throw TOSPQError.invalidInput }
@@ -49,7 +82,7 @@ public struct TOSV5R2InitialRecovery {
               try bytes(wire.module_state_init, 32) == genesis.moduleInit.hash(),
               try bytes(wire.vault_state_init, 32) == genesis.vaultInit.hash(),
               try bytes(wire.fee_config_hash, 32) == genesis.configHash else { throw TOSPQError.keyBinding }
-        return TOSV5R2InitialRecovery(genesis: genesis, derivation: wire.derivation, lastObservedEpoch: wire.last_observed_epoch)
+        return TOSV5R2InitialRecovery(genesis: genesis, derivation: wire.derivation, lastObservedEpoch: wire.last_observed_epoch, encoded: stable)
     }
     private static func bytes(_ text: String, _ size: Int) throws -> Data {
         guard text.utf8.count == size * 2, text.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw TOSPQError.invalidInput }
