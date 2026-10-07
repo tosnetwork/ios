@@ -73,14 +73,16 @@ public enum TOSV5R2AccountState {
     }
 }
 
-/// Authenticated initial tuple observation. Global policy, custody, fee-slot/solvency
+/// Authenticated installed tuple observation. Global policy, custody, fee-slot/solvency
 /// and signing/action checks are additional gates; this does not confer readiness.
 public struct TOSV5R2InstalledWallet {
     public let state: TOSV5R2WalletData, nextFeeLeaf: UInt32
     private let walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64
-    private let vaultTime: UInt32, epoch0: UInt32
-    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32) {
-        self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy; self.vaultTime = vaultTime; self.epoch0 = epoch0
+    private let vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32
+    private let globalID: Int32, walletAddress: Address, moduleAddress: Address
+    private init(state: TOSV5R2WalletData, nextFeeLeaf: UInt32, walletProof: TOSV5R2ProofBridge.BoundRead, network: Data, policy: UInt64, vaultTime: UInt32, epoch0: UInt32, walletTime: UInt32, globalID: Int32, walletAddress: Address, moduleAddress: Address) {
+        self.state = state; self.nextFeeLeaf = nextFeeLeaf; self.walletProof = walletProof; self.network = network; self.policy = policy; self.vaultTime = vaultTime; self.epoch0 = epoch0; self.walletTime = walletTime
+        self.globalID = globalID; self.walletAddress = walletAddress; self.moduleAddress = moduleAddress
     }
     /// Chain eligibility only; custody, fee and signed-action gates still apply.
     public func requirePrimaryExecution(policyProof: TOSV5R2ProofBridge.BoundRead, now: Int64, maximumAge: Int64) throws {
@@ -91,6 +93,15 @@ public struct TOSV5R2InstalledWallet {
         let roots = try Cell.fromBoc(src: policyProof.provenConfigParam(48))
         guard roots.count == 1 else { throw TOSPQError.invalidInput }
         try TOSV5R2RetirementPolicy.requirePrimary(roots[0], network: network, now: UInt32(now))
+    }
+    /// Wire construction only; reviewed actions, custody, solvency and delivery still require validation.
+    public func primaryExecuteRequest(policyProof: TOSV5R2ProofBridge.BoundRead, actions: Cell, validUntil: UInt32,
+                                      now: Int64, maximumAge: Int64) throws -> TOSV5R2Auth {
+        try requirePrimaryExecution(policyProof: policyProof, now: now, maximumAge: maximumAge)
+        guard Int64(validUntil) > now else { throw TOSPQError.invalidInput }
+        return try TOSV5R2Auth(globalId: globalID, network: network, wallet: walletAddress, module: moduleAddress,
+                              role: .primary, epoch: state.epoch, nonce: state.primaryNonce, validUntil: validUntil,
+                              action: .execute(actions), provenTime: walletTime)
     }
     public func requireFeeProof(now: Int64, maximumAge: Int64) throws {
         try walletProof.requireLive(now: now, maximumAge: maximumAge)
@@ -123,7 +134,8 @@ public struct TOSV5R2InstalledWallet {
         let md = try data(module, address: route.moduleAddress, initCell: route.moduleInit)
         let vd = try data(vault, address: route.vaultAddress, initCell: route.vaultInit)
         guard md.hash() == route.moduleData.hash() else { throw TOSPQError.keyBinding }
-        let identity = try md.beginParse(); try identity.skip(40)
+        let identity = try md.beginParse(); try identity.skip(8)
+        let globalID = Int32(try identity.loadInt(bits: 32))
         let network = try identity.loadBytes(32); try identity.skip(8 + 256)
         let policy = try identity.loadUint(bits: 8)
         let metadata = try route.metadata.beginParse(); try metadata.skip(272)
@@ -131,8 +143,12 @@ public struct TOSV5R2InstalledWallet {
         let vaultAddress = "0:" + route.vaultAddress.hash.map { String(format: "%02x", $0) }.joined()
         let vaultCode = try route.vaultInit.beginParse().loadRef().hash()
         let vaultTime = try vault.accountTime(expectedAddress: vaultAddress, expectedCodeHash: vaultCode)
+        let walletCode = try birth.walletInit.beginParse().loadRef().hash()
+        let walletAddress = "0:" + birth.address.hash.map { String(format: "%02x", $0) }.joined()
+        let walletTime = try wallet.accountTime(expectedAddress: walletAddress, expectedCodeHash: walletCode)
         return try Self(state: TOSV5R2WalletData.parse(wd, birth: birth, module: route.moduleInit, metadata: route.metadata),
                         nextFeeLeaf: TOSV5R2AccountState.vaultCounter(vd, expected: route.vaultData),
-                        walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0)
+                        walletProof: wallet, network: network, policy: policy, vaultTime: vaultTime, epoch0: epoch0,
+                        walletTime: walletTime, globalID: globalID, walletAddress: birth.address, moduleAddress: route.moduleAddress)
     }
 }
