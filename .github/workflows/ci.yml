@@ -23,6 +23,14 @@ jobs:
       - name: Install build formatter
         run: brew install xcbeautify
 
+      - name: Install pinned V5R2 Rust toolchain and platform targets
+        shell: bash
+        run: |
+          V5R2_RUST_CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' Native/fee-state-bundle/rust-toolchain.toml)
+          test -n "$V5R2_RUST_CHANNEL"
+          rustup toolchain install "$V5R2_RUST_CHANNEL" --profile minimal --component rustfmt --component clippy
+          rustup target add --toolchain "$V5R2_RUST_CHANNEL" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
       - name: Build app
         run: make compile
 
