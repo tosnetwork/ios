@@ -28,7 +28,7 @@ internal final class TOSV5R2ProofCoordinator: @unchecked Sendable {
         return time
     }
     private func address(_ value: Address) -> String { "0:" + value.hash.map { String(format: "%02x", $0) }.joined() }
-    private func run(initialize: Bool, primaryExecution: Bool) throws -> TOSV5R2InstalledWallet {
+    private func run(initialize: Bool, primaryExecution: Bool) throws -> (TOSV5R2InstalledWallet, TOSV5R2ProofBridge.BoundRead?) {
         let route = try successor.map { try TOSV5R2InstalledRoute.successor(birth: birth, next: $0) } ?? .initial(birth)
         try checkCancellation()
         let session = try TOSV5R2ProofSession(walletID: id, locallyProvisionedAnchor: anchor, baseDirectory: baseDirectory)
@@ -49,25 +49,45 @@ internal final class TOSV5R2ProofCoordinator: @unchecked Sendable {
         } else {
             installed = try .bindInitial(birth: birth, wallet: wallet, module: module, vault: vault, now: now(), maximumAge: maximumAge)
         }
+        var policyProof: TOSV5R2ProofBridge.BoundRead?
         if primaryExecution {
             let policy = try session.readBound(request: wallet.requestAtCheckpoint(configIndices: [48], maximumAge: maximumAge), now: now(), transport: bounded)
             try installed.requirePrimaryExecution(policyProof: policy, now: now(), maximumAge: maximumAge)
+            policyProof = policy
         }
         try installed.requireFeeProof(now: now(), maximumAge: maximumAge)
         try checkCancellation()
-        return installed
+        return (installed, policyProof)
     }
-    func observe(initialize: Bool, primaryExecution: Bool) async throws -> TOSV5R2InstalledWallet {
+    private func perform<Result>(operation: @escaping () throws -> Result) async throws -> Result {
         try Task.checkCancellation()
         let result = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TOSV5R2InstalledWallet, Error>) in
-                DispatchQueue.global(qos: .userInitiated).async { [self] in
-                    do { continuation.resume(returning: try run(initialize: initialize, primaryExecution: primaryExecution)) }
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Result, Error>) in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do { continuation.resume(returning: try operation()) }
                     catch { continuation.resume(throwing: error) }
                 }
             }
         } onCancel: { self.cancel() }
         try Task.checkCancellation()
         return result
+    }
+    func observe(initialize: Bool, primaryExecution: Bool) async throws -> TOSV5R2InstalledWallet {
+        try await perform { [self] in try run(initialize: initialize, primaryExecution: primaryExecution).0 }
+    }
+    /// Produces an unsigned request only; custody and fee reservation happen later.
+    func preparePrimaryExecute(initialize: Bool, actions: Cell, validUntil: UInt32) async throws -> TOSV5R2Auth {
+        try TOSV5R2Auth.validateActions(actions)
+        guard Int64(validUntil) > (try now()) else { throw TOSPQError.invalidInput }
+        return try await perform { [self] in
+            let (installed, policy) = try run(initialize: initialize, primaryExecution: true)
+            guard let policy else { throw TOSPQError.keyBinding }
+            let request = try installed.primaryExecuteRequest(policyProof: policy, actions: actions,
+                validUntil: validUntil, now: now(), maximumAge: maximumAge)
+            try installed.requireFeeProof(now: now(), maximumAge: maximumAge)
+            try installed.requirePrimaryExecution(policyProof: policy, now: now(), maximumAge: maximumAge)
+            guard Int64(validUntil) > (try now()) else { throw TOSPQError.invalidInput }
+            return request
+        }
     }
 }

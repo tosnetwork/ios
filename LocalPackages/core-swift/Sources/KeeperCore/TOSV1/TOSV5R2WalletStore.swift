@@ -96,13 +96,29 @@ public actor TOSV5R2WalletStore {
     }
     private func observe(id: UUID, wallet: Address, anchor: Data, successor: TOSV5R2Genesis?, initialize: Bool,
                          primaryExecution: Bool, transport: @escaping TOSV5R2ProofBridge.Transport, maximumAge: Int64) async throws -> TOSV5R2InstalledWallet {
+        let worker = try await proofCoordinator(id: id, wallet: wallet, anchor: anchor, successor: successor,
+                                               transport: transport, maximumAge: maximumAge)
+        return try await worker.observe(initialize: initialize, primaryExecution: primaryExecution)
+    }
+    /// Authenticated, proof-bound unsigned request. Does not sign, reserve a fee leaf or broadcast.
+    public func preparePrimaryExecute(id: UUID, independentlyKnownWallet: Address, locallyProvisionedAnchor: Data,
+                                      successor: TOSV5R2Genesis? = nil, initialize: Bool, actions: Cell, validUntil: UInt32,
+                                      transport: @escaping TOSV5R2ProofBridge.Transport, maximumAge: Int64 = 30) async throws -> TOSV5R2Auth {
+        try TOSV5R2Auth.validateActions(actions)
+        guard TimeInterval(validUntil) > Date().timeIntervalSince1970 else { throw TOSPQError.invalidInput }
+        let worker = try await proofCoordinator(id: id, wallet: independentlyKnownWallet, anchor: locallyProvisionedAnchor,
+                                               successor: successor, transport: transport, maximumAge: maximumAge)
+        return try await worker.preparePrimaryExecute(initialize: initialize, actions: actions, validUntil: validUntil)
+    }
+    private func proofCoordinator(id: UUID, wallet: Address, anchor: Data, successor: TOSV5R2Genesis?,
+                                  transport: @escaping TOSV5R2ProofBridge.Transport, maximumAge: Int64) async throws -> TOSV5R2ProofCoordinator {
         guard (1...1_048_576).contains(anchor.count), (1...3599).contains(maximumAge) else { throw TOSPQError.invalidInput }
         try await unlock()
         guard let record = try list().first(where: { $0.id == id }), record.address == wallet else { throw TOSPQError.keyBinding }
         let birth = try TOSV5R2InitialRecovery.parseAndReconstruct(record.manifest, codes: codes, pins: pins, expectedWallet: wallet).genesis
         let worker = try TOSV5R2ProofCoordinator(id: id, anchor: anchor, birth: birth, successor: successor,
                                               transport: transport, maximumAge: maximumAge)
-        return try await worker.observe(initialize: initialize, primaryExecution: primaryExecution)
+        return worker
     }
 
 }

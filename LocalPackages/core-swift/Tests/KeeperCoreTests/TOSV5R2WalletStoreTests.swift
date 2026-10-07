@@ -34,6 +34,19 @@ final class TOSV5R2WalletStoreTests: XCTestCase {
             .appendingPathComponent("v5r2-proof-checkpoints/" + record.id.uuidString)
         defer { try? FileManager.default.removeItem(at: proofDirectory) }
         let noQueries: TOSV5R2ProofBridge.Transport = { _, _ in XCTFail("Missing/auth-refused observation queried endpoint"); throw TOSPQError.keyBinding }
+        let actions = try Builder().endCell()
+        let deadline = UInt32(Date().timeIntervalSince1970) + 120
+        do {
+            _ = try await denied.preparePrimaryExecute(id: record.id, independentlyKnownWallet: m.genesis.address,
+                locallyProvisionedAnchor: anchor, initialize: false, actions: actions, validUntil: deadline, transport: noQueries)
+            XCTFail("Unauthenticated PRIMARY preparation accepted")
+        } catch { guard let error = error as? TOSPQError, case .keyBinding = error else { XCTFail("PRIMARY authentication gate bypassed"); throw error } }
+        do {
+            _ = try await allowed.preparePrimaryExecute(id: record.id, independentlyKnownWallet: m.genesis.address,
+                locallyProvisionedAnchor: anchor, initialize: false, actions: actions, validUntil: deadline, transport: noQueries)
+            XCTFail("PRIMARY preparation accepted missing checkpoint")
+        } catch { guard let error = error as? TOSPQError, case .invalidInput = error else { throw error } }
+
         do {
             _ = try await denied.observeInitial(id: record.id, independentlyKnownWallet: m.genesis.address, locallyProvisionedAnchor: anchor,
                 initialize: false, primaryExecution: false, transport: noQueries)
