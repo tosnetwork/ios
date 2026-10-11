@@ -13,16 +13,18 @@ public struct FundingObservation: Sendable, Equatable {
     public let blockRoot: String
     public let stateDigest: String
     public let finalized: Bool
-    public let fundedAtomic: String
+    /// The escrow v2 state decoded from the escrow account at blockRoot, or
+    /// nil when the account does not exist there.
+    public let escrow: EscrowRuntimeState?
 
     public init(endpoint: String, network: NetworkTuple, blockRoot: String,
-                stateDigest: String, finalized: Bool, fundedAtomic: String) {
+                stateDigest: String, finalized: Bool, escrow: EscrowRuntimeState?) {
         self.endpoint = endpoint
         self.network = network
         self.blockRoot = blockRoot
         self.stateDigest = stateDigest
         self.finalized = finalized
-        self.fundedAtomic = fundedAtomic
+        self.escrow = escrow
     }
 }
 
@@ -89,7 +91,9 @@ public final class PurchaseCoordinator {
 
     /// Performs one polling step. Funding becomes authoritative only when two
     /// distinct configured endpoints agree on the same finalized block/state
-    /// and the decoded escrow amount exactly equals expectedAtomic.
+    /// and the decoded escrow is in the funded status holding exactly
+    /// expectedAtomic. The amount alone is not enough: an escrow whose release or
+    /// refund is pending still records the funded amount.
     public func pollFunding(
         configuredEndpoints: [String],
         expectedNetwork: NetworkTuple,
@@ -112,13 +116,13 @@ public final class PurchaseCoordinator {
             configuredEndpoints: configuredEndpoints,
             expectedNetwork: expectedNetwork,
             observations: observations.map { observation in
-                let amountMatches = (try? parseAtomicAmount(observation.fundedAtomic)) == expected
+                let funded = EscrowProjection.countsAsFunding(observation.escrow, quotedAtomic: expected)
                 return FinalizedObservation(
                     endpoint: observation.endpoint,
                     network: observation.network,
                     blockRoot: observation.blockRoot,
                     stateDigest: observation.stateDigest,
-                    finalized: observation.finalized && amountMatches
+                    finalized: observation.finalized && funded
                 )
             }
         )

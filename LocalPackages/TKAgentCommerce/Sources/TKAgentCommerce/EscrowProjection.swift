@@ -1,13 +1,22 @@
 import Foundation
 
-/// EscrowStatus is the finalized escrow runtime status. The values match the
-/// canonical escrow decoder; the buyer never invents a status the chain does not
-/// define.
+/// EscrowStatus is the status byte of the stablecoin escrow v2 data cell, the
+/// only escrow contract the buyer supports. The values are the contract's own
+/// `status::` constants; any other byte is refused, never mapped onto a nearby
+/// status.
 public enum EscrowStatus: UInt8, Sendable {
-    case awaitingFunding = 0
-    case funded = 1
-    case releasePending = 2
-    case refundPending = 3
+    /// Deployed, but the buyer has not accepted the Quote. Not fundable.
+    case pendingAcceptance = 0
+    /// Accepted by the buyer; the escrow takes exactly the quoted amount.
+    case awaitingFunding = 1
+    /// Holds the quoted amount. Nothing has been sent to the provider.
+    case funded = 2
+    /// A Receipt-bound release of the full amount to the provider was sent. The
+    /// contract does not learn whether it was delivered.
+    case releasePending = 3
+    /// A refund of the full amount to the buyer was sent. The contract does not
+    /// learn whether it was delivered.
+    case refundPending = 4
 }
 
 /// AtomicAmountError is raised when an atomic amount string is not a canonical
@@ -27,87 +36,190 @@ public func parseAtomicAmount(_ value: String) throws -> UInt64 {
     return amount
 }
 
-/// EscrowRuntimeState is the finalized escrow state as decoded from typed chain
-/// state. `nil` represents a not-found escrow.
+/// EscrowStateError is raised when a decoded escrow state is not one the escrow
+/// v2 contract can be in. The projection refuses it instead of guessing.
+public enum EscrowStateError: Error, Equatable {
+    /// The status byte is not an escrow v2 status.
+    case unsupportedStatus(UInt8)
+    /// The runtime fields contradict what the contract writes in this status.
+    case inconsistentState(EscrowStatus)
+    /// A commitment is not `tvm-cell-sha256:` followed by 64 lowercase hex digits
+    /// (the Receipt commitment may also be empty).
+    case malformedCommitment(String)
+}
+
+/// EscrowRuntimeState is the finalized escrow v2 state as decoded from the
+/// escrow's data cell: the status byte, the Quote commitment, and the runtime
+/// cell's funded amount, settled amount, Receipt hash (empty when zero),
+/// pending settlement query id and acceptance time. `nil` represents an escrow
+/// account that does not exist.
 public struct EscrowRuntimeState: Sendable, Equatable {
     public let status: UInt8
     public let quoteCommitment: String
     public let fundedAtomicAmount: String
     public let settledAtomicAmount: String
     public let receiptCommitment: String
+    public let acceptedAtUnix: UInt64
+    public let pendingQueryID: UInt64
 
     public init(status: UInt8, quoteCommitment: String, fundedAtomicAmount: String,
-                settledAtomicAmount: String, receiptCommitment: String) {
+                settledAtomicAmount: String, receiptCommitment: String,
+                acceptedAtUnix: UInt64, pendingQueryID: UInt64) {
         self.status = status
         self.quoteCommitment = quoteCommitment
         self.fundedAtomicAmount = fundedAtomicAmount
         self.settledAtomicAmount = settledAtomicAmount
         self.receiptCommitment = receiptCommitment
+        self.acceptedAtUnix = acceptedAtUnix
+        self.pendingQueryID = pendingQueryID
     }
 }
 
 /// FundingView is the buyer's funding projection of finalized escrow state.
+/// `settledAtomic` is the contract's settled field: the amount a pending release
+/// asked for, not an amount known to have been delivered.
 public struct FundingView: Sendable, Equatable {
     public let found: Bool
+    public let pendingAcceptance: Bool
     public let awaitingFunding: Bool
     public let fundedAtomic: UInt64
     public let settledAtomic: UInt64
     public let receiptCommitment: String
 }
 
-/// SettlementView is the buyer's settlement projection. `released` is the only
-/// signal that means "paid to the provider", and it is derived from finalized
+/// SettlementView is the buyer's settlement projection, derived from finalized
 /// escrow status — never from a Gateway response or an HTTP success.
+///
+/// It reports payouts the escrow has requested, never payouts that arrived. The
+/// escrow sends a release or refund through its jetton wallet and is not told
+/// whether the recipient's wallet accepted it; a refused payout leaves the
+/// escrow release-pending or refund-pending with the funds stranded. Nothing
+/// here is evidence that the provider or the buyer was paid.
+///
+/// `requestedReleaseAtomic` is non-zero only while `releasePending`, and
+/// `requestedRefundAtomic` only while `refundPending`.
 public struct SettlementView: Sendable, Equatable {
-    public let released: Bool
-    public let refunded: Bool
-    public let providerCreditAtomic: UInt64
+    public let releasePending: Bool
+    public let refundPending: Bool
+    public let requestedReleaseAtomic: UInt64
+    public let requestedRefundAtomic: UInt64
 }
 
 /// EscrowProjection derives the buyer's funding and settlement views from a
-/// single finalized escrow read, mirroring the canonical resolver. Funding and
-/// settlement are two projections of the same authoritative status, so they can
-/// never disagree.
+/// single finalized escrow v2 read. Funding and settlement are two projections
+/// of the same authoritative status, so they can never disagree, and both refuse
+/// a state the contract cannot be in.
 public enum EscrowProjection {
 
-    /// funding projects the funding view. A not-found escrow reads as
-    /// unfunded/awaiting, never funded.
-    public static func funding(_ escrow: EscrowRuntimeState?) throws -> FundingView {
-        guard let escrow else {
-            return FundingView(found: false, awaitingFunding: true, fundedAtomic: 0,
-                               settledAtomic: 0, receiptCommitment: "")
+    private struct Validated {
+        let status: EscrowStatus
+        let funded: UInt64
+        let settled: UInt64
+    }
+
+    private static let commitmentPrefix = "tvm-cell-sha256:"
+
+    private static func isCommitment(_ value: String) -> Bool {
+        guard value.hasPrefix(commitmentPrefix) else { return false }
+        let digest = value.dropFirst(commitmentPrefix.count)
+        return digest.count == 64 && digest.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
+    }
+
+    /// validate checks the status byte and the per-status runtime invariants the
+    /// escrow v2 contract maintains: acceptance time is set exactly once the
+    /// Quote is accepted; funds arrive only in funded; a release settles the
+    /// full funded amount against a Receipt; a refund settles nothing; and a
+    /// pending settlement always names its query id.
+    private static func validate(_ escrow: EscrowRuntimeState) throws -> Validated {
+        guard let status = EscrowStatus(rawValue: escrow.status) else {
+            throw EscrowStateError.unsupportedStatus(escrow.status)
+        }
+        guard isCommitment(escrow.quoteCommitment) else {
+            throw EscrowStateError.malformedCommitment(escrow.quoteCommitment)
+        }
+        guard escrow.receiptCommitment.isEmpty || isCommitment(escrow.receiptCommitment) else {
+            throw EscrowStateError.malformedCommitment(escrow.receiptCommitment)
         }
         let funded = try parseAtomicAmount(escrow.fundedAtomicAmount)
         let settled = try parseAtomicAmount(escrow.settledAtomicAmount)
+        let accepted = escrow.acceptedAtUnix > 0
+        let hasReceipt = !escrow.receiptCommitment.isEmpty
+        let hasQuery = escrow.pendingQueryID != 0
+        let consistent: Bool
+        switch status {
+        case .pendingAcceptance:
+            consistent = !accepted && funded == 0 && settled == 0 && !hasReceipt && !hasQuery
+        case .awaitingFunding:
+            consistent = accepted && funded == 0 && settled == 0 && !hasReceipt && !hasQuery
+        case .funded:
+            consistent = accepted && funded > 0 && settled == 0 && !hasReceipt && !hasQuery
+        case .releasePending:
+            consistent = accepted && funded > 0 && settled == funded && hasReceipt && hasQuery
+        case .refundPending:
+            consistent = accepted && funded > 0 && settled == 0 && !hasReceipt && hasQuery
+        }
+        guard consistent else {
+            throw EscrowStateError.inconsistentState(status)
+        }
+        return Validated(status: status, funded: funded, settled: settled)
+    }
+
+    /// funding projects the funding view. A missing escrow is neither awaiting
+    /// funding nor funded: the contract accepts funds only after the buyer has
+    /// accepted the Quote on a deployed escrow.
+    public static func funding(_ escrow: EscrowRuntimeState?) throws -> FundingView {
+        guard let escrow else {
+            return FundingView(found: false, pendingAcceptance: false, awaitingFunding: false,
+                               fundedAtomic: 0, settledAtomic: 0, receiptCommitment: "")
+        }
+        let state = try validate(escrow)
         return FundingView(
             found: true,
-            awaitingFunding: escrow.status == EscrowStatus.awaitingFunding.rawValue,
-            fundedAtomic: funded,
-            settledAtomic: settled,
+            pendingAcceptance: state.status == .pendingAcceptance,
+            awaitingFunding: state.status == .awaitingFunding,
+            fundedAtomic: state.funded,
+            settledAtomic: state.settled,
             receiptCommitment: escrow.receiptCommitment
         )
     }
 
-    /// settlement projects the settlement view. Release and refund are the
-    /// mutually exclusive terminal outcomes; only a release credits the provider.
+    /// settlement projects the settlement view. A pending release and a pending
+    /// refund are mutually exclusive; each reports the amount the escrow asked to
+    /// pay out, not an amount delivered.
     public static func settlement(_ escrow: EscrowRuntimeState?) throws -> SettlementView {
         guard let escrow else {
-            return SettlementView(released: false, refunded: false, providerCreditAtomic: 0)
+            return SettlementView(releasePending: false, refundPending: false,
+                                  requestedReleaseAtomic: 0, requestedRefundAtomic: 0)
         }
-        let settled = try parseAtomicAmount(escrow.settledAtomicAmount)
-        let released = escrow.status == EscrowStatus.releasePending.rawValue
+        let state = try validate(escrow)
+        let releasePending = state.status == .releasePending
+        let refundPending = state.status == .refundPending
         return SettlementView(
-            released: released,
-            refunded: escrow.status == EscrowStatus.refundPending.rawValue,
-            providerCreditAtomic: released ? settled : 0
+            releasePending: releasePending,
+            refundPending: refundPending,
+            requestedReleaseAtomic: releasePending ? state.settled : 0,
+            requestedRefundAtomic: refundPending ? state.funded : 0
         )
     }
 
-    /// isExactlyFunded reports whether the escrow holds exactly the quoted amount
-    /// in finalized state — the only condition under which a buyer may treat a
-    /// funded escrow as safe to dispatch against.
+    /// isExactlyFunded reports whether the escrow is in the funded status and
+    /// holds exactly the quoted amount in finalized state — the only condition
+    /// under which a buyer may treat it as safe to dispatch against. An escrow
+    /// whose release or refund is already pending still records the funded
+    /// amount, so the amount alone is not enough.
     public static func isExactlyFunded(_ escrow: EscrowRuntimeState?, quotedAtomic: UInt64) throws -> Bool {
-        let view = try funding(escrow)
-        return view.found && view.fundedAtomic == quotedAtomic
+        guard let escrow else { return false }
+        let state = try validate(escrow)
+        return state.status == .funded && quotedAtomic > 0 && state.funded == quotedAtomic
+    }
+
+    /// countsAsFunding is the funding gate for one finalized observation: it is
+    /// true only when the observed escrow is exactly funded at the quoted amount.
+    /// A missing escrow, any other status (including a pending release or refund,
+    /// which still record the funded amount), and a state the projection refuses
+    /// all count as not funded, so a bad observation can only delay funding,
+    /// never confirm it.
+    public static func countsAsFunding(_ escrow: EscrowRuntimeState?, quotedAtomic: UInt64) -> Bool {
+        (try? isExactlyFunded(escrow, quotedAtomic: quotedAtomic)) == true
     }
 }

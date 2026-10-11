@@ -45,9 +45,9 @@ final class PurchaseCoordinatorTests: XCTestCase {
         let network = NetworkTuple(networkID: "tos-local", genesisRoot: "root", genesisFile: "file")
         let endpoints = ["https://one", "https://two", "https://three"]
         let resolver = StaticFundingResolver(observations: [
-            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "block", stateDigest: "state", finalized: true, fundedAtomic: "25000000"),
-            FundingObservation(endpoint: endpoints[1], network: network, blockRoot: "block", stateDigest: "state", finalized: true, fundedAtomic: "25000000"),
-            FundingObservation(endpoint: endpoints[2], network: network, blockRoot: "other", stateDigest: "other", finalized: true, fundedAtomic: "1"),
+            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "block", stateDigest: "state", finalized: true, escrow: try ContractEscrowStates.state("funded")),
+            FundingObservation(endpoint: endpoints[1], network: network, blockRoot: "block", stateDigest: "state", finalized: true, escrow: try ContractEscrowStates.state("funded")),
+            FundingObservation(endpoint: endpoints[2], network: network, blockRoot: "other", stateDigest: "other", finalized: true, escrow: try ContractEscrowStates.funded(atomic: "1")),
         ])
 
         let result = try PurchaseCoordinator(journal: journal).pollFunding(
@@ -68,9 +68,9 @@ final class PurchaseCoordinatorTests: XCTestCase {
         let network = NetworkTuple(networkID: "tos-local", genesisRoot: "root", genesisFile: "file")
         let endpoints = ["https://one", "https://two", "https://three"]
         let resolver = StaticFundingResolver(observations: [
-            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "block", stateDigest: "state", finalized: true, fundedAtomic: "25000000"),
-            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "other", stateDigest: "other", finalized: true, fundedAtomic: "25000000"),
-            FundingObservation(endpoint: endpoints[1], network: network, blockRoot: "block", stateDigest: "state", finalized: true, fundedAtomic: "24999999"),
+            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "block", stateDigest: "state", finalized: true, escrow: try ContractEscrowStates.state("funded")),
+            FundingObservation(endpoint: endpoints[0], network: network, blockRoot: "other", stateDigest: "other", finalized: true, escrow: try ContractEscrowStates.state("funded")),
+            FundingObservation(endpoint: endpoints[1], network: network, blockRoot: "block", stateDigest: "state", finalized: true, escrow: try ContractEscrowStates.funded(atomic: "24999999")),
         ])
 
         XCTAssertEqual(try PurchaseCoordinator(journal: journal).pollFunding(
@@ -78,6 +78,43 @@ final class PurchaseCoordinatorTests: XCTestCase {
             expectedAtomic: "25000000", nowUnix: 4, resolver: resolver
         ), .pending)
         XCTAssertEqual(try journal.load().phase, "funding_lease")
+    }
+
+    func testOnlyTheFundedStatusAdvancesFunding() throws {
+        // Release-pending and refund-pending escrows still record the full funded
+        // amount; only the funded status itself may confirm funding.
+        let expectations: [(String, Bool)] = [
+            ("funded", true),
+            ("awaiting_funding", false),
+            ("release_pending", false),
+            ("refund_pending", false),
+        ]
+        for (name, advances) in expectations {
+            let directory = temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let journal = try preparedJournal(directory: directory)
+            _ = try journal.acquireFundingLease(id: "lease-\(name)", nowUnix: 3)
+            let network = NetworkTuple(networkID: "tos-local", genesisRoot: "root", genesisFile: "file")
+            let endpoints = ["https://one", "https://two", "https://three"]
+            let escrow = try ContractEscrowStates.state(name)
+            let resolver = StaticFundingResolver(observations: endpoints.map {
+                FundingObservation(endpoint: $0, network: network, blockRoot: "block",
+                                   stateDigest: "state", finalized: true, escrow: escrow)
+            })
+
+            let result = try PurchaseCoordinator(journal: journal).pollFunding(
+                configuredEndpoints: endpoints, expectedNetwork: network,
+                expectedAtomic: "25000000", nowUnix: 4, resolver: resolver
+            )
+
+            if advances {
+                XCTAssertEqual(result, .funded(blockRoot: "block", stateDigest: "state", votes: 3), name)
+                XCTAssertEqual(try journal.load().phase, "funded", name)
+            } else {
+                XCTAssertEqual(result, .pending, name)
+                XCTAssertEqual(try journal.load().phase, "funding_lease", name)
+            }
+        }
     }
 
     private func temporaryDirectory() -> URL {
