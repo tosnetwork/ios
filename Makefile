@@ -43,7 +43,13 @@ tonconnect_generate:
 BUILD_DIR := ./build
 BUILD_JOBS ?= 4
 
-compile:
+prepare_quantum_fee_state:
+	python3 scripts/build_quantum_fee_state.py
+
+prepare_quantum_proof:
+	python3 scripts/build_quantum_proof.py
+
+compile: prepare_quantum_fee_state prepare_quantum_proof
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
@@ -90,6 +96,9 @@ archive_v1_release:
 
 TEST_DESTINATION ?= platform=iOS Simulator,name=iPhone 17
 TEST_ONLY ?=
+# Expected guard-deletion failures need XCTest receipts, not a full sysdiagnose.
+# Other suites retain the usual diagnostics; callers may override either mode.
+TEST_DIAGNOSTICS ?= $(if $(findstring TOSQuantum,$(TEST_ONLY)),never,on-failure)
 TOS_UI_RPC_URL ?= http://127.0.0.1:18645
 TEST_BUILD_DIR ?= $(BUILD_DIR)
 TEST_BUILD_ROOT := $(abspath $(TEST_BUILD_DIR))
@@ -130,7 +139,9 @@ test_all:
 	$(MAKE) test_tkchart_package
 	$(MAKE) test_tkagentcommerce
 
-test_project_scheme:
+TEST_ACTION ?= $(if $(TEST_RUN_FILE),test-without-building,test)
+
+test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof)
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
@@ -150,20 +161,20 @@ test_project_scheme:
 		TEST_RUNNER_TOS_UI_EXPECTED_RPC_URL='$(TOS_UI_RPC_URL)' \
 		TEST_RUNNER_PACKAGE_RESOURCE_BUNDLE_PATH='$(TEST_PACKAGE_RESOURCE_BUNDLE_PATH)' \
 		xcodebuild -jobs $(BUILD_JOBS) \
-		-project TosWallet.xcodeproj \
-		-scheme $(SCHEME) \
-		-configuration '$(TEST_CONFIGURATION)' \
+		$(if $(TEST_RUN_FILE),-xctestrun "$(TEST_RUN_FILE)",-project TosWallet.xcodeproj -scheme $(SCHEME) -configuration '$(TEST_CONFIGURATION)') \
 		-destination '$(TEST_DESTINATION)' \
 		-disableAutomaticPackageResolution \
 		-onlyUsePackageVersionsFromResolvedFile \
 		-skipPackageUpdates \
 		-parallel-testing-enabled NO \
-		-derivedDataPath $(TEST_DERIVED_DATA_PATH) \
+		-collect-test-diagnostics $(TEST_DIAGNOSTICS) \
+		$(if $(TEST_RUN_FILE),,-derivedDataPath $(TEST_DERIVED_DATA_PATH)) \
 		-resultBundlePath "$$result_bundle" \
 		-clonedSourcePackagesDirPath $(TEST_BUILD_ROOT)/SourcePackages \
 		-packageCachePath $(TEST_BUILD_ROOT)/swiftpm-cache \
 		SWIFT_SUPPRESS_WARNINGS=NO \
-		test $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
+		$(if $(TEST_HOST),TEST_HOST="$(TEST_HOST)",) \
+		$(TEST_ACTION) $(if $(TEST_ONLY),-only-testing:$(TEST_ONLY),) 2>&1 | tee $(TEST_BUILD_ROOT)/tests-$(SCHEME)-raw.log | xcbeautify
 
 test_core_swift: SCHEME=WalletCore
 test_core_swift: test_project_scheme

@@ -33,6 +33,15 @@ final class TOSWalletUITests: XCTestCase {
         app.launch()
     }
 
+    func testR2InitialAccountScreenShowsPendingGatesOffline() throws {
+        let quantum = app.buttons["onboarding.quantum"]
+        XCTAssertTrue(quantum.waitForExistence(timeout: 15)); quantum.tap()
+        XCTAssertTrue(app.buttons["quantum.import"].waitForExistence(timeout: 15))
+        let pending = app.staticTexts["quantum.pending"]
+        XCTAssertTrue(pending.exists)
+        XCTAssertTrue(pending.label.contains("Network verification and recovery funding are pending"))
+    }
+
     func testPQWalletsCreateDeploySignReconcileAndDeleteBothProfilesOnLocalTos() throws {
         importFixtureWalletToHome();openSettings()
         let row = app.descendants(matching: .any)["settings.PQWalletsItem"]

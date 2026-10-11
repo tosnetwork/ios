@@ -30,23 +30,27 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", .upToNextMinor(from: "0.3.0")),
     ],
     targets: [
+        .binaryTarget(name: "TOSProofVerify", path: "Generated/TOSProofVerify.xcframework"),
+        .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
-            exclude: ["CMakeLists.txt", "PROVENANCE.json", "vendor/MLDSA-LICENSE"],
-            sources: ["tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
+            exclude: ["CMakeLists.txt", "PROVENANCE.json", "Quantum-PROVENANCE.json", "Quantum-LMS-PROVENANCE.json", "vendor/MLDSA-LICENSE", "vendor/lms-reference/license.txt", "vendor/lms-reference/SOURCE.json", "vendor/slhdsa/LICENSE", "vendor/slhdsa/PROVENANCE.md", "vendor/slhdsa/SHA256SUMS"],
+            sources: ["vendor/lms/wallet-lms-sign-c.cpp", "vendor/lms-reference/hss_derive.c", "vendor/lms-reference/hss_zeroize.c", "vendor/lms-reference/lm_common.c", "vendor/lms-reference/lm_ots_common.c", "vendor/lms-reference/lm_ots_sign.c", "vendor/lms-reference/endian.c", "vendor/lms-reference/hash.c", "vendor/lms/lms-fee.cpp", "vendor/lms/wallet-lms-fee-c.cpp", "tos_quantum.c", "tos_quantum_kdf.c", "vendor/slhdsa/slh_dsa.c", "vendor/slhdsa/slh_sha2.c",
+                "vendor/slhdsa/sha2_256.c", "vendor/slhdsa/sha2_512.c", "tos_pq.c", "falcon512-native.c", "vendor/mldsa/mldsa_native.c",
                 "vendor/falcon/falcon.c", "vendor/falcon/codec.c", "vendor/falcon/common.c",
                 "vendor/falcon/shake.c", "vendor/falcon/vrfy.c", "vendor/falcon/keygen.c",
                 "vendor/falcon/sign.c", "vendor/falcon/fft.c", "vendor/falcon/fpr.c", "vendor/falcon/rng.c"],
             publicHeadersPath: "include", cSettings: [
-                .headerSearchPath("."), .headerSearchPath("vendor/mldsa"), .headerSearchPath("vendor/falcon"),
+                .define("EXT_SHA256_H", to: "\"tos_lms_sha256.h\""), .headerSearchPath("vendor/lms-reference"), .headerSearchPath("."), .headerSearchPath("vendor/mldsa"), .headerSearchPath("vendor/falcon"), .headerSearchPath("vendor/slhdsa"),
                 .define("MLD_CONFIG_FILE", to: "\"mldsa-config.h\""),
                 .define("FALCON_FPEMU", to: "1"), .define("FALCON_FPNATIVE", to: "0"),
                 .define("FALCON_AVX2", to: "0"), .define("FALCON_FMA", to: "0"),
                 .define("FALCON_PREFIX", to: "tos_mobile_falcon_inner"),
                 .define("FALCON_RAND_GETENTROPY", to: "0"), .define("FALCON_RAND_URANDOM", to: "0"),
-                .define("FALCON_RAND_WIN32", to: "0")]),
+                .define("FALCON_RAND_WIN32", to: "0")],
+            cxxSettings: [.headerSearchPath("."), .headerSearchPath("vendor/lms-reference"), .headerSearchPath("vendor/slhdsa"), .define("TOS_LMS_PORTABLE_SHA256", to: "1")]),
         .target(
             name: "CoreComponents",
-            dependencies: ["TOSPQNative",
+            dependencies: ["TOSPQNative", "TOSFeeState", "TOSProofVerify",
                 .product(name: "TonSwift", package: "ton-swift"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "TKKeychain", package: "TKKeychain"),
@@ -58,13 +62,18 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "TOSCustodyHostedTests",
+            dependencies: ["CoreComponents"],
+            swiftSettings: [.treatAllWarnings(as: .error)]
+        ),
+        .testTarget(
             name: "CoreComponentsTests",
             dependencies: [
                 "CoreComponents",
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
-            resources: [.copy("TestData/tos-pq-backup-vectors.json")],
+            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-proof-PROVENANCE.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
@@ -93,6 +102,7 @@ let package = Package(
             path: "Sources/KeeperCore",
             resources: [
                 .copy("PackageResources/DefaultRemoteConfiguration.json"),
+                .copy("PackageResources/QuantumReviewCandidate"),
                 .copy("PackageResources/known_accounts.json"),
             ]
         ),
@@ -101,7 +111,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
+            resources: [.copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),
@@ -147,5 +157,6 @@ let package = Package(
             ]
         ),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v5],
+    cxxLanguageStandard: .cxx17
 )

@@ -1,0 +1,3 @@
+[workspace]
+members = ["lms-fee-state"]
+resolver = "2"
