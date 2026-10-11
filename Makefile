@@ -117,7 +117,7 @@ test_v1_runtime_secrets:
 	@TOS_TEST_DESTINATION='$(TEST_DESTINATION)' sh scripts/tests/test_v1_runtime_secrets.sh
 
 test_v1_static: compile test_brand_boundary
-	@sh scripts/tests/test_v1_static.sh
+	@sh scripts/tests/test_v1_static.sh "$(BUILD_DIR)/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app"
 
 test_v1_acceptance: test_v1_static test_all test_tos_live test_ui test_ui_layout_matrix
 
