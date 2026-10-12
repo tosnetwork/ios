@@ -1,0 +1,14 @@
+{
+  "address": "0:6d189c87350930f05ab93e565e522e2c52dca9d4def5460606c6cb2a9013555a",
+  "code_hash": "086a86aa9913c0ec52277adbb7e4b5695964dbb8c817ad0c305cdd345bbfac69",
+  "data_boc": "te6ccgEBAQEAKwAAUYAAAACAAAAAeC+rQyT+XMcqwaHWmW0M3obGSjZtg73FOegB/SCvH8ug",
+  "public_key": "f05f568649fcb98e558343ad32da19bd0d8c946cdb077b8a73d003fa415e3f97",
+  "subwallet_id": 0,
+  "seqno": 1,
+  "network_global_id": 3,
+  "wallet_information": {
+    "wallet": false,
+    "account_state": "active",
+    "seqno": null
+  }
+}

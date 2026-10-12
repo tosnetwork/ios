@@ -227,9 +227,9 @@ final class TOSLegacyWalletRPCTests: XCTestCase {
         }
     }
 
-    func testNativeAndBetaActiveNullNeverEnterLegacyFallback() async throws {
+    func testBetaActiveNullNeverEntersLegacyFallback() async throws {
         let fixture = try XCTUnwrap(fixtures().last)
-        for version in [WalletContractVersion.tosV5R1, .v5Beta] {
+        for version in [WalletContractVersion.v5Beta] {
             var methods = [String]()
             LegacyRPCURLProtocol.handler = { request in
                 let body = try Self.requestBody(request)

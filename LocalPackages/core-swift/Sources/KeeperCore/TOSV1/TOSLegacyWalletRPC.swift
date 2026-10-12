@@ -120,6 +120,9 @@ extension TOSRPCClient {
         let information = try await client.call(method: "getWalletInformation", params: ["address": address.toRaw()])
         guard TOSLegacyWalletRPC.needsFallback(information) else { return information }
         let snapshot = try await client.call(method: "getAddressInformation", params: ["address": address.toRaw()])
+        if try TOSNativeWalletRPC.matchesSnapshot(snapshot) {
+            return try TOSNativeWalletRPC.normalizeSnapshot(snapshot, address: address)
+        }
         return try TOSLegacyWalletRPC.normalizeSnapshot(snapshot, address: address)
     }
 
@@ -133,6 +136,10 @@ extension TOSRPCClient {
     /// Call only on an endpoint captured and verified for this operation.
     func verifiedWalletInformation(wallet: Wallet) async throws -> [String: Any] {
         let address = try wallet.address
+        if try wallet.contractVersion == .tosV5R1 {
+            let snapshot = try await call(method: "getAddressInformation", params: ["address": address.toRaw()])
+            return try TOSNativeWalletRPC.normalizeSnapshot(snapshot, address: address, expectedWallet: wallet)
+        }
         if TOSLegacyWalletRPC.supports(try wallet.contractVersion) {
             let snapshot = try await call(method: "getAddressInformation", params: ["address": address.toRaw()])
             return try TOSLegacyWalletRPC.normalizeSnapshot(snapshot, address: address, expectedWallet: wallet)
