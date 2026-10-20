@@ -381,7 +381,7 @@ extension API {
             else { throw TOSRPCClient.Error.invalidResponse }
             let walletRaw = entry.wallet
             guard let quantity = try? await tosJettonWalletBalance(walletRaw), quantity > 0 else { continue }
-            let info = try await tosJettonInfo(masterAddress)
+            guard let info = try? await tosJettonInfo(masterAddress) else { continue }
             balances.append(JettonBalance(
                 item: JettonItem(jettonInfo: info, walletAddress: walletAddress),
                 quantity: quantity,
