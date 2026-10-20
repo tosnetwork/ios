@@ -370,21 +370,18 @@ extension API {
 
     func getAccountJettonsBalances(address: Address, currencies: [Currency]) async throws -> [JettonBalance] {
         let response = try await tosRPCCall(
-            method: "getAccountJettons",
+            method: TOSTokenRPC.accountTokensMethod,
             params: ["address": address.toRaw(), "limit": 1_000]
         )
-        guard let entries = response["jettons"] as? [[String: Any]] else {
-            throw TOSRPCClient.Error.invalidResponse
-        }
+        let entries = try TOSTokenRPC.positions(response)
         var balances = [JettonBalance]()
         for entry in entries {
-            guard let walletRaw = entry["jetton_wallet"] as? String,
-                  let masterRaw = entry["jetton_master"] as? String,
-                  let walletAddress = try? Address.parse(walletRaw),
-                  let masterAddress = try? Address.parse(masterRaw)
-            else { continue }
-            guard let quantity = try? await tosJettonWalletBalance(walletRaw), quantity > 0,
-                  let info = try? await tosJettonInfo(masterAddress) else { continue }
+            guard let walletAddress = try? Address.parse(entry.wallet),
+                  let masterAddress = try? Address.parse(entry.master)
+            else { throw TOSRPCClient.Error.invalidResponse }
+            let walletRaw = entry.wallet
+            guard let quantity = try? await tosJettonWalletBalance(walletRaw), quantity > 0 else { continue }
+            let info = try await tosJettonInfo(masterAddress)
             balances.append(JettonBalance(
                 item: JettonItem(jettonInfo: info, walletAddress: walletAddress),
                 quantity: quantity,
@@ -581,29 +578,9 @@ extension API {
 private extension API {
     func tosJettonInfo(_ address: Address) async throws -> JettonInfo {
         let data = try await tosRPCCall(method: "getTokenData", params: ["address": address.toRaw()])
-        guard data["@type"] as? String == "ext.tokens.jettonMasterData" else {
-            throw TOSRPCClient.Error.invalidResponse
-        }
-        let offchain = await tosOffchainMetadata(data["jetton_metadata_uri"] as? String)
-        let name = (data["jetton_name"] as? String)?.nilIfEmpty
-            ?? (offchain?["name"] as? String)?.nilIfEmpty
-            ?? "Jetton \(address.toRaw().suffix(6))"
-        let symbol = (data["jetton_symbol"] as? String)?.nilIfEmpty
-            ?? (offchain?["symbol"] as? String)?.nilIfEmpty
-        let decimals = Int((data["jetton_decimals"] as? String)?.nilIfEmpty
-            ?? (offchain?["decimals"] as? String)?.nilIfEmpty ?? "") ?? 9
-        let image = (data["jetton_image"] as? String)?.nilIfEmpty
-            ?? (offchain?["image"] as? String)?.nilIfEmpty
-        return JettonInfo(
-            isTransferable: true,
-            hasCustomPayload: false,
-            address: address,
-            fractionDigits: decimals,
-            name: name,
-            symbol: symbol,
-            verification: .none,
-            imageURL: image.flatMap(URL.init(string:))
-        )
+        let uri = try TOSTokenRPC.metadataURI(data)
+        let offchain = await tosOffchainMetadata(uri)
+        return try TOSTokenRPC.masterInfo(data, address: address, offchain: offchain)
     }
 
     func tosJettonWalletBalance(_ address: String) async throws -> BigUInt {
@@ -972,5 +949,56 @@ extension API {
     func getStatus() async throws -> Int {
         _ = try await tosRPCCall(method: "getMasterchainInfo")
         return 0
+    }
+}
+
+// The node wire contract is separate from local asset type names.
+enum TOSTokenRPC {
+    static let accountTokensMethod = "getAccountTokens"
+
+    static func positions(_ response: [String: Any]) throws -> [(wallet: String, master: String)] {
+        guard let entries = response["tokens"] as? [[String: Any]] else {
+            throw TOSRPCClient.Error.invalidResponse
+        }
+        return try entries.map { entry in
+            guard let wallet = entry["token_wallet"] as? String, !wallet.isEmpty,
+                  let master = entry["token_master"] as? String, !master.isEmpty
+            else { throw TOSRPCClient.Error.invalidResponse }
+            return (wallet: wallet, master: master)
+        }
+    }
+
+    static func metadataURI(_ data: [String: Any]) throws -> String? {
+        try requireMaster(data)
+        return data["token_metadata_uri"] as? String
+    }
+
+    static func requireMaster(_ data: [String: Any]) throws {
+        guard data["@type"] as? String == "ext.tokens.tokenMasterData" else {
+            throw TOSRPCClient.Error.invalidResponse
+        }
+    }
+
+    static func masterInfo(_ data: [String: Any], address: Address, offchain: [String: Any]?) throws -> JettonInfo {
+        try requireMaster(data)
+        let name = (data["token_name"] as? String)?.nilIfEmpty
+            ?? (offchain?["name"] as? String)?.nilIfEmpty
+            ?? "Jetton \(address.toRaw().suffix(6))"
+        let symbol = (data["token_symbol"] as? String)?.nilIfEmpty
+            ?? (offchain?["symbol"] as? String)?.nilIfEmpty
+        let decimals = Int((data["token_decimals"] as? String)?.nilIfEmpty
+            ?? (offchain?["decimals"] as? String)?.nilIfEmpty ?? "") ?? 9
+        let image = (data["token_image"] as? String)?.nilIfEmpty
+            ?? (offchain?["image"] as? String)?.nilIfEmpty
+        return JettonInfo(
+            isTransferable: true,
+            hasCustomPayload: false,
+            address: address,
+            fractionDigits: decimals,
+            name: name,
+            symbol: symbol,
+            verification: .none,
+            imageURL: image.flatMap(URL.init(string:))
+        )
     }
 }
