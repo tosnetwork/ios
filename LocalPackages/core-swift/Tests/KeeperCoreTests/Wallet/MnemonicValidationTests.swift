@@ -29,7 +29,7 @@ final class MnemonicValidationTests: XCTestCase {
         let pair = try TOSMnemonic.keyPair(words: words)
         XCTAssertEqual(pair.publicKey.data, try XCTUnwrap(Data(hex: "a71563f5709a827fad271813afc670403589781f4ac7259c7b0282b6686b2589")))
         let wallet = Wallet(id: "fixture", identity: WalletIdentity(network: .mainnet, kind: .Regular(pair.publicKey, .currentVersion), networkGlobalId: 3), metaData: WalletMetaData(label: "Fixture", tintColor: .defaultColor, icon: .icon(.wallet)), setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
-        XCTAssertEqual(try wallet.address.toRaw(), "0:88269a9a5ecb30262608e6fb86f8ae3d534e8c77d5a9ae0140ce5217196a0cfe")
+        XCTAssertEqual(try wallet.address.toRaw(), "0:35410aca3b79f0d1c6b19536b6c24c6910661e9aa55e5849fce2a54c53a9604c")
         XCTAssertEqual(try WalletMnemonic.keyPair(words: words, wallet: wallet).privateKey.data, pair.privateKey.data)
     }
 

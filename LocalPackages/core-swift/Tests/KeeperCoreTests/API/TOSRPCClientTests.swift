@@ -219,7 +219,7 @@ final class TOSRPCClientTests: XCTestCase {
                 XCTAssertEqual(params["ignore_chksig"] as? Bool, true)
                 let codeData = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_code"] as? String)))
                 let code = try XCTUnwrap(Cell.fromBoc(src: codeData).first)
-                XCTAssertEqual(code.hash(), try XCTUnwrap(Data(hex: "086a86aa9913c0ec52277adbb7e4b5695964dbb8c817ad0c305cdd345bbfac69")))
+                XCTAssertEqual(code.hash(), try XCTUnwrap(Data(hex: "70cac370905beb6fa644922253f7d74335c479fa1e4d9dc8bf519c71e0f8c031")))
                 let data = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_data"] as? String)))
                 let slice = try XCTUnwrap(Cell.fromBoc(src: data).first).beginParse()
                 XCTAssertTrue(try slice.loadBoolean())

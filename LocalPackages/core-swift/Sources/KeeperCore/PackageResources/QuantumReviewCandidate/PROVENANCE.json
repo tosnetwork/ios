@@ -1,8 +1,8 @@
 {
   "status": "unapproved-review-candidate",
-  "source_revision": "dd09518f315273f6f6ab86c33355e4aff680c7ba",
+  "source_revision": "6ad4680b644d6afb96074df2cf8db334640f7de6",
   "config": {
-    "bytes": 7387,
+    "bytes": 7425,
     "gas": {
       "20": {
         "block_gas_limit": 2500000,
@@ -10,15 +10,15 @@
         "gas_limit": 1000000
       },
       "21": {
-        "block_gas_limit": 60000000,
+        "block_gas_limit": 20000000,
         "gas_credit": 20000,
-        "gas_limit": 30000000
+        "gas_limit": 2000000
       }
     },
     "global_id": 1,
     "network": "4242424242424242424242424242424242424242424242424242424242424242",
-    "sha256": "3d480a6c3d9eed12b6ea687ab75f9d0a5fbcbbbad780a003af6c17a1ec6f72c7",
-    "version": 18
+    "sha256": "59880ee43f99c6e103bb60a99af4696bbadaff0dc7c064c04b438cc0a904d800",
+    "version": 16
   },
   "code": {
     "module": {
@@ -38,13 +38,13 @@
       "sha256": "0a8dd10e6450a3e469e86572fc52b49bfc64e10fe2cd61071747f4ba4922e38e"
     },
     "wallet": {
-      "bytes": 3410,
-      "cells": 59,
-      "code_hash": "06203e98d4d8bf97b0cab37523ec435f5ab0e1d6d2c5253926eebf20ef1712f5",
+      "bytes": 3446,
+      "cells": 60,
+      "code_hash": "18252490f90f12149832b6067ca60f3f0216f23a97d71e7afcd8017eeb75e61f",
       "depth": 14,
       "external_libraries": 0,
-      "sha256": "96ba6f8b91ad961e9c2fd62be9fb6e662ebf77cc2cf72eb6c276f96e738ce4ec"
+      "sha256": "ca804d2c2162b79ec47691da2889e991b6001c90336226f37967a3aca6ca3089"
     }
   },
-  "scope": "Real version-18 development candidate only; not release approval, deployment or recovery readiness"
+  "scope": "Real version-16 development candidate only; not release approval, deployment or recovery readiness"
 }
