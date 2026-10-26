@@ -669,7 +669,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             title = createSignOutWalletNameTitle(wallet: wallet)
         }
 
-        let hasSeedPhrase = wallet.kind == .regular
+        let hasSeedPhrase = wallet.kind == .regular || wallet.kind == .quantum
         if hasSeedPhrase {
             action = { [weak self] in
                 guard let self else { return }
@@ -683,7 +683,15 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                         guard let self else { return }
                         Task {
                             await self.walletNotificationStore.setNotificationIsOn(false, wallet: self.wallet)
-                            await self.walletDeleteController.deleteWallet(wallet: self.wallet)
+                            do {
+                                try await self.walletDeleteController.deleteWallet(wallet: self.wallet)
+                            } catch {
+                                await MainActor.run {
+                                    self.didShowAlert?("Wallet deletion failed", error.localizedDescription,
+                                        [UIAlertAction(title: "OK", style: .default)])
+                                }
+                                return
+                            }
                             await MainActor.run {
                                 self.didDeleteWallet?()
                                 self.anaylticsProvider.log(eventKey: .deleteWallet)

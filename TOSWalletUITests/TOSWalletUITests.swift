@@ -183,6 +183,38 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
     }
 
+    func testQuantumNetworkConfigurationValidatesAndPersistsBeforeCreation() {
+        func openProfile() {
+            let configure = app.buttons["onboarding.configureNode"]
+            XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+            let quantum = app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch
+            XCTAssertTrue(quantum.waitForExistence(timeout: 5)); quantum.tap()
+            XCTAssertTrue(app.alerts["Trusted Quantum Network"].waitForExistence(timeout: 5))
+        }
+        openProfile()
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        XCTAssertTrue(app.alerts["Invalid Network Configuration"].waitForExistence(timeout: 5))
+        app.alerts["Invalid Network Configuration"].buttons["OK"].tap()
+        openProfile()
+        // Public synthetic hashes exercise local provisioning only; no chain is
+        // contacted and no verified network capability is fabricated here.
+        let root = String(repeating: "42", count: 32), file = String(repeating: "24", count: 32)
+        for (name, value) in [("Network ID", "-1"), ("Genesis root hash", root), ("Genesis file hash", file)] {
+            let field = app.textFields[name]
+            XCTAssertTrue(field.exists); field.tap(); field.typeText(value)
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        openProfile()
+        XCTAssertEqual(app.textFields["Network ID"].value as? String, "-1")
+        XCTAssertEqual(app.textFields["Genesis root hash"].value as? String, root)
+        XCTAssertEqual(app.textFields["Genesis file hash"].value as? String, file)
+        retainScreenshot(named: "Quantum network configuration")
+        app.alerts["Trusted Quantum Network"].buttons["Cancel"].tap()
+    }
+
     func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic)
         app.descendants(matching: .any)["mnemonic.continue"].tap()

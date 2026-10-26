@@ -105,4 +105,12 @@ public final class TOSQuantumSeedKeychain {
         let status = SecItemDelete(query(id: id, role: role) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw TOSPQError.keychain(status) }
     }
+
+    /// Explicit application sign-out, including records from interrupted creation.
+    public func deleteAll() throws {
+        lock.lock(); defer { lock.unlock() }
+        let status = SecItemDelete([kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "network.tos.wallet.quantum.seed.v1", kSecAttrSynchronizable: false] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw TOSPQError.keychain(status) }
+    }
 }

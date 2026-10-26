@@ -49,6 +49,28 @@ jobs:
           TEST_DESTINATION="$TEST_DESTINATION"
           TOS_UI_RPC_URL=http://127.0.0.1:1
 
+      - name: Validate trusted Quantum network configuration
+        run: >-
+          make test_project_scheme SCHEME=TOSWalletUITests
+          TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testQuantumNetworkConfigurationValidatesAndPersistsBeforeCreation
+          TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+          TOS_UI_RPC_URL=http://127.0.0.1:1
+
+      - name: Verify Quantum Keychain cleanup and atomic vault storage in the app host
+        shell: bash
+        run: |
+          make test_project_scheme SCHEME=WalletCoreHosted TEST_ACTION=build-for-testing \
+            TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests \
+            TEST_HOST="$PWD/build/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app/TOS Wallet" \
+            TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+          runfiles=(build/DerivedData/Build/Products/WalletCoreHosted_*.xctestrun)
+          test "${#runfiles[@]}" -eq 1
+          corrected="build/DerivedData/Build/Products/QuantumCustody-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xctestrun"
+          python3 scripts/fix_hosted_xctestrun.py "${runfiles[0]}" "$corrected"
+          make test_project_scheme SCHEME=WalletCoreHosted TEST_RUN_FILE="$corrected" \
+            TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests \
+            TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+
       - name: Retain build and test evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -167,7 +167,16 @@ final class RootCoordinator: RouterCoordinator<ViewControllerRouter> {
             guard let coordinator else { return }
             let deleteController = dependencies.keeperCoreRootAssembly.mainAssembly().walletDeleteController
             Task {
-                await deleteController.deleteAll()
+                do {
+                    try await deleteController.deleteAll()
+                } catch {
+                    await MainActor.run {
+                        let alert = UIAlertController(title: "Sign out failed", message: error.localizedDescription, preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        coordinator.router.rootViewController.present(alert, animated: true)
+                    }
+                    return
+                }
                 await MainActor.run {
                     self.removeChild(coordinator)
                 }

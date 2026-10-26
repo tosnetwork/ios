@@ -430,7 +430,16 @@ private extension SettingsCoordinator {
                 Task {
                     guard let passcode = await self.getPasscode() else { return }
                     await self.keeperCoreMainAssembly.storesAssembly.walletNotificationStore.setNotificationIsOn(false, wallet: wallet)
-                    await self.keeperCoreMainAssembly.walletDeleteController.deleteWallet(wallet: wallet, passcode: passcode)
+                    do {
+                        try await self.keeperCoreMainAssembly.walletDeleteController.deleteWallet(wallet: wallet, passcode: passcode)
+                    } catch {
+                        await MainActor.run {
+                            let alert = UIAlertController(title: "Wallet deletion failed", message: error.localizedDescription, preferredStyle: .alert)
+                            alert.addAction(UIAlertAction(title: "OK", style: .default))
+                            self.router.rootViewController.present(alert, animated: true)
+                        }
+                        return
+                    }
                     await MainActor.run {
                         let wallets = self.keeperCoreMainAssembly.storesAssembly.walletsStore.wallets
                         if !wallets.isEmpty {

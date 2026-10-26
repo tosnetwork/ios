@@ -35,14 +35,9 @@ public final class CreateWalletCoordinator: RouterCoordinator<ViewControllerRout
 
     override public func start() {
         let hasMnemonics = walletsUpdateAssembly.secureAssembly.mnemonicsRepository().hasMnemonics()
-        let hasRegularWallet = { [walletsUpdateAssembly] in
-            do {
-                return try walletsUpdateAssembly.repositoriesAssembly.keeperInfoRepository().getKeeperInfo().wallets.contains(where: { $0.kind == .regular })
-            } catch {
-                return false
-            }
-        }()
-        if hasMnemonics, hasRegularWallet {
+        // Recovery material can exist before the public wallet registration has
+        // completed. Reuse its passcode even after an interrupted creation.
+        if hasMnemonics {
             openConfirmPasscode()
         } else {
             openCreatePasscode()

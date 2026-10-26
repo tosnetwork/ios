@@ -38,3 +38,10 @@ The hosted target's missing-role-record checks require the exact
 successful protected-record access, user-presence behavior on physical devices,
 deployed account authority, signing, fee solvency or payment delivery. Those
 remain separate acceptance requirements.
+
+The role-deletion test inserts public marker records into the real Keychain. It
+checks per-wallet/per-role deletion, removal of every Quantum seed record during
+sign-out (including interrupted creations), and preservation of another service.
+Use only the dedicated test simulator: the sign-out operation intentionally
+removes all records in the application's Quantum seed service. Marker records
+do not exercise protected seed import, authentication prompts, or signing.

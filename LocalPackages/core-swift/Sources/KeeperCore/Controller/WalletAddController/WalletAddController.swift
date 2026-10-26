@@ -36,28 +36,18 @@ public final class WalletAddController {
             throw Mnemonic.Error.incorrectMnemonicWords
         }
         let mnemonic = try Mnemonic(mnemonicWords: mnemonicWords)
-        let keyPair = try TOSMnemonic.keyPair(words: mnemonic.mnemonicWords)
-        let walletIdentity = WalletIdentity(
-            network: .mainnet,
-            kind: .Regular(keyPair.publicKey, .currentVersion),
-            networkGlobalId: try await networkIdentityProvider(.mainnet)
-        )
-        let wallet = Wallet(
-            id: UUID().uuidString,
-            identity: walletIdentity,
-            metaData: metaData,
-            setupSettings: setupSettings,
-            batterySettings: BatterySettings()
-        )
-
-        await tonProofTokenService.loadTokensFor(
-            pairs: [WalletPrivateKeyPair(
-                wallet: wallet,
-                privateKey: keyPair.privateKey
-            )]
-        )
-        try await mnemonicsRepository.saveMnemonic(mnemonic, wallet: wallet, password: passcode)
-        try await walletsStore.addWallets([wallet])
+        let profile = try TOSQuantumNetworkProfile.selected()
+        func wallet(_ record: TOSQuantumCreationRecord) -> Wallet {
+            Wallet(id: record.id.uuidString,
+                identity: WalletIdentity(network: .mainnet, kind: .Quantum(record.identity), networkGlobalId: profile.globalID),
+                metaData: metaData, setupSettings: setupSettings, batterySettings: BatterySettings())
+        }
+        try await TOSQuantumWalletCreation().create(words: mnemonic.mnemonicWords, profile: profile,
+            saveMnemonic: { record in
+                try await self.mnemonicsRepository.saveMnemonic(mnemonic, wallet: wallet(record), password: passcode)
+            }, publish: { record in
+                try await self.walletsStore.addWallets([wallet(record)])
+            })
     }
 
     public enum AddWalletRevisionError: Swift.Error {
