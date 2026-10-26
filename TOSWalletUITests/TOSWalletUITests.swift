@@ -336,6 +336,83 @@ final class TOSWalletUITests: XCTestCase {
         retainScreenshot(named: "Resumed Quantum address after registration failure")
     }
 
+    func testQuantumProofBalanceReceivesFundingAndRefusesPoisonedRelay() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires a disposable native chain and local balance relay fixture")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let bytes = try synchronousData(request: request, description: "local Quantum balance fixture")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields {
+            let field = app.textFields[name]; XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); endpoint.tap()
+        endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        createNativeWalletToHome()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let verified = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Verified ")).firstMatch
+        for _ in 0..<3 {
+            if verified.waitForExistence(timeout: 5) { break }
+            pullToRefresh(list)
+        }
+        XCTAssertTrue(verified.waitForExistence(timeout: 30))
+        let original = try control("snapshot")
+        let funding = try control("fund")
+        XCTAssertEqual(funding["address"], original["address"])
+        XCTAssertEqual(funding["nanos"], "10000000000")
+        let tenTOS = app.staticTexts.matching(NSPredicate(format: "label MATCHES[c] %@", "10([.,]0+)?\\s*TOS")).firstMatch
+        for _ in 0..<5 {
+            pullToRefresh(list)
+            if tenTOS.waitForExistence(timeout: 8) { break }
+        }
+        if !tenTOS.exists {
+            let detail = XCTAttachment(string: app.debugDescription); detail.lifetime = .keepAlways; add(detail)
+        }
+        XCTAssertTrue(tenTOS.exists, "The new wallet must show its real authenticated 10 TOS prefunding")
+        retainScreenshot(named: "Quantum authenticated prefunded balance")
+        _ = try control("poison")
+        defer { _ = try? control("normal") }
+        var ordinary = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/jsonRPC")))
+        ordinary.httpMethod = "POST"
+        ordinary.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        ordinary.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "poison-control",
+            "method": "getAddressInformation", "params": ["address": try XCTUnwrap(original["address"])]])
+        let ordinaryResult = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            synchronousData(request: ordinary, description: "ordinary relay positive control")) as? [String: Any])
+        XCTAssertEqual((ordinaryResult["result"] as? [String: Any])?["balance"] as? String, "999999999000000000")
+        pullToRefresh(list)
+        XCTAssertTrue(app.staticTexts["Balance unavailable"].waitForExistence(timeout: 30))
+        XCTAssertFalse(tenTOS.exists, "A previous numeric balance must disappear after verification fails")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "999999999")).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Receive"].exists)
+        retainScreenshot(named: "Quantum proof failure hides previous balance")
+        _ = try control("normal")
+        pullToRefresh(list)
+        XCTAssertTrue(tenTOS.waitForExistence(timeout: 30))
+        XCTAssertTrue(verified.waitForExistence(timeout: 10))
+        XCTAssertEqual(try control("snapshot"), original)
+        let status = try control("status")
+        XCTAssertGreaterThan(Int(status["proofs"] ?? "0") ?? 0, 0)
+        print("PUBLIC_QUANTUM_BALANCE_ID=" + (original["id"] ?? "missing"))
+        retainScreenshot(named: "Quantum proof balance retry restored")
+    }
+
     private func quantumCreationControl(_ action: String) throws -> [String: String] {
         var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_creation/" + action)))
         request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)

@@ -1,5 +1,6 @@
 import CoreComponents
 import Foundation
+import BigInt
 import TonSwift
 import TonTransport
 
@@ -85,7 +86,8 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
         let account = try await accountTask
         let jettonsBalance = (try? await jettonsBalanceTask) ?? []
         let nfts = (try? await nftsTask) ?? []
-        let tonBalance = TonBalance(amount: account.balance)
+        guard account.balance >= 0 else { throw TOSPQError.invalidInput }
+        let tonBalance = TonBalance(amount: BigUInt(account.balance))
         let balance = Balance(tonBalance: tonBalance, jettonsBalance: jettonsBalance)
         let isActive = account.status == "active" || !balance.isEmpty
 

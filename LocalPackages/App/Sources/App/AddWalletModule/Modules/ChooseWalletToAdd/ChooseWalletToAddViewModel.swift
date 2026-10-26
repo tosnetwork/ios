@@ -106,9 +106,7 @@ final class ChooseWalletToAddViewModelImplementation: ChooseWalletToAddViewModel
 
     private func createItem(walletModel: ActiveWalletModel) -> ChooseWalletToAddItem {
         let tonAmount = amountFormatter.format(
-            amount: BigUInt(
-                integerLiteral: UInt64(walletModel.balance.tonBalance.amount)
-            ),
+            amount: walletModel.balance.tonBalance.amount,
             fractionDigits: TonInfo.fractionDigits,
             accessory: .currency(Currency.TON)
         )

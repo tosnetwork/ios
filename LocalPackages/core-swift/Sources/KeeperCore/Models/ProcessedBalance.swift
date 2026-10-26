@@ -109,13 +109,37 @@ public enum ProcessedBalanceItem: Equatable, Codable {
 public struct ProcessedBalanceTonItem: Equatable, Codable {
     public let id: String
     public let title: String
-    public let amount: UInt64
+    public let amount: BigUInt
     public let fractionalDigits: Int
     public let currency: Currency
     public let converted: Decimal
     public let price: Decimal
     public let diff: String?
     public let shouldCalculateInTotal: Bool
+
+    internal init(id: String, title: String, amount: BigUInt, fractionalDigits: Int, currency: Currency,
+                  converted: Decimal, price: Decimal, diff: String?, shouldCalculateInTotal: Bool) {
+        self.id = id; self.title = title; self.amount = amount; self.fractionalDigits = fractionalDigits
+        self.currency = currency; self.converted = converted; self.price = price; self.diff = diff
+        self.shouldCalculateInTotal = shouldCalculateInTotal
+    }
+    private enum CodingKeys: CodingKey { case id, title, amount, fractionalDigits, currency, converted, price, diff, shouldCalculateInTotal }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: try c.decode(String.self, forKey: .id), title: try c.decode(String.self, forKey: .title),
+            amount: try c.decode(NativeBalanceAmount.self, forKey: .amount).value,
+            fractionalDigits: try c.decode(Int.self, forKey: .fractionalDigits), currency: try c.decode(Currency.self, forKey: .currency),
+            converted: try c.decode(Decimal.self, forKey: .converted), price: try c.decode(Decimal.self, forKey: .price),
+            diff: try c.decodeIfPresent(String.self, forKey: .diff), shouldCalculateInTotal: try c.decode(Bool.self, forKey: .shouldCalculateInTotal))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id); try c.encode(title, forKey: .title)
+        try c.encode(NativeBalanceAmount(value: amount), forKey: .amount)
+        try c.encode(fractionalDigits, forKey: .fractionalDigits); try c.encode(currency, forKey: .currency)
+        try c.encode(converted, forKey: .converted); try c.encode(price, forKey: .price)
+        try c.encodeIfPresent(diff, forKey: .diff); try c.encode(shouldCalculateInTotal, forKey: .shouldCalculateInTotal)
+    }
 }
 
 public struct ProcessedBalanceJettonItem: Equatable, Codable {

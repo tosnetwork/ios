@@ -213,7 +213,7 @@ final class InsufficientFundsValidatorImplementation: InsufficientFundsValidator
             return
         }
 
-        let tonBalance = UInt64(walletBalance.balance.tonBalance.amount)
+        let tonBalance = walletBalance.balance.tonBalance.amount
 
         var requiredAmount: BigUInt?
         var token: TonToken?

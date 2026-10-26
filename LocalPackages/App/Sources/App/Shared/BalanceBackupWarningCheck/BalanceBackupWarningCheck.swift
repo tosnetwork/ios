@@ -1,4 +1,5 @@
 import Foundation
+import BigInt
 import KeeperCore
 
 struct BalanceBackupWarningCheck {
@@ -8,7 +9,7 @@ struct BalanceBackupWarningCheck {
         case none
     }
 
-    func check(wallet: Wallet, tonAmount: UInt64) -> State {
+    func check(wallet: Wallet, tonAmount: BigUInt) -> State {
         guard wallet.isBackupAvailable else { return .none }
         guard !wallet.hasBackup else { return .none }
         switch tonAmount {
@@ -22,7 +23,7 @@ struct BalanceBackupWarningCheck {
     }
 }
 
-private extension UInt64 {
-    static let tonAmountWarning: UInt64 = 2_000_000_000
-    static let tonAmountError: UInt64 = 20_000_000_000
+private extension BigUInt {
+    static let tonAmountWarning: BigUInt = 2_000_000_000
+    static let tonAmountError: BigUInt = 20_000_000_000
 }
