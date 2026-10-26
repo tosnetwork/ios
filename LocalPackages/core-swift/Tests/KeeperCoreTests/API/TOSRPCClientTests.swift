@@ -292,6 +292,48 @@ final class TOSRPCClientTests: XCTestCase {
         }
     }
 
+    func testQuantumBackgroundReadUsesItsIdentityAndVM16WithoutClassicKey() async throws {
+        func wallet(globalID: Int32) throws -> Wallet {
+            let authority = try TOSQuantumSelfPayAuthority(globalID: globalID,
+                namespace: Data(repeating: 7, count: 32), primaryKey: Data(repeating: 8, count: 1312),
+                rescueKey: Data(repeating: 9, count: 32))
+            let identity = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: authority))
+            return Wallet(id: "quantum-background", identity: WalletIdentity(network: .mainnet, kind: .Quantum(identity)),
+                metaData: WalletMetaData(label: "Quantum", tintColor: .defaultColor, icon: .icon(.wallet)),
+                setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+        }
+        for (globalID, version, allowed) in [(Int32(3), UInt32(16), true), (3, 15, false), (4, 16, false)] {
+            var methods = [String]()
+            RPCURLProtocol.handler = { request in
+                let json = try Self.requestBody(request)
+                let method = try XCTUnwrap(json["method"] as? String)
+                methods.append(method)
+                if method == "getConfigParam" {
+                    return (200, try Self.configurationResponse(requestBody: json, vmVersion: version))
+                }
+                XCTAssertEqual(method, "getWalletInformation")
+                let data = try JSONSerialization.data(withJSONObject: ["ok": true, "result": [
+                    "last_transaction_id": ["lt": "12", "hash": Data(repeating: 1, count: 32).base64EncodedString()]]])
+                return (200, try XCTUnwrap(String(data: data, encoding: .utf8)))
+            }
+            do {
+                let cursor = try await makeClient().walletBackgroundUpdateCursor(wallet: wallet(globalID: globalID))
+                XCTAssertTrue(allowed)
+                XCTAssertEqual(cursor.lt, 12)
+                XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "getWalletInformation"])
+            } catch {
+                XCTAssertFalse(allowed, "Unexpected Quantum read failure: \(error)")
+                if globalID != 3 {
+                    guard case TOSNetworkIdentityError.wrongNetwork = error else { return XCTFail("Wrong error: \(error)") }
+                    XCTAssertEqual(methods, ["getConfigParam"])
+                } else {
+                    guard case TOSNetworkIdentityError.unsupportedQuantumVMVersion = error else { return XCTFail("Wrong error: \(error)") }
+                    XCTAssertEqual(methods, ["getConfigParam", "getConfigParam"])
+                }
+            }
+        }
+    }
+
     private static func configurationResponse(requestBody: [String: Any], vmVersion: UInt32 = 18) throws -> String {
         let parameter = try XCTUnwrap((requestBody["params"] as? [String: Int])?["param"])
         let cell: Cell

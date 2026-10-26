@@ -2,6 +2,7 @@ import Foundation
 import TonSwift
 
 public enum WalletKind: Codable, Equatable, Hashable {
+    case Quantum(TOSQuantumSelfPayIdentity)
     case Regular(TonSwift.PublicKey, WalletContractVersion)
     case Lockup(TonSwift.PublicKey, LockupConfig)
     case Watchonly(ResolvableAddress)
@@ -12,6 +13,8 @@ public enum WalletKind: Codable, Equatable, Hashable {
 
     public static func == (lhs: WalletKind, rhs: WalletKind) -> Bool {
         switch (lhs, rhs) {
+        case let (.Quantum(left), .Quantum(right)):
+            return left == right
         case let (.Regular(lpk, lv), .Regular(rpk, rv)):
             return lpk == rpk && lv == rv
         case let (.Lockup(lpk, lc), .Lockup(rpk, rc)):
@@ -42,6 +45,8 @@ extension TonSwift.PublicKey: @retroactive Equatable, @retroactive Hashable {
 extension WalletKind: CellCodable {
     public func storeTo(builder: Builder) throws {
         switch self {
+        case let .Quantum(identity):
+            try builder.store(uint: 7, bits: 5).store(ref: identity.cell)
         case let .Regular(publicKey, contractVersion):
             try builder.store(uint: 0, bits: 5)
             try publicKey.storeTo(builder: builder)
@@ -90,6 +95,8 @@ extension WalletKind: CellCodable {
         return try slice.tryLoad { s in
             let type = try s.loadUint(bits: 5)
             switch type {
+            case 7:
+                return .Quantum(try TOSQuantumSelfPayIdentity(cell: s.loadRef()))
             case 0:
                 let publicKey: TonSwift.PublicKey = try s.loadType()
                 let contractVersion: WalletContractVersion = try s.loadType()

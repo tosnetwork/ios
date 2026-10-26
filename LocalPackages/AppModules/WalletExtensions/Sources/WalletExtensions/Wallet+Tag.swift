@@ -20,7 +20,7 @@ public extension WalletContractVersion {
 public extension Wallet {
     var kindTag: String? {
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             switch network {
             case .testnet: return "TESTNET"
             case .tetra: return "TETRA"
@@ -50,7 +50,7 @@ public extension Wallet {
         let foregroundColor: UIColor
 
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             if network == .mainnet {
                 backgroundColor = .Background.contentTint
                 foregroundColor = .Text.primary
@@ -88,7 +88,7 @@ public extension Wallet {
     func balanceKindTagConfiguration() -> TKTagView.Configuration? {
         let color: UIColor? = {
             switch kind {
-            case .regular:
+            case .regular, .quantum:
                 network == .mainnet ? nil : .Accent.orange
             case .lockup:
                 nil
@@ -118,7 +118,7 @@ public extension Wallet {
         let backgroundColor: UIColor
 
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             if network == .mainnet {
                 return nil
             }

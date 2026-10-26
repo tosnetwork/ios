@@ -8,6 +8,7 @@ public extension Wallet {
 
     enum Kind {
         case regular
+        case quantum
         case lockup
         case watchonly
         case signer
@@ -17,6 +18,8 @@ public extension Wallet {
 
     var kind: Kind {
         switch identity.kind {
+        case .Quantum:
+            return .quantum
         case .Regular:
             return .regular
         case .Lockup:
@@ -45,6 +48,8 @@ public extension Wallet {
     var publicKey: TonSwift.PublicKey {
         get throws {
             switch identity.kind {
+            case .Quantum:
+                throw Error.invalidWalletKind
             case let .Regular(publicKey, _):
                 return publicKey
             case let .Lockup(publicKey, _):
@@ -66,6 +71,8 @@ public extension Wallet {
     var contractVersion: WalletContractVersion {
         get throws {
             switch identity.kind {
+            case .Quantum:
+                throw Error.invalidWalletKind
             case let .Regular(_, contractVersion):
                 return contractVersion
             case .Lockup:
@@ -131,13 +138,29 @@ public extension Wallet {
 
     var stateInit: StateInit {
         get throws {
-            try contract.stateInit
+            if case .Quantum = identity.kind {
+                let wallet = try quantumWallet
+                return try StateInit.loadFrom(slice: wallet.stateInit.beginParse())
+            }
+            return try contract.stateInit
+        }
+    }
+
+    var quantumWallet: TOSQuantumSelfPayWallet {
+        get throws {
+            guard case .Quantum(let birth) = identity.kind,
+                  identity.networkGlobalId == birth.wallet.initialAuthority.globalID else {
+                throw Error.invalidWalletKind
+            }
+            return birth.wallet
         }
     }
 
     var address: Address {
         get throws {
             switch identity.kind {
+            case .Quantum:
+                return try quantumWallet.address
             case .Regular:
                 return try contract.address()
             case .Lockup:
@@ -173,6 +196,8 @@ public extension Wallet {
 
     var isTonconnectAvailable: Bool {
         switch kind {
+        case .quantum:
+            return false
         case .regular:
             return true
         case .lockup:
@@ -224,7 +249,7 @@ public extension Wallet {
         switch kind {
         case .regular:
             return true
-        case .lockup:
+        case .quantum, .lockup:
             return false
         case .watchonly:
             return false
@@ -239,7 +264,7 @@ public extension Wallet {
 
     var isBiometryAvailable: Bool {
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             return true
         default:
             return false
@@ -275,14 +300,14 @@ public extension Wallet {
         switch kind {
         case .regular, .signer, .ledger, .keystone:
             return true
-        case .watchonly, .lockup:
+        case .quantum, .watchonly, .lockup:
             return false
         }
     }
 
     var isReceiveEnable: Bool {
         switch kind {
-        case .regular, .signer, .ledger, .watchonly, .keystone:
+        case .regular, .quantum, .signer, .ledger, .watchonly, .keystone:
             return true
         case .lockup:
             return false
@@ -293,7 +318,7 @@ public extension Wallet {
         switch kind {
         case .regular, .signer, .ledger, .keystone:
             return true
-        case .watchonly, .lockup:
+        case .quantum, .watchonly, .lockup:
             return false
         }
     }
@@ -302,14 +327,14 @@ public extension Wallet {
         switch kind {
         case .regular, .signer, .ledger, .keystone:
             return true
-        case .watchonly, .lockup:
+        case .quantum, .watchonly, .lockup:
             return false
         }
     }
 
     var isBuyEnable: Bool {
         switch kind {
-        case .regular, .signer, .ledger, .watchonly, .keystone:
+        case .regular, .quantum, .signer, .ledger, .watchonly, .keystone:
             return true
         case .lockup:
             return false
@@ -320,7 +345,7 @@ public extension Wallet {
         switch kind {
         case .regular, .signer, .ledger, .keystone:
             return true
-        case .watchonly, .lockup:
+        case .quantum, .watchonly, .lockup:
             return false
         }
     }

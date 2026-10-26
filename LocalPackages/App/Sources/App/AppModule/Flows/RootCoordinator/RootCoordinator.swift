@@ -255,7 +255,7 @@ private extension RootCoordinator {
             completion(false)
         case let .partialy(failedWallets):
             title = "Failed migrate some wallets"
-            description = failedWallets.map { "Name: \($0.name)\nType: \($0.type), \nPublicKey: \($0.pubkey)" }.joined(separator: "\n\n")
+            description = failedWallets.map { "Name: \($0.name)\nType: \($0.type), \nPublicKey: \($0.pubkey ?? "n/a")" }.joined(separator: "\n\n")
             completion(true)
         case .success:
             completion(true)
