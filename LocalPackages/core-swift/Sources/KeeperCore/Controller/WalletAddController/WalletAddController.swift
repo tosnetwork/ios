@@ -199,10 +199,10 @@ public final class WalletAddController {
         }
 
         let networkGlobalId = revisions.contains(.tosV5R1) ? try await networkIdentityProvider(network) : nil
-        let addPostfix = revisions.count > 1
+        let labels = try ClassicWalletRecovery.labels(base: metaData.label, count: revisions.count)
 
-        let wallets = revisions.map { revision in
-            let label = addPostfix ? "\(metaData.label) \(revision.rawValue)" : metaData.label
+        let wallets = revisions.enumerated().map { index, revision in
+            let label = labels[index]
             let revisionMetaData = WalletMetaData(
                 label: label,
                 tintColor: metaData.tintColor,
@@ -291,10 +291,10 @@ public final class WalletAddController {
         metaData: WalletMetaData
     ) async throws {
         guard !revisions.contains(.tosV5R1) else { throw TOSNetworkIdentityError.unsupportedSigner }
-        let addPostfix = revisions.count > 1
+        let labels = try ClassicWalletRecovery.labels(base: metaData.label, count: revisions.count)
 
-        let wallets = revisions.map { revision in
-            let label = addPostfix ? "\(metaData.label) \(revision.rawValue)" : metaData.label
+        let wallets = revisions.enumerated().map { index, revision in
+            let label = labels[index]
             let revisionMetaData = WalletMetaData(
                 label: label,
                 tintColor: metaData.tintColor,
@@ -324,10 +324,10 @@ public final class WalletAddController {
         isDevice: Bool
     ) async throws {
         guard !revisions.contains(.tosV5R1) else { throw TOSNetworkIdentityError.unsupportedSigner }
-        let addPostfix = revisions.count > 1
+        let labels = try ClassicWalletRecovery.labels(base: metaData.label, count: revisions.count)
 
-        let wallets = revisions.map { revision in
-            let label = addPostfix ? "\(metaData.label) \(revision.rawValue)" : metaData.label
+        let wallets = revisions.enumerated().map { index, revision in
+            let label = labels[index]
             let revisionMetaData = WalletMetaData(
                 label: label,
                 tintColor: metaData.tintColor,

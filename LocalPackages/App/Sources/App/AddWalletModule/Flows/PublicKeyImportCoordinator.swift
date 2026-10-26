@@ -37,18 +37,18 @@ public final class PublicKeyImportCoordinator: RouterCoordinator<NavigationContr
                 let activeWalletModels = try await detectActiveWallets(publicKey: publicKey)
                 await MainActor.run {
                     ToastPresenter.hideAll()
-                    if activeWalletModels.count == 1, activeWalletModels[0].revision == WalletContractVersion.currentVersion {
-                        openCustomizeWallet(publicKey: publicKey, revisions: [.currentVersion])
-                    } else {
-                        openChooseWalletToAdd(publicKey: publicKey, activeWalletModels: activeWalletModels)
-                    }
+                    openCustomizeWallet(publicKey: publicKey, revisions: activeWalletModels.map { $0.revision })
                     didPrepareForPresent?()
                 }
             } catch {
+                if Task.isCancelled { return }
                 await MainActor.run {
                     ToastPresenter.hideAll()
-                    openCustomizeWallet(publicKey: publicKey, revisions: [.currentVersion])
                     didPrepareForPresent?()
+                    let alert = UIAlertController(title: "Wallet Recovery Unavailable",
+                        message: "Unable to restore your wallets. Please try again.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in self?.didCancel?() })
+                    router.rootViewController.present(alert, animated: true)
                 }
             }
         }
@@ -58,38 +58,6 @@ public final class PublicKeyImportCoordinator: RouterCoordinator<NavigationContr
 private extension PublicKeyImportCoordinator {
     func detectActiveWallets(publicKey: TonSwift.PublicKey) async throws -> [ActiveWalletModel] {
         try await walletsUpdateAssembly.walletImportController().findActiveWallets(publicKey: publicKey, network: .mainnet)
-    }
-
-    func openChooseWalletToAdd(publicKey: TonSwift.PublicKey, activeWalletModels: [ActiveWalletModel]) {
-        let module = ChooseWalletToAddAssembly.module(
-            activeWalletModels: activeWalletModels,
-            configuration: ChooseWalletToAddConfiguration(
-                showRevision: true,
-                selectLastRevision: true
-            ),
-            amountFormatter: walletsUpdateAssembly.formattersAssembly.amountFormatter,
-            network: .mainnet
-        )
-
-        module.output.didSelectWallets = { [weak self] wallets in
-            let revisions = wallets.map { $0.revision }
-            self?.openCustomizeWallet(publicKey: publicKey, revisions: revisions)
-        }
-
-        if router.rootViewController.viewControllers.isEmpty {
-            module.view.setupLeftCloseButton { [weak self] in
-                self?.didCancel?()
-            }
-        } else {
-            module.view.setupBackButton()
-        }
-
-        router.push(
-            viewController: module.view,
-            animated: true,
-            onPopClosures: { [weak self] in self?.didCancel?() },
-            completion: nil
-        )
     }
 
     func openCustomizeWallet(publicKey: TonSwift.PublicKey, revisions: [WalletContractVersion]) {

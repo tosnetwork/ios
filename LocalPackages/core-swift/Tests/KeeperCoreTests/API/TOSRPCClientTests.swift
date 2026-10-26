@@ -3,6 +3,49 @@ import XCTest
 import TonSwift
 
 final class TOSRPCClientTests: XCTestCase {
+    func testRecoveryDiscoveryUsesBoundedNativeTokenAndNFTMethods() async throws {
+        var methods = [String]()
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            let method = try XCTUnwrap(body["method"] as? String)
+            methods.append(method)
+            let params = try XCTUnwrap(body["params"] as? [String: Any])
+            XCTAssertEqual(params["address"] as? String, "0:public-recovery")
+            XCTAssertEqual(params["limit"] as? Int, 1)
+            XCTAssertEqual(params.count, 2)
+            XCTAssertEqual(request.url?.host, "node.test")
+            switch method {
+            case "getAccountTokens":
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountTokens","tokens":[{"token_wallet":"public-token"}],"index_state":{"complete":true}}}"#)
+            case "getAccountNfts":
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountNfts","nfts":[],"index_state":{"complete":true}}}"#)
+            default:
+                XCTFail("Unsupported recovery method: \(method)")
+                throw TOSRPCClient.Error.invalidResponse
+            }
+        }
+        let result = try await makeClient().recoveryAssets(address: "0:public-recovery")
+        XCTAssertTrue(result.hasAssets)
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(methods, ["getAccountTokens", "getAccountNfts"])
+    }
+
+    func testRecoveryDiscoveryDoesNotTurnNFTFailureIntoKnownEmptyAccount() async throws {
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            if body["method"] as? String == "getAccountTokens" {
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountTokens","tokens":[],"index_state":{"complete":true}}}"#)
+            }
+            return (200, #"{"ok":false,"code":-32000,"error":"index unavailable"}"#)
+        }
+        do {
+            _ = try await makeClient().recoveryAssets(address: "0:public-recovery")
+            XCTFail("An incomplete discovery must remain unknown")
+        } catch let TOSRPCClient.Error.server(code, _) {
+            XCTAssertEqual(code, -32000)
+        }
+    }
+
     override func tearDown() {
         RPCURLProtocol.handler = nil
         TOSRPCConnectivity.setUnavailable(false)

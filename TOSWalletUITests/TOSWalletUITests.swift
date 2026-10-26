@@ -621,6 +621,29 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
     }
 
+    func testClassicRecoveryAutomaticallyRetainsSixAccountsWithoutVersionMenu() throws {
+        guard URL(string: ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "")?.port == 18648 else {
+            throw XCTSkip("Requires the bounded classic_recovery_fixture.py on loopback port 18648")
+        }
+        launchRecoveryPhraseImport(phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice")
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Legacy Recovery Phrase"]
+        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        app.buttons["wallet.switch"].tap()
+        for number in 1...6 {
+            XCTAssertTrue(app.staticTexts["Wallet \(number)"].waitForExistence(timeout: 5), "Missing restored account \(number)")
+        }
+        for revision in ["W5", "V5R1", "V5BETA", "V4R2", "V4R1", "V3R2", "V3R1"] {
+            XCTAssertFalse(app.staticTexts[revision].exists)
+        }
+        retainScreenshot(named: "Six classic accounts with generic names")
+        app.staticTexts["Wallet 1"].tap()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
+    }
+
     func testLegacyWalletDeploysAndTransfersAgainFromActiveStoredContract() throws {
         // PUBLIC TEST DATA. This fixture must begin uninitialized on the isolated
         // test chain; both its deployment and active send go through the App.

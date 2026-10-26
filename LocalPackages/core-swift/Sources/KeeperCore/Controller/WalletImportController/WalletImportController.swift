@@ -26,21 +26,15 @@ public final class WalletImportController {
             network: network,
             currency: currency
         )
-        if resolvedFormat == .tos { return models.filter { $0.revision == .tosV5R1 } }
-        let legacy = models.filter { $0.revision != .tosV5R1 }
-        if !legacy.isEmpty { return legacy }
-        let contract = WalletV5R1(publicKey: keyPair.publicKey.data, walletId: WalletId(networkGlobalId: Int32(network.walletNetworkGlobalId)))
-        let address = try contract.address()
-        return [ActiveWalletModel(id: address.toRaw(), revision: .v5R1, address: address, isActive: false, balance: Balance(tonBalance: TonBalance(amount: 0), jettonsBalance: []), nfts: [])]
+        let family = models.filter { resolvedFormat == .tos ? $0.revision == .tosV5R1 : $0.revision != .tosV5R1 }
+        return try ClassicWalletRecovery.select(family, fallback: resolvedFormat == .tos ? .tosV5R1 : .v5R1)
     }
 
     public func findActiveWallets(publicKey: TonSwift.PublicKey, network: Network) async throws -> [ActiveWalletModel] {
         let currency = (try? currencyService.getActiveCurrency()) ?? .USD
-        return try await activeWalletService.loadActiveWallets(
-            publicKey: publicKey,
-            network: network,
-            currency: currency
-        )
+        let models = try await activeWalletService.loadActiveWallets(
+            publicKey: publicKey, network: network, currency: currency)
+        return try ClassicWalletRecovery.select(models.filter { $0.revision != .tosV5R1 }, fallback: .v5R1)
     }
 
     public func findActiveWallets(

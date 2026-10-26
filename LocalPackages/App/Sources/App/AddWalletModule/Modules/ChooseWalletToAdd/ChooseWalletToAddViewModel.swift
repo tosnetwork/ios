@@ -112,8 +112,8 @@ final class ChooseWalletToAddViewModelImplementation: ChooseWalletToAddViewModel
         )
 
         let title = walletModel.address.toShortString(bounceable: false, isTestonly: network == .testnet)
-        var subtitle = !configuration.showRevision ? tonAmount : "\(walletModel.revision.rawValue) · \(tonAmount)"
-        if !walletModel.balance.isEmptyJettonsBalance || !walletModel.nfts.isEmpty {
+        var subtitle = walletModel.accountStateKnown ? tonAmount : "Unavailable"
+        if !walletModel.balance.isEmptyJettonsBalance || !walletModel.nfts.isEmpty || walletModel.hasIndexedAssets {
             subtitle.append(", " + TKLocales.ChooseWallets.tokens)
         }
         if walletModel.isAdded {
@@ -126,17 +126,12 @@ final class ChooseWalletToAddViewModelImplementation: ChooseWalletToAddViewModel
             return !walletModel.balance.isEmpty || (walletModel.revision == .currentVersion && configuration.selectLastRevision)
         }()
 
-        var tags = [TKTagView.Configuration]()
-        if let revisionTag = walletModel.revision.tag {
-            tags.append(TKTagView.Configuration.accentTag(text: revisionTag, color: .Accent.green))
-        }
-
         let cellConfiguration = TKListItemCell.Configuration(
             listItemContentViewConfiguration: TKListItemContentView.Configuration(
                 textContentViewConfiguration: TKListItemTextContentView.Configuration(
                     titleViewConfiguration: TKListItemTitleView.Configuration(
                         title: title,
-                        tags: tags
+                        tags: []
                     ),
                     captionViewsConfigurations: [TKListItemTextView.Configuration(
                         text: subtitle,

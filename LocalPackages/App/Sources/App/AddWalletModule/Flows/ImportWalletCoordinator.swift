@@ -124,37 +124,7 @@ private extension ImportWalletCoordinator {
     }
 
     func handleActiveWallets(phrase: [String], activeWalletModels: [ActiveWalletModel]) {
-        if activeWalletModels.count == 1 {
-            handleDidChooseRevisions(phrase: phrase, revisions: [activeWalletModels[0].revision])
-        } else {
-            openChooseWalletToAdd(phrase: phrase, activeWalletModels: activeWalletModels)
-        }
-    }
-
-    func openChooseWalletToAdd(phrase: [String], activeWalletModels: [ActiveWalletModel]) {
-        let module = ChooseWalletToAddAssembly.module(
-            activeWalletModels: activeWalletModels,
-            configuration: ChooseWalletToAddConfiguration(
-                showRevision: true,
-                selectLastRevision: true
-            ),
-            amountFormatter: walletsUpdateAssembly.formattersAssembly.amountFormatter,
-            network: network
-        )
-
-        module.output.didSelectWallets = { [weak self] wallets in
-            let revisions = wallets.map { $0.revision }
-            self?.handleDidChooseRevisions(phrase: phrase, revisions: revisions)
-        }
-
-        module.view.setupBackButton()
-
-        router.push(
-            viewController: module.view,
-            animated: true,
-            onPopClosures: {},
-            completion: nil
-        )
+        handleDidChooseRevisions(phrase: phrase, revisions: activeWalletModels.map { $0.revision })
     }
 
     func handleDidChooseRevisions(phrase: [String], revisions: [WalletContractVersion]) {

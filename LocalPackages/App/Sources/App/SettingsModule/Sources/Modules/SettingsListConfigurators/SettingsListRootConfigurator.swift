@@ -24,8 +24,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapLogout: (() -> Void)?
     var didDeleteWallet: (() -> Void)?
     var didTapNotifications: ((Wallet) -> Void)?
-    var didTapW5Wallet: ((Wallet) -> Void)?
-    var didTapV4Wallet: ((Wallet) -> Void)?
     var didTapBattery: ((Wallet) -> Void)?
     var didTapConnectedApps: ((Wallet) -> Void)?
     var didTapPQWallets: (() -> Void)?
@@ -349,66 +347,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             onSelection: {
                 [weak self] _ in
                 self?.didTapCurrencySettings?()
-            }
-        )
-    }
-
-    private func createW5Item() -> SettingsListItem? {
-        guard !wallet.isW5, !configuration.flag(\.gaslessDisabled, network: wallet.network) else { return nil }
-        let isW5Added: Bool = { [walletsStore] in
-            let wallets = walletsStore.wallets.filter { $0.kind == .regular || $0.kind == .signer }
-            do {
-                return try wallets.contains(where: { try $0.publicKey == wallet.publicKey && $0.isW5 })
-            } catch {
-                return false
-            }
-        }()
-        guard !isW5Added else { return nil }
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.walletW5)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .walletW5ItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.wallet, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self] _ in
-                guard let self else { return }
-                didTapW5Wallet?(wallet)
-            }
-        )
-    }
-
-    private func createV4Item() -> SettingsListItem? {
-        guard wallet.isW5 else { return nil }
-        let isV4R2Added: Bool = { [walletsStore] in
-            let wallets = walletsStore.wallets.filter { $0.kind == .regular || $0.kind == .signer }
-            do {
-                return try wallets.contains(where: { try $0.publicKey == wallet.publicKey && $0.isV4R2 })
-            } catch {
-                return false
-            }
-        }()
-        guard !isV4R2Added else { return nil }
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.walletV4R2)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .walletV4ItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.wallet, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self] _ in
-                guard let self else { return }
-                didTapV4Wallet?(wallet)
             }
         )
     }
@@ -904,8 +842,6 @@ private extension String {
     static let securityItemIdentifier = "SecurityItem"
     static let backupItemIdentifier = "BackupItem"
     static let currencyItemIdentifier = "CurrencyItem"
-    static let walletW5ItemIdentifier = "walletW5ItemIdentifier"
-    static let walletV4ItemIdentifier = "walletV4ItemIdentifier"
     static let searchItemIdentifier = "SearchItem"
     static let languageItemIdentifier = "LanguageItem"
     static let themeItemIdentifier = "ThemeItem"

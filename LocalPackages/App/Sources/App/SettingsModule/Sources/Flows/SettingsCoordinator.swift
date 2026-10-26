@@ -102,14 +102,6 @@ private extension SettingsCoordinator {
             self?.openNotifications(wallet: wallet)
         }
 
-        configurator.didTapW5Wallet = { [weak self] wallet in
-            self?.openW5Story(wallet: wallet)
-        }
-
-        configurator.didTapV4Wallet = { [weak self] wallet in
-            self?.addV4Wallet(wallet: wallet)
-        }
-
         configurator.didTapBattery = { [weak self] wallet in
             self?.didTapBattery?(wallet)
         }
@@ -191,85 +183,6 @@ private extension SettingsCoordinator {
         }
 
         router.present(navigationController)
-    }
-
-    func didTapAddW5Wallet(wallet: Wallet) {
-        let coordinator = AddWalletModule(
-            dependencies: AddWalletModule.Dependencies(
-                walletsUpdateAssembly: keeperCoreMainAssembly.walletUpdateAssembly,
-                storesAssembly: keeperCoreMainAssembly.storesAssembly,
-                coreAssembly: coreAssembly,
-                scannerAssembly: keeperCoreMainAssembly.scannerAssembly(),
-                configurationAssembly: keeperCoreMainAssembly.configurationAssembly
-            )
-        ).createAddDifferentRevisionWalletCoordinator(
-            wallet: wallet,
-            revisionToAdd: .v5R1,
-            router: ViewControllerRouter(rootViewController: router.rootViewController)
-        )
-
-        coordinator.didAddedWallet = { [weak self] in
-            self?.router.pop(animated: true)
-        }
-
-        addChild(coordinator)
-        coordinator.start()
-    }
-
-    func openW5Story(wallet: Wallet) {
-        let storiesViewController = TKStoriesFactory.storiesViewController(
-            models: [
-                StoriesPageModel(
-                    title: TKLocales.W5Stories.Gasless.title,
-                    description: TKLocales.W5Stories.Gasless.subtitle,
-                    backgroundImage: .image(.TKUIKit.Images.storyGasless)
-                ),
-                StoriesPageModel(
-                    title: TKLocales.W5Stories.Messages.title,
-                    description: TKLocales.W5Stories.Messages.subtitle,
-                    backgroundImage: .image(.TKUIKit.Images.storyMessages)
-                ),
-                StoriesPageModel(
-                    title: TKLocales.W5Stories.Phrase.title,
-                    description: TKLocales.W5Stories.Phrase.subtitle,
-                    button: StoriesPageModel.Button(
-                        title: TKLocales.W5Stories.Phrase.button,
-                        action: { [weak self] in
-                            self?.router.dismiss(animated: true, completion: {
-                                self?.didTapAddW5Wallet(wallet: wallet)
-                            })
-                        }
-                    ),
-                    backgroundImage: .image(.TKUIKit.Images.storyPhrase)
-                ),
-            ]
-        )
-        router.present(storiesViewController)
-    }
-
-    func addV4Wallet(wallet: Wallet) {
-        let coordinator = AddWalletModule(
-            dependencies: AddWalletModule.Dependencies(
-                walletsUpdateAssembly: keeperCoreMainAssembly.walletUpdateAssembly,
-                storesAssembly: keeperCoreMainAssembly.storesAssembly,
-                coreAssembly: coreAssembly,
-                scannerAssembly: keeperCoreMainAssembly.scannerAssembly(),
-                configurationAssembly: keeperCoreMainAssembly.configurationAssembly
-            )
-        ).createAddDifferentRevisionWalletCoordinator(
-            wallet: wallet,
-            revisionToAdd: .v4R2,
-            router: ViewControllerRouter(
-                rootViewController: router.rootViewController
-            )
-        )
-
-        coordinator.didAddedWallet = { [weak self] in
-            self?.router.pop(animated: true)
-        }
-
-        addChild(coordinator)
-        coordinator.start()
     }
 
     func updateWallet(wallet: Wallet, model: CustomizeWalletModel) {

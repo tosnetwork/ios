@@ -4,17 +4,7 @@ import TKUIKit
 import UIKit
 
 public extension WalletContractVersion {
-    var tag: String? {
-        switch self {
-        case .v5Beta:
-            "W5 BETA"
-        case .v5R1:
-            "W5"
-        case .tosV5R1:
-            "TOS W5"
-        default: nil
-        }
-    }
+    var tag: String? { nil }
 }
 
 public extension Wallet {
