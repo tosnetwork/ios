@@ -59,15 +59,19 @@ private extension PublicKeyImportCoordinator {
             guard let coordinator else { return }
             if coordinator.router.rootViewController.viewControllers.count > 1 {
                 coordinator.router.pop()
+            } else {
+                coordinator.didCancel?()
             }
-            coordinator.didCancel?()
         }
         viewController.configure(model: TKEmptyViewController.Model(
             title: "Wallet Recovery Unavailable",
             caption: "Unable to restore your wallets. Please try again.",
             buttons: [.init(title: "Close", action: close)]))
         viewController.setupLeftCloseButton(close)
-        router.push(viewController: viewController, animated: false)
+        viewController.view.backgroundColor = .Background.page
+        router.push(viewController: viewController, animated: false, onPopClosures: { [weak coordinator = self] in
+            coordinator?.didCancel?()
+        })
     }
 
     func detectActiveWallets(publicKey: TonSwift.PublicKey) async throws -> [ActiveWalletModel] {
