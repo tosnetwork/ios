@@ -625,10 +625,22 @@ final class TOSWalletUITests: XCTestCase {
         guard URL(string: ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "")?.port == 18648 else {
             throw XCTSkip("Requires the bounded classic_recovery_fixture.py on loopback port 18648")
         }
-        launchRecoveryPhraseImport(phrase: "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice")
+        let phrase = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
+        launchRecoveryPhraseImport(phrase: phrase)
+        for (index, word) in phrase.split(separator: " ").enumerated() {
+            XCTAssertEqual(app.textFields["mnemonic.input.\(index)"].value as? String, String(word))
+        }
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         let choice = app.alerts["Legacy Recovery Phrase"]
-        XCTAssertTrue(choice.waitForExistence(timeout: 10))
+        guard choice.waitForExistence(timeout: 10) else {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Classic recovery missing format confirmation"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            retainScreenshot(named: "Classic recovery before format confirmation")
+            XCTFail("Legacy format confirmation did not appear")
+            return
+        }
         choice.buttons["Restore Legacy Wallet"].tap()
         completeImportedWalletToHome()
         app.buttons["wallet.switch"].tap()

@@ -98,7 +98,8 @@ public final class TKInputRecoveryPhraseView: UIView {
                 if keyboardHeight.isZero {
                     make.bottom.equalTo(safeAreaLayoutGuide.snp.bottom)
                 } else {
-                    make.bottom.equalTo(self).offset(-(keyboardHeight - safeAreaInsets.bottom))
+                    // The keyboard frame already includes the bottom safe area.
+                    make.bottom.equalTo(self).offset(-keyboardHeight)
                 }
             }
         }
