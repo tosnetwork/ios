@@ -1,12 +1,12 @@
 {
   "scope": "PUBLIC TEST: native-verified self-pay genesis states at controlled time; not deployment, signing, custody or current-live acceptance",
-  "controlled_now": 1792997636,
+  "controlled_now": 1793012920,
   "target": {
     "workchain": -1,
     "shard": "8000000000000000",
-    "seqno": 4,
-    "root_hash": "d38ac3f3cbc98652621e124387a4aa11d7cf3b2713e9a1fd3533d6802e0614ff",
-    "file_hash": "777455ba9d8e18fa0c98b27f369a9382e781ad7ea06fd6bf492bde353f7cd4c2"
+    "seqno": 6,
+    "root_hash": "eaa21e611ccda2c3eca29455f414bffe1f0295ae302132d1078bf63bec446980",
+    "file_hash": "1c7e86edacbc6d9fa1172dec2eb00aa2aec0e74731145ffcc5a5d13b7a08e90c"
   },
   "proof_controls": {
     "genuine": {
@@ -27,71 +27,71 @@
   },
   "files": {
     "absent/material/account.tl": {
-      "bytes": 2344,
-      "sha256": "be888dfdfccfd44a88fb269c5e6e0cfa0e328772a0c6fe6ae0ff9c5af70f25d7"
+      "bytes": 2340,
+      "sha256": "5877ceb0df82b3a2cf0b69b47531615bee1ac9a8922a7b5ffdf7d2b010144536"
     },
     "absent/material/chain-0000.tl": {
       "bytes": 5536,
-      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+      "sha256": "e4f3d80e9f67d293f2b6c63827506e82098bf10c00d9ffe1a37f094f68676c95"
     },
     "absent/request.json": {
       "bytes": 354,
-      "sha256": "8620ce4fa3879802a52a852a447b39ec3825a7b9c84d6c036080d5686e621778"
+      "sha256": "251aeed69a4d2ddccd4b54887222718b6fcbd93edb1291293decc99c432fda89"
     },
     "active/material/account.tl": {
-      "bytes": 5456,
-      "sha256": "e7eda3017e987e556d555a52f0fe9ebbab7548e38afb7005275f3dc26a2e8fd8"
+      "bytes": 5452,
+      "sha256": "82f90ed1942f65d8184684a93df0624f0fa3db0034b367241a563d087ff57aa3"
     },
     "active/material/chain-0000.tl": {
       "bytes": 5536,
-      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+      "sha256": "e4f3d80e9f67d293f2b6c63827506e82098bf10c00d9ffe1a37f094f68676c95"
     },
     "active/request.json": {
       "bytes": 354,
-      "sha256": "c0441698bd9b5129910d1da73a8515ba2bb9030a813219472feca35249705132"
+      "sha256": "12f591a9b4f42febdeb115df78fc6575a307fda2d8da1ed2a6114f2778a2ca2a"
     },
     "anchor.json": {
       "bytes": 231,
-      "sha256": "2b036cba4f857e81687100913197dcebf4ecae9455bf8e4a24de73d2d79a0cf6"
+      "sha256": "a235141a601313d29302d2a8df815395b5b166803d3a9aa8127cb06021a5eee2"
     },
     "policy/material/chain-0000.tl": {
       "bytes": 5536,
-      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+      "sha256": "e4f3d80e9f67d293f2b6c63827506e82098bf10c00d9ffe1a37f094f68676c95"
     },
     "policy/material/config.tl": {
-      "bytes": 1808,
-      "sha256": "d3c4cfc21f74125c01af38f163f7d7f06e5f8eb39682a35752c13732cf4f0399"
+      "bytes": 1804,
+      "sha256": "9fec158b3bc1a2a1d94f98ff6befc41a505b0bbc1e5b02705b7e18266149c7b6"
     },
     "policy/material/masterchain-info.tl": {
       "bytes": 184,
-      "sha256": "470ea517bb205644fe806bccab397f7b26dfabdab5f77089ba37e7706b8c60d2"
+      "sha256": "70a22a3bafb28c860802717de1bb6fe15b6a30152c8a720ffbe14af251ae279b"
     },
     "policy/request.json": {
       "bytes": 79,
       "sha256": "efc52f541b6a39e7e720a9688ca13b5097f822bf29e1793e09d468334d63f5d3"
     },
     "prefunded/material/account.tl": {
-      "bytes": 2428,
-      "sha256": "7e70d359017b68a956e591859b27d914e6f2db49ca616d5eec84307b2c58b983"
+      "bytes": 2424,
+      "sha256": "2f601b28d9e606d69e6a9ab8a51cff4badf2e5c6b41a39633146e82519996d6b"
     },
     "prefunded/material/chain-0000.tl": {
       "bytes": 5536,
-      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+      "sha256": "e4f3d80e9f67d293f2b6c63827506e82098bf10c00d9ffe1a37f094f68676c95"
     },
     "prefunded/request.json": {
       "bytes": 354,
-      "sha256": "46d4f9f6a20ea75a918575bcbba59d77a754690b88728326ade483428efde747"
+      "sha256": "eda524dbbb478d86a2e0078e94ec8a2c2857ed6f8ae89692191f59a6e424af97"
     },
     "public-self-pay-accounts.json": {
       "bytes": 37363,
-      "sha256": "6e5d3f9918f3bb1568d0d710c4d991bcbe90b833ecbe9defb6eaf02d7579904d"
+      "sha256": "3886fdf70a8c6c79aaeb8824a06f645ad17372a0960c1bd82c1e4acc4552a7ba"
     }
   },
-  "capture_source_commit": "9011045518c378fd58cc125462979fbfb998040f",
-  "capture_script_sha256": "8d3b51c2c45cfa98acb933741044436a9e1f7000dafe47b5bc08220ca552dbf9",
+  "capture_source_commit": "1aa8821c0c208d09796b897b158c45203c99da51",
+  "capture_script_sha256": "b1238fe255ff1648cddbc2b0c0bc3f0c6c438024c1fd8c3561c23aa7cf5e5037",
   "binaries": {
-    "validator-engine/validator-engine": "b9ce8810427a79c0d64c214d7185365517d1b9bb632312bb211fbbe8f67c2626",
-    "dht-server/dht-server": "7cf6b987c00cbd609542be2d51f4cd4f339cca950d0eaa66d7de87ec476dae40",
-    "lite-client/proof-verify/tos-proof-verify": "ece291920c118dc6861cdc52e436da5590e8a4fa88dff69cd0092fafc1f1ccfe"
+    "validator-engine/validator-engine": "155b852f2942795a532cf257d352012844ff305d75aff4c134e5c5ec7cb93d05",
+    "dht-server/dht-server": "1f7109e875e3125da9accefb6d66ba18c6c2905933fdcf9938b2a18e4c50aee8",
+    "lite-client/proof-verify/tos-proof-verify": "a332e9a5dae81a08d9f61f24a6e19b6e9ff691d2fc8a4db5ecad891e51aa9b4c"
   }
 }
