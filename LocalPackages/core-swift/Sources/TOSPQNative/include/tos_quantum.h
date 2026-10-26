@@ -8,7 +8,8 @@
 extern "C" {
 #endif
 /* Roles: 1 ML-DSA-44 PRIMARY; 2 SLH-SHA2-128s rescue.
- * Purposes: 1 AUTH; 2 POP; 3 preparation (rescue only).
+ * Purposes: 1 AUTH; 2 POP; 3 preparation (rescue only);
+ * 4 self-pay request; 5 self-pay possession proof (role-specific domains).
  * Seed sizes: 32/48; entropy sizes: 32/16. Caller supplies checked OS entropy.
  * Digest is exactly 32 bytes. No expanded secret leaves the native call.
  * This stateless API never signs LMS or grants a fee-state reservation. */

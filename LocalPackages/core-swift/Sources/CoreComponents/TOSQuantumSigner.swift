@@ -9,7 +9,7 @@ public enum TOSQuantumRole: Int32, Codable, Sendable {
     public var signatureSize: Int { Int(tos_quantum_signature_size(rawValue)) }
     public var entropySize: Int { Int(tos_quantum_entropy_size(rawValue)) }
 }
-public enum TOSQuantumPurpose: Int32, Sendable { case auth = 1, pop = 2, preparation = 3 }
+public enum TOSQuantumPurpose: Int32, Sendable { case auth = 1, pop = 2, preparation = 3, selfPay = 4, selfPayPop = 5 }
 
 /// Stateless PQ primitive. The wallet service must bind live proofs and durable fee state.
 public enum TOSQuantumSigner {

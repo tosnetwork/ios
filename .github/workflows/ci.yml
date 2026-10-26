@@ -36,6 +36,9 @@ jobs:
       - name: Build app
         run: make compile
 
+      - name: Verify Quantum self-pay native signing domains
+        run: python3 scripts/test_quantum_self_pay_native.py --output build/quantum-self-pay-native
+
       - name: Test app packages
         run: make test_all TEST_DESTINATION="$TEST_DESTINATION"
 
@@ -54,4 +57,5 @@ jobs:
           path: |
             build/*-raw.log
             build/TestResults/*.xcresult
+            build/quantum-self-pay-native/report.json
           if-no-files-found: ignore

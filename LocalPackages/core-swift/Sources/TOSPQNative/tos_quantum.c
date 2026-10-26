@@ -17,6 +17,8 @@ static void wipe(void *data, size_t size) {
 static const char *context(int role, int purpose) {
   if (role != 1 && role != 2) return NULL;
   if (purpose == 1) return role == 1 ? "TOS-AUTH-V2-ML-DSA-44-v1" : "TOS-AUTH-SLH-DSA-SHA2-128S-v1";
+  if (purpose == 4) return role == 1 ? "TOS-QSP-MLDSA44-v1" : "TOS-QSP-SLH128S-v1";
+  if (purpose == 5) return role == 1 ? "TOS-QSP-POP-MLDSA44-v1" : "TOS-QSP-POP-SLH128S-v1";
   if (purpose == 2) return "TOS-RESCUE-POP-v1";
   if (purpose == 3 && role == 2) return "TOS-RESCUE-FEE-PREP-v1";
   return NULL;
