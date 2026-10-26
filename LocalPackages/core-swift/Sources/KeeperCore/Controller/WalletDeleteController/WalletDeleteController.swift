@@ -7,6 +7,8 @@ public final class WalletDeleteController {
     private let mnemonicsRepository: MnemonicsRepository
     private let removeQuantumRole: (UUID, TOSQuantumRole) throws -> Void
     private let removeAllQuantumRoles: () throws -> Void
+    private let removeQuantumEnrollment: (UUID) throws -> Void
+    private let removeAllQuantumEnrollments: () throws -> Void
 
     init(
         walletStore: WalletsStore,
@@ -15,13 +17,23 @@ public final class WalletDeleteController {
         removeQuantumRole: @escaping (UUID, TOSQuantumRole) throws -> Void = {
             try TOSQuantumSeedKeychain().delete(id: $0, role: $1)
         },
-        removeAllQuantumRoles: @escaping () throws -> Void = { try TOSQuantumSeedKeychain().deleteAll() }
+        removeAllQuantumRoles: @escaping () throws -> Void = { try TOSQuantumSeedKeychain().deleteAll() },
+        removeQuantumEnrollment: @escaping (UUID) throws -> Void = {
+            try TOSQuantumCreationRecord.remove(id: $0)
+            try TOSQuantumProofSession.removeCheckpoint(walletID: $0)
+        },
+        removeAllQuantumEnrollments: @escaping () throws -> Void = {
+            try TOSQuantumCreationRecord.removeAll()
+            try TOSQuantumProofSession.removeAllCheckpoints()
+        }
     ) {
         self.walletStore = walletStore
         self.keeperInfoStore = keeperInfoStore
         self.mnemonicsRepository = mnemonicsRepository
         self.removeQuantumRole = removeQuantumRole
         self.removeAllQuantumRoles = removeAllQuantumRoles
+        self.removeQuantumEnrollment = removeQuantumEnrollment
+        self.removeAllQuantumEnrollments = removeAllQuantumEnrollments
     }
 
     public func deleteWallet(wallet: Wallet, passcode: String) async throws {
@@ -33,7 +45,10 @@ public final class WalletDeleteController {
             try removeQuantumRole(id, .rescue)
         }
         try await mnemonicsRepository.deleteMnemonic(wallet: wallet, password: passcode)
-        await walletStore.deleteWallet(wallet)
+        if wallet.kind == .quantum {
+            try await walletStore.deleteWalletDurably(wallet)
+            if let id = UUID(uuidString: wallet.id) { try removeQuantumEnrollment(id) }
+        } else { await walletStore.deleteWallet(wallet) }
     }
 
     public func deleteWallet(wallet: Wallet) async throws {
@@ -46,6 +61,7 @@ public final class WalletDeleteController {
         if mnemonicsRepository.hasMnemonics() {
             try await mnemonicsRepository.deleteAll()
         }
-        await walletStore.deleteAllWallets()
+        try await walletStore.deleteAllWalletsDurably()
+        try removeAllQuantumEnrollments()
     }
 }

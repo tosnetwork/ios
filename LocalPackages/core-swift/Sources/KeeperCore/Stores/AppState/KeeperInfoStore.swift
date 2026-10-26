@@ -16,6 +16,12 @@ public final class KeeperInfoStore: Store<KeeperInfoStore.Event, KeeperInfo?> {
         try? self.keeperInfoRepository.getKeeperInfo()
     }
 
+    /// Missing data is distinct from an unreadable registry. Destructive flows
+    /// must not use an empty startup cache as evidence that no wallet exists.
+    func readPersisted() throws -> KeeperInfo? {
+        try keeperInfoRepository.getKeeperInfoIfPresent()
+    }
+
     /// Publish a creation/import only after durable repository storage succeeds.
     /// Read the repository on the same serial mutation queue so a failed initial
     /// read cannot be mistaken for an empty registry and overwrite existing data.
@@ -52,16 +58,16 @@ public final class KeeperInfoStore: Store<KeeperInfoStore.Event, KeeperInfo?> {
         _ updateBlock: @escaping (KeeperInfo?) -> KeeperInfo?,
         completion: ((KeeperInfo?) -> Void)? = nil
     ) {
-        updateState { [keeperInfoRepository] keeperInfo in
-            guard let newState = updateBlock(keeperInfo) else {
-                try? keeperInfoRepository.removeKeeperInfo()
-                return StateUpdate(newState: nil)
+        // Keep legacy nonthrowing callers, but base every mutation on a strict
+        // disk read and publish only after durable storage. An unreadable file
+        // must never become permission to remove or replace the registry.
+        persistKeeperInfo(updateBlock) { [weak self] result in
+            switch result {
+            case .success(let updatedState):
+                completion?(updatedState)
+            case .failure:
+                completion?(self?.state)
             }
-            try? keeperInfoRepository.saveKeeperInfo(newState)
-            return StateUpdate(newState: newState)
-        } completion: { [weak self] updatedState in
-            self?.sendEvent(.didUpdateKeeperInfo(updatedState))
-            completion?(updatedState)
         }
     }
 

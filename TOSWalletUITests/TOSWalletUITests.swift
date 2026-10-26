@@ -257,6 +257,93 @@ final class TOSWalletUITests: XCTestCase {
         retainScreenshot(named: "Quantum address retained after relaunch")
     }
 
+    func testQuantumCreationResumesAfterDurableRegistrationFailureAndRelaunch() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires the disposable native chain and local enrollment-fault fixture")
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields {
+            let field = app.textFields[name]; XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); endpoint.tap()
+        endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        openCreatePasscode(); enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5)); enterPasscode("1234")
+        let later = app.descendants(matching: .any)["Later"]
+        XCTAssertTrue(later.waitForExistence(timeout: 5)); later.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 5))
+        _ = try quantumCreationControl("arm")
+        app.buttons["wallet.customize.continue"].tap()
+        let failure = app.alerts["Wallet creation failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 30))
+        let failureText = failure.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+        XCTAssertTrue(failureText.contains("FileSystemVault") && failureText.contains("KeeperInfo"),
+                      "The injected registration I/O failure must be reached, rather than a network or custody setup error")
+        let first = try quantumCreationControl("snapshot")
+        failure.buttons["Cancel"].tap()
+        app.buttons["wallet.customize.continue"].tap()
+        XCTAssertTrue(failure.waitForExistence(timeout: 30))
+        let retryFailure = failure.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+        XCTAssertTrue(retryFailure.contains("FileSystemVault") && retryFailure.contains("KeeperInfo"))
+        XCTAssertEqual(try quantumCreationControl("snapshot"), first, "Warm retry must retain the original enrollment UUID")
+        let released = try quantumCreationControl("release")
+        XCTAssertEqual(released, first)
+        _ = try quantumCreationControl("damage")
+        failure.buttons["Manage unfinished wallets"].tap()
+        let inventory = app.alerts["Resume wallet creation"]
+        XCTAssertTrue(inventory.waitForExistence(timeout: 10))
+        inventory.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unavailable record ")).firstMatch.tap()
+        let damaged = app.alerts["Unfinished wallet"]
+        XCTAssertTrue(damaged.waitForExistence(timeout: 5)); damaged.buttons["Remove damaged public record"].tap()
+        XCTAssertTrue(inventory.waitForExistence(timeout: 10))
+        XCTAssertFalse(inventory.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unavailable record ")).firstMatch.exists)
+        app.terminate()
+        let original = try quantumCreationControl("snapshot")
+        XCTAssertEqual(original, first)
+        XCTAssertEqual(original["published"], "false")
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"; app.launch()
+        let create = app.buttons["Create New Wallet"]
+        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap()
+        XCTAssertTrue(app.buttons["1"].waitForExistence(timeout: 5)); enterPasscode("1234")
+        let recovery = app.alerts["Resume wallet creation"]
+        XCTAssertTrue(recovery.waitForExistence(timeout: 10))
+        recovery.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Resume ")).firstMatch.tap()
+        let confirmation = app.alerts["Unfinished wallet"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.buttons["Resume wallet"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.buttons["wallet.customize.continue"].tap()
+        assertNativeWalletHome()
+        let completed = try quantumCreationControl("snapshot")
+        XCTAssertEqual(completed["published"], "true")
+        for key in ["id", "profile_sha256", "identity_sha256"] { XCTAssertEqual(completed[key], original[key]) }
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10)); let retained = address.label
+        app.terminate(); app.launch(); assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[retained].waitForExistence(timeout: 10))
+        print("PUBLIC_QUANTUM_RESUMED_ID=" + (original["id"] ?? "missing"))
+        retainScreenshot(named: "Resumed Quantum address after registration failure")
+    }
+
+    private func quantumCreationControl(_ action: String) throws -> [String: String] {
+        var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_creation/" + action)))
+        request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let bytes = try synchronousData(request: request, description: "local Quantum enrollment fixture")
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+    }
+
     func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic)
         app.descendants(matching: .any)["mnemonic.continue"].tap()

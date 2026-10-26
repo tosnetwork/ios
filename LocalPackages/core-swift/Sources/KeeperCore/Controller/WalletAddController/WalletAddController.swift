@@ -9,6 +9,9 @@ public final class WalletAddController {
     private let tonProofTokenService: TonProofTokenService
     private let mnemonicsRepository: MnemonicsRepository
     private let tronBalanceService: TronBalanceService
+    private let enrollmentDirectory: URL?
+    private let removeEnrollmentCheckpoint: (UUID) throws -> Void
+    private let removeEnrollmentRole: (UUID, TOSQuantumRole) throws -> Void
     private let networkIdentityProvider: (Network) async throws -> Int32
 
     init(
@@ -16,20 +19,27 @@ public final class WalletAddController {
         tonProofTokenService: TonProofTokenService,
         mnemonicsRepositoty: MnemonicsRepository,
         tronBalanceService: TronBalanceService,
-        networkIdentityProvider: @escaping (Network) async throws -> Int32
+        networkIdentityProvider: @escaping (Network) async throws -> Int32,
+        enrollmentDirectory: URL? = nil,
+        removeEnrollmentRole: @escaping (UUID, TOSQuantumRole) throws -> Void = { try TOSQuantumSeedKeychain().delete(id: $0, role: $1) },
+        removeEnrollmentCheckpoint: @escaping (UUID) throws -> Void = { try TOSQuantumProofSession.removeCheckpoint(walletID: $0) }
     ) {
         self.walletsStore = walletsStore
         self.tonProofTokenService = tonProofTokenService
         self.mnemonicsRepository = mnemonicsRepositoty
         self.tronBalanceService = tronBalanceService
         self.networkIdentityProvider = networkIdentityProvider
+        self.enrollmentDirectory = enrollmentDirectory
+        self.removeEnrollmentRole = removeEnrollmentRole
+        self.removeEnrollmentCheckpoint = removeEnrollmentCheckpoint
     }
 
     public func createWallet(
         metaData: WalletMetaData,
         passcode: String,
         mnemonicWords: [String],
-        setupSettings: WalletSetupSettings = WalletSetupSettings()
+        setupSettings: WalletSetupSettings = WalletSetupSettings(),
+        onEnrollment: (UUID) -> Void = { _ in }
     ) async throws {
         let mnemonicWords = TOSV1MnemonicValidator.normalize(mnemonicWords)
         guard TOSMnemonic.isValid(mnemonicWords) else {
@@ -45,9 +55,72 @@ public final class WalletAddController {
         try await TOSQuantumWalletCreation().create(words: mnemonic.mnemonicWords, profile: profile,
             saveMnemonic: { record in
                 try await self.mnemonicsRepository.saveMnemonic(mnemonic, wallet: wallet(record), password: passcode)
+                onEnrollment(record.id)
             }, publish: { record in
                 try await self.walletsStore.addWallets([wallet(record)])
             })
+    }
+
+    public func quantumEnrollmentInventory() throws -> TOSQuantumCreationRecord.Scan {
+        let registered = try walletsStore.registeredWallets()
+        let scan = try TOSQuantumCreationRecord.scan(baseDirectory: enrollmentDirectory)
+        let entries = scan.entries.filter { entry in
+            guard let id = entry.id else { return true }
+            return !registered.contains { UUID(uuidString: $0.id) == id }
+        }
+        return TOSQuantumCreationRecord.Scan(entries: entries, overflow: scan.overflow, storedCount: scan.storedCount)
+    }
+
+    public func pendingQuantumEnrollments() throws -> [TOSQuantumCreationRecord.Entry] {
+        try quantumEnrollmentInventory().entries
+    }
+
+    public func discardQuantumEnrollment(_ entry: TOSQuantumCreationRecord.Entry, passcode: String) async throws {
+        let registered = try walletsStore.registeredWallets()
+        if let id = entry.id, registered.contains(where: { UUID(uuidString: $0.id) == id }) { throw TOSPQError.keyBinding }
+        // Published and unreadable records are always public-file cleanup only.
+        // They can never authorize deleting a saved wallet's custody or phrase.
+        if let record = entry.record, !record.published, mnemonicsRepository.hasMnemonics() {
+            guard await mnemonicsRepository.checkIfPasswordValid(passcode) else { throw TOSPQError.keyBinding }
+            let currentRegistry = try walletsStore.registeredWallets()
+            guard !currentRegistry.contains(where: { UUID(uuidString: $0.id) == record.id }) else { throw TOSPQError.keyBinding }
+            let current = try TOSQuantumCreationRecord.load(id: record.id, baseDirectory: enrollmentDirectory)
+            guard !current.published, current.identity == record.identity, current.profile == record.profile else { throw TOSPQError.keyBinding }
+            let wallet = Wallet(id: record.id.uuidString,
+                identity: WalletIdentity(network: .mainnet, kind: .Quantum(record.identity), networkGlobalId: record.profile.globalID),
+                metaData: WalletMetaData(label: "Unfinished wallet", tintColor: .defaultColor, icon: .icon(.wallet)),
+                setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+            try removeEnrollmentRole(record.id, .primary)
+            try removeEnrollmentRole(record.id, .rescue)
+            try await mnemonicsRepository.deleteMnemonic(wallet: wallet, password: passcode)
+            try removeEnrollmentCheckpoint(record.id)
+        }
+        try TOSQuantumCreationRecord.discard(entry, baseDirectory: enrollmentDirectory)
+    }
+
+    public func resumeQuantumCreation(id: UUID, metaData: WalletMetaData, passcode: String,
+                                      setupSettings: WalletSetupSettings = WalletSetupSettings()) async throws {
+        let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: enrollmentDirectory)
+        guard !record.published else { throw TOSPQError.keyBinding }
+        let registered = try walletsStore.registeredWallets()
+        guard !registered.contains(where: { wallet in
+            guard UUID(uuidString: wallet.id) != id, case .Quantum(let identity) = wallet.identity.kind else { return false }
+            return identity == record.identity
+        }) else { throw TOSPQError.keyBinding }
+        let wallet: Wallet
+        if let existing = registered.first(where: { UUID(uuidString: $0.id) == id }) {
+            guard case .Quantum(let identity) = existing.identity.kind, identity == record.identity,
+                  existing.identity.networkGlobalId == record.profile.globalID else { throw TOSPQError.keyBinding }
+            wallet = existing
+        } else {
+            wallet = Wallet(id: record.id.uuidString,
+                identity: WalletIdentity(network: .mainnet, kind: .Quantum(record.identity), networkGlobalId: record.profile.globalID),
+                metaData: metaData, setupSettings: setupSettings, batterySettings: BatterySettings())
+        }
+        let mnemonic = try await mnemonicsRepository.getMnemonic(wallet: wallet, password: passcode)
+        try await TOSQuantumWalletCreation().resume(words: mnemonic.mnemonicWords, record: record) { _ in
+            try await self.walletsStore.addWallets([wallet])
+        }
     }
 
     public enum AddWalletRevisionError: Swift.Error {

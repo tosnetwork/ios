@@ -89,7 +89,7 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
             let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
                 try step(role == .primary ? "primary" : "rescue")
                 return try TOSQuantumSigner.publicKey(role: role, seed: seed)
-            }, saveRecord: { _ in try step("record") }, now: { now })
+            }, saveRecord: { _ in try step("record") }, now: { now }, completeRecord: { _ in try step("complete") })
             do {
                 try await creator.create(words: words, profile: profile, saveMnemonic: { _ in try step("mnemonic") },
                                          publish: { _ in try step("publish") })
@@ -131,4 +131,147 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
         } catch Failure.injected {}
         XCTAssertEqual(writes, 0)
     }
+    func testResumePreservesUUIDBirthAnchorAndPartialRolesAcrossReload() async throws {
+        let (profile, network, now) = try fixture()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var saved: TOSQuantumCreationRecord?, keys = [TOSQuantumRole: Data](), failRescue = true
+        var records = 0, mnemonicWrites = 0, publications = 0
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            if role == .rescue && failRescue { throw Failure.injected }
+            let key = try TOSQuantumSigner.publicKey(role: role, seed: seed)
+            if let existing = keys[role] { XCTAssertEqual(existing, key) } else { keys[role] = key }
+            return key
+        }, saveRecord: { value in records += 1; saved = value; try value.save(baseDirectory: directory) }, now: { now },
+        resumeNetwork: { id, retained in
+            XCTAssertEqual(id, saved?.id); XCTAssertEqual(retained, profile)
+            return network
+        }, completeRecord: { try $0.markPublished(baseDirectory: directory) })
+        do {
+            try await creator.create(words: words, profile: profile, saveMnemonic: { _ in mnemonicWrites += 1 }, publish: { _ in XCTFail("Incomplete roles published") })
+            XCTFail("Injected interruption ignored")
+        } catch Failure.injected {}
+        let original = try XCTUnwrap(saved), originalPrimary = try XCTUnwrap(keys[.primary])
+        let loaded = try TOSQuantumCreationRecord.load(id: original.id, baseDirectory: directory)
+        XCTAssertFalse(loaded.published)
+        failRescue = false
+        for _ in 0..<2 {
+            try await creator.resume(words: words, record: loaded) { value in
+                XCTAssertEqual(value.id, original.id); XCTAssertEqual(value.profile, original.profile)
+                XCTAssertEqual(value.identity, original.identity); publications += 1
+            }
+        }
+        XCTAssertTrue(try TOSQuantumCreationRecord.load(id: original.id, baseDirectory: directory).published)
+        XCTAssertEqual(keys[.primary], originalPrimary)
+        XCTAssertEqual(keys.count, 2); XCTAssertEqual(records, 1); XCTAssertEqual(mnemonicWrites, 1); XCTAssertEqual(publications, 2)
+    }
+
+    func testResumeChecksDerivedBirthKeysBeforeAnyCustodyWrites() async throws {
+        let (profile, network, now) = try fixture()
+        let authority = try TOSQuantumSelfPayAuthority(globalID: 1, namespace: network.namespace,
+            primaryKey: Data(repeating: 7, count: 1312), rescueKey: Data(repeating: 8, count: 32))
+        let record = try TOSQuantumCreationRecord(id: UUID(), profile: profile,
+            identity: TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: authority)))
+        let alteredPolicy = try TOSQuantumSelfPayAuthority(globalID: 1, namespace: network.namespace,
+            primaryKey: authority.primaryKey, rescueKey: authority.rescueKey, policy: .required)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord(id: record.id, profile: profile,
+            identity: TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: alteredPolicy))))
+        var writes = 0
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, _, _, _ in writes += 1; throw Failure.injected },
+            saveRecord: { _ in XCTFail("Resume replaced enrollment") }, now: { now })
+        do {
+            try await creator.resume(words: words, record: record) { _ in XCTFail("Wrong birth keys published") }
+            XCTFail("Wrong phrase/identity binding accepted")
+        } catch TOSPQError.keyBinding {} catch { XCTFail("Unexpected refusal: \(error)") }
+        XCTAssertEqual(writes, 0)
+    }
+
+    func testResumeRefusesChangedNamespaceAndLateProofBeforePublish() async throws {
+        let (profile, network, timestamp) = try fixture()
+        var valid: TOSQuantumCreationRecord?
+        let setup = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { valid = $0 }, now: { timestamp })
+        try await setup.create(words: words, profile: profile, saveMnemonic: { _ in }, publish: { _ in })
+        let original = try XCTUnwrap(valid)
+        let a = original.identity.wallet.initialAuthority
+        let changed = try TOSQuantumSelfPayAuthority(globalID: a.globalID, namespace: Data(repeating: 9, count: 32),
+            primaryKey: a.primaryKey, rescueKey: a.rescueKey)
+        let wrong = try TOSQuantumCreationRecord(id: original.id, profile: profile,
+            identity: TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: changed)))
+        var writes = 0, now = timestamp
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            writes += 1; now = timestamp + 301
+            return try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { _ in XCTFail("Resume replaced enrollment") }, now: { now })
+        do { try await creator.resume(words: words, record: wrong) { _ in XCTFail("Wrong namespace published") }; XCTFail("Wrong namespace accepted") }
+        catch TOSPQError.keyBinding {} catch { XCTFail("Unexpected refusal: \(error)") }
+        XCTAssertEqual(writes, 0)
+        do { try await creator.resume(words: words, record: original) { _ in XCTFail("Expired proof published") }; XCTFail("Expired proof accepted") }
+        catch TOSPQError.invalidInput {} catch { XCTFail("Unexpected refusal: \(error)") }
+        XCTAssertEqual(writes, 2)
+    }
+
+    func testEnrollmentDirectoryIsBoundedAndRejectsTransplantedCorruptRecords() async throws {
+        let (profile, network, now) = try fixture()
+        var initial: TOSQuantumCreationRecord?
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { initial = $0 }, now: { now })
+        try await creator.create(words: words, profile: profile, saveMnemonic: { _ in }, publish: { _ in })
+        let record = try XCTUnwrap(initial)
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        XCTAssertTrue(try TOSQuantumCreationRecord.loadAll(baseDirectory: base).isEmpty)
+        try record.save(baseDirectory: base)
+        let file = base.appendingPathComponent("quantum-creation/\(record.id.uuidString).json")
+        let bytes = try Data(contentsOf: file)
+        let transplant = base.appendingPathComponent("quantum-creation/\(UUID().uuidString).json")
+        try bytes.write(to: transplant)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord.loadAll(baseDirectory: base))
+        try FileManager.default.removeItem(at: transplant)
+        try (bytes + Data(repeating: 0x20, count: 32_769 - bytes.count)).write(to: file)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord.loadAll(baseDirectory: base))
+        try bytes.write(to: file)
+        try record.markPublished(baseDirectory: base)
+        let completed = try Data(contentsOf: file)
+        XCTAssertTrue(try TOSQuantumCreationRecord.load(id: record.id, baseDirectory: base).published)
+        try record.markPublished(baseDirectory: base)
+        XCTAssertEqual(try Data(contentsOf: file), completed)
+        for _ in 1..<64 { try TOSQuantumCreationRecord(id: UUID(), profile: profile, identity: record.identity).save(baseDirectory: base) }
+        XCTAssertEqual(try TOSQuantumCreationRecord.loadAll(baseDirectory: base).count, 64)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord(id: UUID(), profile: profile, identity: record.identity).save(baseDirectory: base))
+        try bytes.write(to: transplant)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord.loadAll(baseDirectory: base))
+    }
+
+    func testEnrollmentCleanupIsIdempotentAndScoped() async throws {
+        let (profile, network, now) = try fixture()
+        var record: TOSQuantumCreationRecord?
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { record = $0 }, now: { now })
+        try await creator.create(words: words, profile: profile, saveMnemonic: { _ in }, publish: { _ in })
+        let saved = try XCTUnwrap(record), other = try TOSQuantumCreationRecord(id: UUID(), profile: profile, identity: saved.identity)
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        try saved.save(baseDirectory: base); try other.save(baseDirectory: base)
+        try TOSQuantumCreationRecord.remove(id: saved.id, baseDirectory: base)
+        try TOSQuantumCreationRecord.remove(id: saved.id, baseDirectory: base)
+        XCTAssertEqual(try TOSQuantumCreationRecord.loadAll(baseDirectory: base).map(\.id), [other.id])
+        try TOSQuantumCreationRecord.removeAll(baseDirectory: base)
+        try TOSQuantumCreationRecord.removeAll(baseDirectory: base)
+        XCTAssertTrue(try TOSQuantumCreationRecord.loadAll(baseDirectory: base).isEmpty)
+    }
+
+    func testPublishedWalletIsNotReportedFailedWhenJournalCloseIsDeferred() async throws {
+        let (profile, network, now) = try fixture()
+        var published = 0, closes = 0
+        let creator = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { _ in }, now: { now }, completeRecord: { _ in closes += 1; throw Failure.injected })
+        try await creator.create(words: words, profile: profile, saveMnemonic: { _ in }, publish: { _ in published += 1 })
+        XCTAssertEqual(published, 1); XCTAssertEqual(closes, 1)
+    }
+
 }

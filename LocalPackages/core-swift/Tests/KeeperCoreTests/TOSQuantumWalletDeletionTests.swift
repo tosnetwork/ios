@@ -41,7 +41,7 @@ final class TOSQuantumWalletDeletionTests: XCTestCase {
         let mnemonics = Mnemonics(); mnemonics.validPassword = false
         var removed = 0
         let controller = WalletDeleteController(walletStore: store, keeperInfoStore: keeper, mnemonicsRepository: mnemonics,
-            removeQuantumRole: { _, _ in removed += 1 })
+            removeQuantumRole: { _, _ in removed += 1 }, removeQuantumEnrollment: { _ in XCTFail("Invalid deletion removed enrollment") })
         do { try await controller.deleteWallet(wallet: wallet); XCTFail("Quantum used watch-only deletion") }
         catch TOSPQError.keyBinding {}
         do { try await controller.deleteWallet(wallet: wallet, passcode: "wrong"); XCTFail("Wrong passcode accepted") }
@@ -55,19 +55,23 @@ final class TOSQuantumWalletDeletionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         try await store.addWallets([wallet])
         let mnemonics = Mnemonics()
-        var fail = true, roles = [TOSQuantumRole]()
+        var fail = true, roles = [TOSQuantumRole](), enrollmentRemovals = 0
         let controller = WalletDeleteController(walletStore: store, keeperInfoStore: keeper, mnemonicsRepository: mnemonics,
             removeQuantumRole: { id, role in
                 XCTAssertEqual(id.uuidString, wallet.id); roles.append(role)
                 if fail && role == .rescue { throw Failure.injected }
+            }, removeQuantumEnrollment: { id in
+                XCTAssertEqual(id.uuidString, wallet.id); XCTAssertTrue(store.wallets.isEmpty); enrollmentRemovals += 1
             })
         do { try await controller.deleteWallet(wallet: wallet, passcode: "valid"); XCTFail("Lost custody error") }
         catch Failure.injected {}
+        XCTAssertEqual(enrollmentRemovals, 0)
         XCTAssertEqual(roles, [.primary, .rescue]); XCTAssertFalse(mnemonics.deleted)
         XCTAssertEqual(store.wallets.map(\.id), [wallet.id])
         fail = false; roles.removeAll()
         try await controller.deleteWallet(wallet: wallet, passcode: "valid")
         XCTAssertEqual(roles, [.primary, .rescue]); XCTAssertTrue(mnemonics.deleted); XCTAssertTrue(store.wallets.isEmpty)
+        XCTAssertEqual(enrollmentRemovals, 1)
     }
 
     func testSignOutClearsAllRoleRecordsIncludingUnregisteredAttemptsBeforePublishingEmptyState() async throws {
@@ -75,10 +79,12 @@ final class TOSQuantumWalletDeletionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         try await store.addWallets([wallet])
         let mnemonics = Mnemonics()
-        var fail = true, calls = 0
+        var fail = true, calls = 0, enrollmentRemovals = 0
         let controller = WalletDeleteController(walletStore: store, keeperInfoStore: keeper, mnemonicsRepository: mnemonics,
-            removeAllQuantumRoles: { calls += 1; if fail { throw Failure.injected } })
+            removeAllQuantumRoles: { calls += 1; if fail { throw Failure.injected } },
+            removeAllQuantumEnrollments: { XCTAssertTrue(store.wallets.isEmpty); enrollmentRemovals += 1 })
         do { try await controller.deleteAll(); XCTFail("Lost sign-out error") } catch Failure.injected {}
+        XCTAssertEqual(enrollmentRemovals, 0)
         XCTAssertEqual(calls, 1); XCTAssertFalse(mnemonics.deleted); XCTAssertEqual(store.wallets.count, 1)
         fail = false; mnemonics.failDelete = true
         do { try await controller.deleteAll(); XCTFail("Lost mnemonic cleanup error") } catch Failure.injected {}
@@ -86,5 +92,6 @@ final class TOSQuantumWalletDeletionTests: XCTestCase {
         mnemonics.failDelete = false
         try await controller.deleteAll()
         XCTAssertEqual(calls, 3); XCTAssertTrue(mnemonics.deleted); XCTAssertTrue(store.wallets.isEmpty)
+        XCTAssertEqual(enrollmentRemovals, 1)
     }
 }

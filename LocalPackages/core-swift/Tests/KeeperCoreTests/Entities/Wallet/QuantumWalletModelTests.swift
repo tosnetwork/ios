@@ -61,6 +61,41 @@ final class QuantumWalletModelTests: XCTestCase {
         XCTAssertEqual(try restarted.activeWallet.identity.identifier(), try original.identity.identifier())
     }
 
+    func testFailedDurableDeletionPreservesWalletsAndEventsUntilRetry() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = try FailingWalletFileRepository(directory: directory)
+        let store = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: repository))
+        let quantum = wallet(WalletIdentity(network: .mainnet, kind: .Quantum(try birth())))
+        let classic = wallet(WalletIdentity(network: .mainnet,
+            kind: .Regular(TonSwift.PublicKey(data: Data(repeating: 7, count: 32)), .v4R2)), id: "retained")
+        try await store.addWallets([quantum, classic])
+        let observer = WalletPublicationProbe()
+        store.addObserver(observer) { probe, _ in probe.record() }
+        repository.rejectSaves = true
+        do { try await store.deleteWalletDurably(quantum); XCTFail("Real failed file write reported successful deletion") }
+        catch FileSystemVault<KeeperInfo, String>.SaveError.other {}
+        await drain(store)
+        XCTAssertEqual(observer.count, 0); XCTAssertEqual(store.wallets.map(\.id), [quantum.id, classic.id])
+        XCTAssertEqual(try repository.getKeeperInfo().wallets.map(\.id), [quantum.id, classic.id])
+        repository.rejectSaves = false
+        try await store.deleteWalletDurably(quantum)
+        await drain(store)
+        XCTAssertEqual(observer.count, 2); XCTAssertEqual(store.wallets.map(\.id), [classic.id])
+        let file = directory.appendingPathComponent("KeeperInfo/KeeperInfo")
+        let valid = try Data(contentsOf: file)
+        try Data("corrupt public registry".utf8).write(to: file)
+        do { try await store.deleteAllWalletsDurably(); XCTFail("Corrupt registry authorized publishing empty state") }
+        catch FileSystemVault<KeeperInfo, String>.LoadError.corruptedData {}
+        await drain(store)
+        XCTAssertEqual(observer.count, 2); XCTAssertEqual(store.wallets.map(\.id), [classic.id])
+        try valid.write(to: file)
+        try await store.deleteAllWalletsDurably()
+        await drain(store)
+        XCTAssertEqual(observer.count, 3); XCTAssertTrue(store.wallets.isEmpty)
+        XCTAssertNil(try repository.getKeeperInfoIfPresent())
+    }
+
     func testFailedFileSaveCannotPublishQuantumWalletAndRetryPersistsIt() async throws {
         for hasExistingWallet in [false, true] {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

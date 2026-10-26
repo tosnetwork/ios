@@ -84,4 +84,6 @@ resets the app's Keychain.
 
 Simulator success does not prove physical-device user-presence prompts,
 independent rescue custody, backup restoration, deployment, payment, or migration.
-Interrupted initial creation recovery on iOS remains a separate required flow.
+Interrupted initial creation recovery is covered separately in
+[the creation-resume workflow](quantum-creation-resume.md). Its local recovery
+acceptance does not establish any of these chain or independent backup properties.

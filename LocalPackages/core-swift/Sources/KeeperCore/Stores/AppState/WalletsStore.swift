@@ -66,6 +66,10 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
         super.init(state: State.empty)
     }
 
+    func registeredWallets() throws -> [Wallet] {
+        try keeperInfoStore.readPersisted()?.wallets ?? []
+    }
+
     public func getWallet(id: String) -> Wallet? {
         wallets.first(where: { $0.id == id })
     }
@@ -114,6 +118,40 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
         return await withCheckedContinuation { continuation in
             deleteAllWallets { state in
                 continuation.resume(returning: state)
+            }
+        }
+    }
+
+    /// Creation custody cleanup must not report deletion while the durable main
+    /// registry still contains the wallet. Publish events only after persistence.
+    @discardableResult
+    public func deleteWalletDurably(_ wallet: Wallet) async throws -> State {
+        try await deleteDurably(wallet)
+    }
+
+    @discardableResult
+    public func deleteAllWalletsDurably() async throws -> State {
+        try await deleteDurably(nil)
+    }
+
+    private func deleteDurably(_ wallet: Wallet?) async throws -> State {
+        try await withCheckedThrowingContinuation { continuation in
+            keeperInfoStore.persistKeeperInfo { info in
+                guard let wallet, let info else { return nil }
+                return info.deleteWallet(wallet)
+            } completion: { result in
+                switch result {
+                case .failure(let error): continuation.resume(throwing: error)
+                case .success(let info):
+                    let state = self.getState(keeperInfo: info)
+                    self.updateState { _ in StateUpdate(newState: state) } completion: { state in
+                        if let wallet, case .wallets(let wallets) = state {
+                            self.sendEvent(.didDeleteWallet(wallet: wallet))
+                            self.sendEvent(.didChangeActiveWallet(from: wallet, to: wallets.activeWallet))
+                        } else { self.sendEvent(.didDeleteAll) }
+                        continuation.resume(returning: state)
+                    }
+                }
             }
         }
     }

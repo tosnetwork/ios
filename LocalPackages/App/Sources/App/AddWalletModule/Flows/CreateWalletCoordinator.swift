@@ -16,6 +16,8 @@ public final class CreateWalletCoordinator: RouterCoordinator<ViewControllerRout
 
     private let walletsUpdateAssembly: WalletsUpdateAssembly
     private let analyticsProvider: AnalyticsProvider
+    private var isManagingRecovery = false
+    private var activeCreationID: UUID?
     private let storesAssembly: StoresAssembly
     private let customizeWalletModule: () -> MVVMModule<UIViewController, CustomizeWalletModuleOutput, Void>
 
@@ -72,7 +74,7 @@ private extension CreateWalletCoordinator {
         )
 
         self.router.present(navigationController, onDismiss: { [weak self] in
-            self?.didCancel?()
+            if self?.isManagingRecovery != true { self?.didCancel?() }
         })
     }
 
@@ -86,20 +88,88 @@ private extension CreateWalletCoordinator {
                 self?.didCancel?()
             },
             onInput: { [weak self] passcode in
-                let navigationController = TKNavigationController()
-                navigationController.configureTransparentAppearance()
-                let phrase = TOSMnemonic.generate()
-                self?.openBackupIntro(
-                    router: NavigationControllerRouter(rootViewController: navigationController),
-                    animated: false,
-                    passcode: passcode,
-                    phrase: phrase
-                )
-                self?.router.present(navigationController, onDismiss: { [weak self] in
-                    self?.didCancel?()
-                })
+                self?.chooseCreation(passcode: passcode)
             }
         )
+    }
+
+    func openCreationFlow(passcode: String, record: TOSQuantumCreationRecord? = nil) {
+        activeCreationID = nil
+        let navigationController = TKNavigationController()
+        navigationController.configureTransparentAppearance()
+        let childRouter = NavigationControllerRouter(rootViewController: navigationController)
+        if let record {
+            openCustomizeWallet(router: childRouter, animated: false, passcode: passcode,
+                                phrase: [], backupDate: nil, resumeID: record.id)
+        } else {
+            openBackupIntro(router: childRouter, animated: false, passcode: passcode, phrase: TOSMnemonic.generate())
+        }
+        router.present(navigationController, onDismiss: { [weak self] in
+            if self?.isManagingRecovery != true { self?.didCancel?() }
+        })
+    }
+
+    func chooseCreation(passcode: String, page: Int = 0) {
+        do {
+            let inventory = try walletsUpdateAssembly.walletAddController().quantumEnrollmentInventory()
+            let pending = inventory.entries
+            let atCapacity = inventory.storedCount >= 64 || inventory.overflow
+            guard !pending.isEmpty || atCapacity else { openCreationFlow(passcode: passcode); return }
+            let page = min(page, max(0, (pending.count - 1) / 6))
+            let start = page * 6, end = min(start + 6, pending.count)
+            let alert = UIAlertController(title: "Resume wallet creation",
+                message: atCapacity
+                    ? "This device has reached its 64 wallet-record limit. Remove an unneeded wallet in Settings or clean up an unfinished record, then reload. Additional records may be hidden until space is freed."
+                    : "Continue an unfinished wallet or remove a record you no longer need.", preferredStyle: .alert)
+            for entry in pending[start..<end] {
+                let title: String
+                if let record = entry.record {
+                    title = "\(record.published ? "Public record" : "Resume") \(record.identity.wallet.address.toRaw().prefix(12))…"
+                } else { title = "Unavailable record \(entry.filename.prefix(12))…" }
+                alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                    self?.reviewEnrollment(entry, passcode: passcode)
+                })
+            }
+            if page > 0 { alert.addAction(UIAlertAction(title: "Previous records", style: .default) { [weak self] _ in self?.chooseCreation(passcode: passcode, page: page - 1) }) }
+            if end < pending.count { alert.addAction(UIAlertAction(title: "More records", style: .default) { [weak self] _ in self?.chooseCreation(passcode: passcode, page: page + 1) }) }
+            if !atCapacity { alert.addAction(UIAlertAction(title: "Create another wallet", style: .default) { [weak self] _ in self?.openCreationFlow(passcode: passcode) }) }
+            alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel) { [weak self] _ in self?.didCancel?() })
+            router.present(alert)
+        } catch {
+            let alert = UIAlertController(title: "Wallet recovery unavailable", message: "The saved wallet list or recovery storage cannot be read. Existing wallets and keys were kept. Try again after storage becomes available.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Try again", style: .default) { [weak self] _ in self?.chooseCreation(passcode: passcode) })
+            alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel) { [weak self] _ in self?.didCancel?() })
+            router.present(alert)
+        }
+    }
+
+    func reviewEnrollment(_ entry: TOSQuantumCreationRecord.Entry, passcode: String) {
+        let readable = entry.record != nil
+        let published = entry.record?.published == true
+        let alert = UIAlertController(title: published ? "Saved wallet public record" : "Unfinished wallet", message: published
+            ? "Only this public record will be removed. Protected keys and encrypted recovery material are kept."
+            : readable ? "Resume the original wallet or remove its local recovery record. Save your recovery phrase first: removal can make funds sent to this address inaccessible."
+            : "This public record cannot be read. Removing it keeps protected keys and encrypted recovery material.", preferredStyle: .alert)
+        if let record = entry.record, !record.published {
+            alert.addAction(UIAlertAction(title: "Resume wallet", style: .default) { [weak self] _ in self?.openCreationFlow(passcode: passcode, record: record) })
+        }
+        alert.addAction(UIAlertAction(title: published ? "Remove public record" : readable ? "Remove unfinished wallet" : "Remove damaged public record", style: .destructive) { [weak self] _ in
+            guard let self else { return }
+            Task {
+                do {
+                    try await self.walletsUpdateAssembly.walletAddController().discardQuantumEnrollment(entry, passcode: passcode)
+                    await MainActor.run { self.chooseCreation(passcode: passcode) }
+                } catch {
+                    await MainActor.run {
+                        let error = UIAlertController(title: "Recovery record kept", message: "Cleanup could not be completed. Try again without creating a replacement for this wallet.", preferredStyle: .alert)
+                        error.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
+                        self.router.present(error)
+                    }
+                }
+            }
+        })
+        alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel) { [weak self] _ in self?.chooseCreation(passcode: passcode) })
+        router.present(alert)
     }
 
     func openCustomizeWallet(
@@ -107,7 +177,8 @@ private extension CreateWalletCoordinator {
         animated: Bool,
         passcode: String,
         phrase: [String],
-        backupDate: Date?
+        backupDate: Date?,
+        resumeID: UUID? = nil
     ) {
         let module = customizeWalletModule()
 
@@ -125,7 +196,8 @@ private extension CreateWalletCoordinator {
                         model: model,
                         passcode: passcode,
                         phrase: phrase,
-                        backupDate: backupDate
+                        backupDate: backupDate,
+                        resumeID: resumeID
                     )
                     await MainActor.run {
                         self.didCreateWallet?()
@@ -147,6 +219,14 @@ private extension CreateWalletCoordinator {
                             DispatchQueue.main.async {
                                 TOSRPCNodeEditor.present(from: router.rootViewController, onSaved: {})
                             }
+                        })
+                        alert.addAction(UIAlertAction(title: "Manage unfinished wallets", style: .default) { [weak coordinator = self] _ in
+                            guard let coordinator else { return }
+                            coordinator.isManagingRecovery = true
+                            coordinator.router.dismiss(animated: true, completion: {
+                                coordinator.isManagingRecovery = false
+                                coordinator.chooseCreation(passcode: passcode)
+                            })
                         })
                         alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
                         router.present(alert)
@@ -173,7 +253,8 @@ private extension CreateWalletCoordinator {
         model: CustomizeWalletModel,
         passcode: String,
         phrase: [String],
-        backupDate: Date?
+        backupDate: Date?,
+        resumeID: UUID? = nil
     ) async throws {
         let addController = walletsUpdateAssembly.walletAddController()
         let metaData = WalletMetaData(
@@ -181,11 +262,17 @@ private extension CreateWalletCoordinator {
             tintColor: model.tintColor,
             icon: model.icon
         )
+        if let retainedID = resumeID ?? activeCreationID {
+            try await addController.resumeQuantumCreation(id: retainedID, metaData: metaData, passcode: passcode,
+                setupSettings: WalletSetupSettings(backupDate: backupDate))
+            return
+        }
         try await addController.createWallet(
             metaData: metaData,
             passcode: passcode,
             mnemonicWords: phrase,
-            setupSettings: WalletSetupSettings(backupDate: backupDate)
+            setupSettings: WalletSetupSettings(backupDate: backupDate),
+            onEnrollment: { [weak self] id in self?.activeCreationID = id }
         )
     }
 }

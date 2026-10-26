@@ -100,4 +100,40 @@ final class TOSQuantumKeychainHostedTests: XCTestCase {
             }
         }
     }
+    func testResumePreservesExistingProtectedRoleAndRefusesReplacement() throws {
+        let keychain = TOSQuantumSeedKeychain(), id = UUID()
+        let context = try TOSQuantumSeedKeychain.Context(network: Data(repeating: 0x42, count: 32), globalID: 1, account: 0, generation: 0)
+        let wrongContext = try TOSQuantumSeedKeychain.Context(network: context.network, globalID: 2, account: 0, generation: 0)
+        defer { for role in [TOSQuantumRole.primary, .rescue] { try? keychain.delete(id: id, role: role) } }
+        for role in [TOSQuantumRole.primary, .rescue] {
+            var seed = Data(repeating: 7, count: role.seedSize)
+            let expected = try TOSQuantumSigner.publicKey(role: role, seed: seed)
+            XCTAssertEqual(try keychain.importMissingAndWipe(id: id, role: role, context: context, seed: &seed), expected)
+            XCTAssertEqual(seed, Data(count: role.seedSize))
+            func reference() throws -> Data {
+                var value: CFTypeRef?
+                let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
+                    kSecAttrService: "network.tos.wallet.quantum.seed.v1", kSecAttrAccount: "\(role.rawValue).\(id.uuidString)",
+                    kSecAttrSynchronizable: false, kSecReturnPersistentRef: true]
+                XCTAssertEqual(SecItemCopyMatching(query as CFDictionary, &value), errSecSuccess)
+                return try XCTUnwrap(value as? Data)
+            }
+            let original = try reference()
+            seed = Data(repeating: 7, count: role.seedSize)
+            XCTAssertEqual(try keychain.importMissingAndWipe(id: id, role: role, context: context, seed: &seed), expected)
+            XCTAssertEqual(seed, Data(count: role.seedSize)); XCTAssertEqual(try reference(), original)
+            seed = Data(repeating: 8, count: role.seedSize)
+            XCTAssertThrowsError(try keychain.importMissingAndWipe(id: id, role: role, context: context, seed: &seed)) { error in
+                guard case TOSPQError.keyBinding = error else { return XCTFail("Unexpected replacement error: \(error)") }
+            }
+            XCTAssertEqual(seed, Data(count: role.seedSize))
+            seed = Data(repeating: 7, count: role.seedSize)
+            XCTAssertThrowsError(try keychain.importMissingAndWipe(id: id, role: role, context: wrongContext, seed: &seed)) { error in
+                guard case TOSPQError.keyBinding = error else { return XCTFail("Unexpected context error: \(error)") }
+            }
+            XCTAssertEqual(try reference(), original)
+            XCTAssertEqual(try keychain.publicKey(id: id, role: role, context: context), expected)
+        }
+    }
+
 }

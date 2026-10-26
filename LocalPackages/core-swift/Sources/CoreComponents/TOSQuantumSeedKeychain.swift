@@ -75,6 +75,23 @@ public final class TOSQuantumSeedKeychain {
         guard status == errSecSuccess else { throw TOSPQError.keychain(status) }
         return publicKey
     }
+    /// Retry an enrollment without replacing a protected role already present.
+    /// Only a genuinely absent item permits insertion; denied access and corrupt
+    /// or mismatched records fail closed. Concurrent identical inserts converge.
+    public func importMissingAndWipe(id: UUID, role: TOSQuantumRole, context: Context, seed: inout Data) throws -> Data {
+        defer { seed.resetBytes(in: 0..<seed.count) }
+        let expected = try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        func existing() throws -> Data {
+            let key = try publicKey(id: id, role: role, context: context)
+            guard key == expected else { throw TOSPQError.keyBinding }
+            return key
+        }
+        do { return try existing() }
+        catch TOSPQError.keychain(let status) where status == errSecItemNotFound {
+            do { return try importAndWipe(id: id, role: role, context: context, seed: &seed) }
+            catch TOSPQError.keychain(let status) where status == errSecDuplicateItem { return try existing() }
+        }
+    }
     private func withSeed<Result>(id: UUID, role: TOSQuantumRole, context: Context,
                                   body: (Data) throws -> Result) throws -> Result {
         lock.lock(); defer { lock.unlock() }

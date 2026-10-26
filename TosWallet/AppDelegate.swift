@@ -62,6 +62,11 @@ private extension AppDelegate {
                 try? fileManager.removeItem(at: item)
             }
         }
+        if let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            for name in ["quantum-creation", "quantum-proof-checkpoints"] {
+                try? fileManager.removeItem(at: support.appendingPathComponent(name, isDirectory: true))
+            }
+        }
         for itemClass in [
             kSecClassGenericPassword,
             kSecClassInternetPassword,
