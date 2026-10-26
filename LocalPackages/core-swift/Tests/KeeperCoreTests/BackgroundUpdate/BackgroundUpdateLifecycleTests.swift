@@ -4,7 +4,7 @@ import TonSwift
 import XCTest
 
 final class BackgroundUpdateLifecycleTests: XCTestCase {
-    func testStartBeforeWalletExistsAllowsLaterWalletChangeToStartPolling() async {
+    func testStartBeforeWalletExistsAllowsLaterWalletChangeToStartPolling() async throws {
         let store = makeStore(wallets: [])
         let firstRead = expectation(description: "New active wallet started polling")
         let probe = LifecycleUpdateProbe { _ in firstRead.fulfill() }
@@ -12,7 +12,7 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
         defer { background.stop() }
         await drainWalletEvents(store)
         background.start()
-        _ = await store.addWallets([fixtureWallet(id: "first")])
+        _ = try await store.addWallets([fixtureWallet(id: "first")])
         await fulfillment(of: [firstRead], timeout: 2)
         background.stop()
         XCTAssertEqual(probe.snapshotWalletIDs, ["first"])
@@ -43,7 +43,7 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
         XCTAssertEqual(probe.snapshotWalletIDs, ["first", "second"])
     }
 
-    func testDeletingAllWalletsStopsPendingReadAndNewWalletCanResume() async {
+    func testDeletingAllWalletsStopsPendingReadAndNewWalletCanResume() async throws {
         let oldWallet = fixtureWallet(id: "deleted")
         let newWallet = fixtureWallet(id: "replacement")
         let store = makeStore(wallets: [oldWallet])
@@ -73,7 +73,7 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
         // Releasing a request that ignores cancellation must not resume polling.
         await gate.completePending()
         await fulfillment(of: [deletedWalletRead], timeout: 0.05)
-        _ = await store.addWallets([newWallet])
+        _ = try await store.addWallets([newWallet])
         await fulfillment(of: [resumedRead], timeout: 2)
         background.stop()
         await gate.completePending()
@@ -98,7 +98,8 @@ final class BackgroundUpdateLifecycleTests: XCTestCase {
         await MainActor.run {
             let storeEventsQueued = DispatchSemaphore(value: 0)
             store.deleteAllWallets { _ in
-                store.addWallets([newWallet]) { _ in
+                store.addWallets([newWallet]) { result in
+                    if case let .failure(error) = result { XCTFail("Wallet add failed: \(error)") }
                     // Store event observers run on its serial queue, independently
                     // of main. This barrier proves both lifecycle callbacks queued
                     // before main can process either one.
@@ -221,6 +222,7 @@ private final class LifecycleKeeperInfoRepository: KeeperInfoRepository {
         guard let keeperInfo else { throw WalletsStore.Error.noWallets }
         return keeperInfo
     }
+    func getKeeperInfoIfPresent() throws -> KeeperInfo? { keeperInfo }
     func saveKeeperInfo(_ keeperInfo: KeeperInfo) throws { self.keeperInfo = keeperInfo }
     func removeKeeperInfo() throws { keeperInfo = nil }
 }

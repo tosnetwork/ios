@@ -71,10 +71,10 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
     }
 
     @discardableResult
-    public func addWallets(_ wallets: [Wallet]) async -> State {
-        return await withCheckedContinuation { continuation in
-            addWallets(wallets) { state in
-                continuation.resume(returning: state)
+    public func addWallets(_ wallets: [Wallet]) async throws -> State {
+        return try await withCheckedThrowingContinuation { continuation in
+            addWallets(wallets) { result in
+                continuation.resume(with: result)
             }
         }
     }
@@ -171,13 +171,17 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
 
     public func addWallets(
         _ wallets: [Wallet],
-        completion: @escaping (State) -> Void
+        completion: @escaping (Result<State, Swift.Error>) -> Void
     ) {
-        guard !wallets.isEmpty else { return }
+        guard !wallets.isEmpty else {
+            completion(.success(state))
+            return
+        }
 
-        let prevWallet = try? activeWallet
+        var prevWallet: Wallet?
         let activeWallet = wallets[0]
-        keeperInfoStore.updateKeeperInfo { keeperInfo in
+        keeperInfoStore.persistKeeperInfo { keeperInfo in
+            prevWallet = keeperInfo?.currentWallet
             guard let keeperInfo else {
                 return KeeperInfo.keeperInfo(wallets: wallets)
             }
@@ -189,15 +193,19 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
                 wallets,
                 activeWallet: activeWallet
             )
-        } completion: { [weak self] keeperInfo in
-            guard let self else { return }
-            let state = self.getState(keeperInfo: keeperInfo)
-            updateState { _ in
-                StateUpdate(newState: state)
-            } completion: { [weak self] state in
-                self?.sendEvent(.didAddWallets(wallets: wallets))
-                self?.sendEvent(.didChangeActiveWallet(from: prevWallet ?? activeWallet, to: activeWallet))
-                completion(state)
+        } completion: { result in
+            switch result {
+            case let .failure(error):
+                completion(.failure(error))
+            case let .success(keeperInfo):
+                let state = self.getState(keeperInfo: keeperInfo)
+                self.updateState { _ in
+                    StateUpdate(newState: state)
+                } completion: { state in
+                    self.sendEvent(.didAddWallets(wallets: wallets))
+                    self.sendEvent(.didChangeActiveWallet(from: prevWallet ?? activeWallet, to: activeWallet))
+                    completion(.success(state))
+                }
             }
         }
     }
@@ -400,7 +408,7 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
     }
 
     private func getState(keeperInfo: KeeperInfo?) -> State {
-        if let keeperInfo = keeperInfoStore.getState() {
+        if let keeperInfo {
             return .wallets(State.Wallets(wallets: keeperInfo.wallets, activeWallet: keeperInfo.currentWallet))
         } else {
             return .empty

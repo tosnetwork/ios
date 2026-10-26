@@ -57,7 +57,7 @@ public final class WalletAddController {
             )]
         )
         try await mnemonicsRepository.saveMnemonic(mnemonic, wallet: wallet, password: passcode)
-        await walletsStore.addWallets([wallet])
+        try await walletsStore.addWallets([wallet])
     }
 
     public enum AddWalletRevisionError: Swift.Error {
@@ -104,7 +104,7 @@ public final class WalletAddController {
             )]
         )
         try await mnemonicsRepository.saveMnemonic(mnemonic, wallet: wallet, password: passcode)
-        await walletsStore.addWallets([wallet])
+        try await walletsStore.addWallets([wallet])
     }
 
     public func importWallets(
@@ -175,7 +175,7 @@ public final class WalletAddController {
             wallets: wallets,
             password: passcode
         )
-        await walletsStore.addWallets(wallets)
+        try await walletsStore.addWallets(wallets)
     }
 
     private func loadImportedWalletTronIfPositiveBalance(
@@ -217,7 +217,7 @@ public final class WalletAddController {
             setupSettings: WalletSetupSettings(),
             batterySettings: BatterySettings()
         )
-        await walletsStore.addWallets([wallet])
+        try await walletsStore.addWallets([wallet])
     }
 
     public func importKeystoneWallet(
@@ -251,7 +251,7 @@ public final class WalletAddController {
                 batterySettings: BatterySettings()
             )
         }
-        await walletsStore.addWallets(wallets)
+        try await walletsStore.addWallets(wallets)
     }
 
     public func importSignerWallet(
@@ -292,7 +292,7 @@ public final class WalletAddController {
                 batterySettings: BatterySettings()
             )
         }
-        await walletsStore.addWallets(wallets)
+        try await walletsStore.addWallets(wallets)
     }
 
     public func importLedgerWallets(
@@ -326,6 +326,6 @@ public final class WalletAddController {
                 batterySettings: BatterySettings()
             )
         }
-        await walletsStore.addWallets(wallets)
+        try await walletsStore.addWallets(wallets)
     }
 }

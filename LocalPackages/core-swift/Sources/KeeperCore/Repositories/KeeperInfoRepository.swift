@@ -3,8 +3,21 @@ import Foundation
 
 public protocol KeeperInfoRepository {
     func getKeeperInfo() throws -> KeeperInfo
+    func getKeeperInfoIfPresent() throws -> KeeperInfo?
     func saveKeeperInfo(_ keeperInfo: KeeperInfo) throws
     func removeKeeperInfo() throws
+}
+
+public extension KeeperInfoRepository {
+    /// Only a missing file means an empty wallet store. Corruption and read failures
+    /// must not authorize replacing an existing wallet registry.
+    func getKeeperInfoIfPresent() throws -> KeeperInfo? {
+        do {
+            return try getKeeperInfo()
+        } catch FileSystemVault<KeeperInfo, String>.LoadError.noItem {
+            return nil
+        }
+    }
 }
 
 extension FileSystemVault<KeeperInfo, String>: KeeperInfoRepository {

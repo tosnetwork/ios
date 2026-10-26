@@ -11,8 +11,8 @@ final class QuantumWalletModelTests: XCTestCase {
         return try TOSQuantumSelfPayIdentity(boc: XCTUnwrap(Data(base64Encoded: encoded)))
     }
 
-    private func wallet(_ identity: WalletIdentity) -> Wallet {
-        Wallet(id: "public-model-test", identity: identity,
+    private func wallet(_ identity: WalletIdentity, id: String = "public-model-test") -> Wallet {
+        Wallet(id: id, identity: identity,
                metaData: WalletMetaData(label: "Quantum", tintColor: .defaultColor, icon: .icon(.wallet)),
                setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
     }
@@ -49,7 +49,7 @@ final class QuantumWalletModelTests: XCTestCase {
         let repository = FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: directory)
         let original = wallet(WalletIdentity(network: .mainnet, kind: .Quantum(try birth())))
         let store = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: repository))
-        _ = await store.addWallets([original])
+        _ = try await store.addWallets([original])
         // A fresh repository/store must read the descriptor from disk, not reuse
         // the in-memory WalletsStore state after its asynchronous mutation.
         let reopened = FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: directory)
@@ -59,6 +59,90 @@ final class QuantumWalletModelTests: XCTestCase {
         let restarted = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: reopened))
         XCTAssertEqual(try restarted.activeWallet.address, try original.address)
         XCTAssertEqual(try restarted.activeWallet.identity.identifier(), try original.identity.identifier())
+    }
+
+    func testFailedFileSaveCannotPublishQuantumWalletAndRetryPersistsIt() async throws {
+        for hasExistingWallet in [false, true] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let repository = try FailingWalletFileRepository(directory: directory)
+            let keeper = KeeperInfoStore(keeperInfoRepository: repository)
+            let store = WalletsStore(keeperInfoStore: keeper)
+            let existing = wallet(WalletIdentity(network: .mainnet,
+                kind: .Regular(TonSwift.PublicKey(data: Data(repeating: 7, count: 32)), .v4R2)), id: "existing")
+            if hasExistingWallet { try await store.addWallets([existing]) }
+            let observer = WalletPublicationProbe()
+            store.addObserver(observer) { probe, _ in probe.record() }
+            let candidate = wallet(WalletIdentity(network: .mainnet, kind: .Quantum(try birth())))
+            repository.rejectSaves = true
+            do {
+                try await store.addWallets([candidate])
+                XCTFail("A real file write failure must fail wallet creation")
+            } catch FileSystemVault<KeeperInfo, String>.SaveError.other {
+                // The filesystem rejects atomic replacement of a directory by a file.
+            }
+            await drain(store)
+            XCTAssertEqual(repository.failedFileWrites, 1)
+            XCTAssertEqual(observer.count, 0, "Failed persistence must not publish wallet-added or active-wallet events")
+            XCTAssertEqual(store.wallets.map(\.id), hasExistingWallet ? [existing.id] : [])
+            XCTAssertEqual(keeper.state?.wallets.map(\.id) ?? [], hasExistingWallet ? [existing.id] : [])
+            XCTAssertEqual(try repository.getKeeperInfoIfPresent()?.wallets.map(\.id) ?? [], hasExistingWallet ? [existing.id] : [])
+
+            repository.rejectSaves = false
+            try await store.addWallets([candidate])
+            await drain(store)
+            XCTAssertEqual(observer.count, 2)
+            let reopened = FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: directory)
+            let persisted = try reopened.getKeeperInfo()
+            XCTAssertEqual(try persisted.currentWallet.address, try candidate.address)
+            XCTAssertEqual(persisted.wallets.count, hasExistingWallet ? 2 : 1)
+        }
+    }
+
+    func testUnreadableRegistryIsNotOverwrittenAsAnEmptyWalletList() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let folder = directory.appendingPathComponent("KeeperInfo")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("KeeperInfo")
+        let corrupted = Data("not a wallet registry".utf8)
+        try corrupted.write(to: file)
+        let repository = FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: directory)
+        let store = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: repository))
+        // The old display API returns an empty state after a read failure. That
+        // must not turn the failure into permission to overwrite the file.
+        XCTAssertTrue(store.wallets.isEmpty)
+        let candidate = wallet(WalletIdentity(network: .mainnet, kind: .Quantum(try birth())))
+        do {
+            try await store.addWallets([candidate])
+            XCTFail("A corrupt registry must fail creation before saving")
+        } catch FileSystemVault<KeeperInfo, String>.LoadError.corruptedData {
+        }
+        XCTAssertEqual(try Data(contentsOf: file), corrupted)
+        XCTAssertTrue(store.wallets.isEmpty)
+    }
+
+    func testEmptyAddCompletesAndDoesNotWriteARegistry() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: directory)
+        let store = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository: repository))
+        let completed = expectation(description: "Empty addition completes")
+        store.addWallets([]) { result in
+            switch result {
+            case let .success(state): XCTAssertTrue(state.wallets.isEmpty)
+            case let .failure(error): XCTFail("Unexpected failure: \(error)")
+            }
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 2)
+        XCTAssertNil(try repository.getKeeperInfoIfPresent())
+    }
+
+    private func drain(_ store: WalletsStore) async {
+        await withCheckedContinuation { continuation in
+            store.updateState({ _ in nil }) { _ in continuation.resume() }
+        }
     }
 
     func testClassicalIdentitiesKeepTheirStoredEncodingAddressAndIdentifier() throws {
@@ -139,4 +223,35 @@ final class QuantumWalletModelTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode(RNWallet.self,
             from: JSONSerialization.data(withJSONObject: object)).getWallet(backupDate: nil))
     }
+}
+
+private final class WalletPublicationProbe {
+    private let lock = NSLock()
+    private var events = 0
+    func record() { lock.lock(); defer { lock.unlock() }; events += 1 }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return events }
+}
+
+private final class FailingWalletFileRepository: KeeperInfoRepository {
+    private let repository: FileSystemVault<KeeperInfo, String>
+    private let blockedWriter: FileSystemVault<KeeperInfo, String>
+    var rejectSaves = false
+    private(set) var failedFileWrites = 0
+
+    init(directory: URL) throws {
+        repository = FileSystemVault(fileManager: .default, directory: directory)
+        let blocked = directory.appendingPathComponent("blocked")
+        blockedWriter = FileSystemVault(fileManager: .default, directory: blocked)
+        try FileManager.default.createDirectory(at: blocked.appendingPathComponent("KeeperInfo/KeeperInfo"), withIntermediateDirectories: true)
+    }
+    func getKeeperInfo() throws -> KeeperInfo { try repository.getKeeperInfo() }
+    func saveKeeperInfo(_ keeperInfo: KeeperInfo) throws {
+        if rejectSaves {
+            do { try blockedWriter.saveKeeperInfo(keeperInfo) }
+            catch { failedFileWrites += 1; throw error }
+        } else {
+            try repository.saveKeeperInfo(keeperInfo)
+        }
+    }
+    func removeKeeperInfo() throws { try repository.removeKeeperInfo() }
 }
