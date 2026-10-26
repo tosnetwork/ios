@@ -215,6 +215,48 @@ final class TOSWalletUITests: XCTestCase {
         app.alerts["Trusted Quantum Network"].buttons["Cancel"].tap()
     }
 
+    /// Uses a locally generated anchor supplied to Make, never an RPC-discovered trust root.
+    func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"),
+                      ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires an independently provisioned live Quantum test-chain anchor")
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        let quantum = app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch
+        XCTAssertTrue(quantum.waitForExistence(timeout: 5)); quantum.tap()
+        XCTAssertTrue(app.alerts["Trusted Quantum Network"].waitForExistence(timeout: 5))
+        for (name, key) in fields {
+            let field = app.textFields[name]
+            XCTAssertTrue(field.exists); field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        // The application's explicit RPC setting is separate from the test transport URL.
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        endpoint.tap(); endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        createNativeWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        let originalAddress = address.label
+        print("PUBLIC_QUANTUM_CREATED_ADDRESS=" + originalAddress)
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        // New installations leave the optional app lock disabled. This checks
+        // public wallet identity persistence; protected custody is tested in the host.
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[originalAddress].waitForExistence(timeout: 10))
+        retainScreenshot(named: "Quantum address retained after relaunch")
+    }
+
     func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic)
         app.descendants(matching: .any)["mnemonic.continue"].tap()

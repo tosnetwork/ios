@@ -45,3 +45,43 @@ sign-out (including interrupted creations), and preservation of another service.
 Use only the dedicated test simulator: the sign-out operation intentionally
 removes all records in the application's Quantum seed service. Marker records
 do not exercise protected seed import, authentication prompts, or signing.
+
+## Verify an actually created self-pay wallet
+
+`TOSWalletUITests/testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch`
+configures an explicit RPC endpoint and independently supplied trust anchor through
+real settings UI, creates the default Quantum wallet, and checks that its receive
+address survives app termination and relaunch. The optional application lock is
+disabled on a fresh installation, so this does not assert a relaunch PIN prompt. Supply all four values to
+`make test_project_scheme SCHEME=TOSWalletUITests`:
+
+- `TOS_UI_RPC_URL`: endpoint of the disposable self-pay chain.
+- `TOS_QUANTUM_GLOBAL_ID`: the independently provisioned signed network ID.
+- `TOS_QUANTUM_ROOT_HASH` and `TOS_QUANTUM_FILE_HASH`: locally generated zerostate
+  hashes, obtained separately from that endpoint.
+
+Use `TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch`
+and the dedicated `TEST_DESTINATION`. This test skips if the anchor parameters
+are absent. A skipped invocation is not acceptance evidence. It skips phrase
+backup via Later and does not submit a transaction.
+
+After it succeeds, retain the public `quantum-creation/<UUID>.json` from the app's
+Application Support directory. On the same simulator installation, run the hosted
+build and corrected-runfile workflow above with:
+
+```sh
+TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests/testCreatedWalletProtectedRolesMatchBirthIdentityAndSignSelfPayDomains
+```
+
+Pass that public UUID as `TOS_QUANTUM_CREATED_ID` to the Make test invocation.
+The method loads the actual creation record, reads both protected role public
+keys, compares them with QSI1, rejects a changed network binding, and signs public
+test digests in both self-pay domains. Changed digests and swapped domains must
+fail verification. It never prints or exports the mnemonic, seed, or signatures.
+It skips when no creation UUID is supplied; a supplied missing or wrong record
+fails. Run it before the service-wide deletion test or another UI test that
+resets the app's Keychain.
+
+Simulator success does not prove physical-device user-presence prompts,
+independent rescue custody, backup restoration, deployment, payment, or migration.
+Interrupted initial creation recovery on iOS remains a separate required flow.

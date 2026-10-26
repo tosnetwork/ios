@@ -1,8 +1,46 @@
 import XCTest
 import Security
 import CoreComponents
+import KeeperCore
 
 final class TOSQuantumKeychainHostedTests: XCTestCase {
+    /// Run after the actual creation UI on the same dedicated app installation.
+    /// Successful simulator access is not physical-device user-presence acceptance.
+    func testCreatedWalletProtectedRolesMatchBirthIdentityAndSignSelfPayDomains() throws {
+        guard let value = ProcessInfo.processInfo.environment["TOS_QUANTUM_CREATED_ID"], !value.isEmpty else {
+            throw XCTSkip("Requires the UUID from a completed actual Quantum creation UI run")
+        }
+        let id = try XCTUnwrap(UUID(uuidString: value))
+        let base = try FileManager.default.url(for: .applicationSupportDirectory,
+            in: .userDomainMask, appropriateFor: nil, create: false)
+        let file = base.appendingPathComponent("quantum-creation").appendingPathComponent(id.uuidString + ".json")
+        let record = try JSONDecoder().decode(TOSQuantumCreationRecord.self, from: Data(contentsOf: file))
+        XCTAssertEqual(record.id, id)
+        let authority = record.identity.wallet.initialAuthority
+        let context = try TOSQuantumSeedKeychain.Context(network: authority.namespace, globalID: authority.globalID,
+                                                        account: record.account, generation: record.generation)
+        let wrong = try TOSQuantumSeedKeychain.Context(network: authority.namespace, globalID: authority.globalID ^ 1,
+                                                      account: record.account, generation: record.generation)
+        let digest = Data(repeating: 0x42, count: 32), changed = Data(repeating: 0x24, count: 32)
+        let keychain = TOSQuantumSeedKeychain()
+        for role in [TOSQuantumRole.primary, .rescue] {
+            let expected = role == .primary ? authority.primaryKey : authority.rescueKey
+            XCTAssertEqual(try keychain.publicKey(id: id, role: role, context: context), expected)
+            XCTAssertThrowsError(try keychain.publicKey(id: id, role: role, context: wrong)) { error in
+                guard case TOSPQError.keyBinding = error else { return XCTFail("Unexpected binding error: \(error)") }
+            }
+            for purpose in [TOSQuantumPurpose.selfPay, .selfPayPop] {
+                let signature = try keychain.sign(id: id, role: role, context: context, expectedPublicKey: expected,
+                                                  purpose: purpose, digest: digest)
+                XCTAssertTrue(TOSQuantumSigner.verify(role: role, purpose: purpose, publicKey: expected, digest: digest, signature: signature))
+                XCTAssertFalse(TOSQuantumSigner.verify(role: role, purpose: purpose, publicKey: expected, digest: changed, signature: signature))
+                XCTAssertFalse(TOSQuantumSigner.verify(role: role, purpose: purpose == .selfPay ? .selfPayPop : .selfPay,
+                                                       publicKey: expected, digest: digest, signature: signature))
+            }
+        }
+        print("PUBLIC_QUANTUM_CUSTODY_VERIFIED=" + id.uuidString)
+    }
+
     func testSingleKeychainRecordSupportsVaultSizedUpdatesAndRejectsInvalidUpdateWithoutDataLoss() throws {
         let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
             kSecAttrService: "public.atomic.vault.test.\(UUID().uuidString)", kSecAttrAccount: "record"]
