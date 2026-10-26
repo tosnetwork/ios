@@ -41,7 +41,7 @@ def main():
                     payload = bytes.fromhex('00000003') if params['param'] == 19 else bytes.fromhex('c400000010' + '00' * 8)
                     result = {'config': {'bytes': cell(payload)}}
                 elif method == 'getAddressInformation':
-                    result = {'balance': '1000000000', 'state': 'uninitialized',
+                    result = {'balance': '0', 'state': 'active',
                               'code': '', 'data': '', 'sync_utime': int(time.time())}
                 elif method in ('getAccountTokens', 'getAccountNfts'):
                     tokens = method == 'getAccountTokens'

@@ -6,11 +6,11 @@ import CoreComponents
 
 final class ClassicWalletRecoveryTests: XCTestCase {
     private func model(_ revision: WalletContractVersion, value: BigUInt = 0,
-                       indexed: Bool = false, complete: Bool = true, known: Bool = true) -> ActiveWalletModel {
+                       indexed: Bool = false, complete: Bool = true, known: Bool = true, active: Bool = false) -> ActiveWalletModel {
         let number = WalletContractVersion.allCases.firstIndex(of: revision)! + 1
         let address = Address(workchain: 0, hash: Data(repeating: UInt8(number), count: 32))
         return ActiveWalletModel(id: address.toRaw(), revision: revision, address: address,
-            isActive: value > 0, balance: Balance(tonBalance: TonBalance(amount: value), jettonsBalance: []),
+            isActive: active || value > 0, balance: Balance(tonBalance: TonBalance(amount: value), jettonsBalance: []),
             nfts: [], assetDiscoveryComplete: complete, hasIndexedAssets: indexed, accountStateKnown: known)
     }
     func testEveryAssetOrUnknownAccountSurvivesWithoutAddingEmptyDefault() throws {
@@ -22,6 +22,30 @@ final class ClassicWalletRecoveryTests: XCTestCase {
         XCTAssertEqual(try ClassicWalletRecovery.select([model(.v4R2), model(.v5R1)], fallback: .v5R1).map(\.revision), [.v5R1])
         XCTAssertEqual(try ClassicWalletRecovery.select([model(.tosV5R1)], fallback: .tosV5R1).map(\.revision), [.tosV5R1])
         XCTAssertThrowsError(try ClassicWalletRecovery.select([model(.v4R2)], fallback: .v5R1))
+    }
+    func testDeployedZeroBalanceAccountKeepsItsOriginalAddress() throws {
+        let deployed = model(.v4R2, active: true)
+        let result = try ClassicWalletRecovery.select([model(.v5R1), deployed], fallback: .v5R1)
+        XCTAssertEqual(result.map(\.revision), [.v4R2])
+        XCTAssertEqual(result.first?.address, deployed.address)
+    }
+    func testActiveAndFrozenStatesRemainDeployedAtZeroBalance() throws {
+        for status in ["active", "frozen"] {
+            let state = try TOSRecoveryAccount.parse(["state": status, "balance": "0"])
+            XCTAssertTrue(state.deployed)
+            XCTAssertEqual(state.amount, 0)
+        }
+        for status in ["uninit", "uninitialized", "nonexist"] {
+            XCTAssertFalse(try TOSRecoveryAccount.parse(["state": status, "balance": "0"]).deployed)
+        }
+    }
+    func testRecoveryAccountRejectsMalformedStateAndUnsignedOverflow() throws {
+        let amount = (BigUInt(1) << 120) - 1
+        XCTAssertEqual(try TOSRecoveryAccount.parse(["state": "active", "balance": amount.description]).amount, amount)
+        for balance: Any in ["-1", "+1", " 1", "1.0", "", "9" + String(repeating: "0", count: 1000), (amount + 1).description, 1] {
+            XCTAssertThrowsError(try TOSRecoveryAccount.parse(["state": "active", "balance": balance]))
+        }
+        XCTAssertThrowsError(try TOSRecoveryAccount.parse(["state": "unknown", "balance": "0"]))
     }
     func testInvalidOrDuplicateDiscoveryRefusesBeforeSelection() throws {
         XCTAssertThrowsError(try ClassicWalletRecovery.select([], fallback: .v5R1))

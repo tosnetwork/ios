@@ -41,14 +41,11 @@ public final class PublicKeyImportCoordinator: RouterCoordinator<NavigationContr
                     didPrepareForPresent?()
                 }
             } catch {
-                if Task.isCancelled { return }
                 await MainActor.run {
                     ToastPresenter.hideAll()
+                    if Task.isCancelled { didCancel?(); return }
+                    openRecoveryError()
                     didPrepareForPresent?()
-                    let alert = UIAlertController(title: "Wallet Recovery Unavailable",
-                        message: "Unable to restore your wallets. Please try again.", preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in self?.didCancel?() })
-                    router.rootViewController.present(alert, animated: true)
                 }
             }
         }
@@ -56,6 +53,23 @@ public final class PublicKeyImportCoordinator: RouterCoordinator<NavigationContr
 }
 
 private extension PublicKeyImportCoordinator {
+    func openRecoveryError() {
+        let viewController = TKEmptyViewController()
+        let close: () -> Void = { [weak coordinator = self] in
+            guard let coordinator else { return }
+            if coordinator.router.rootViewController.viewControllers.count > 1 {
+                coordinator.router.pop()
+            }
+            coordinator.didCancel?()
+        }
+        viewController.configure(model: TKEmptyViewController.Model(
+            title: "Wallet Recovery Unavailable",
+            caption: "Unable to restore your wallets. Please try again.",
+            buttons: [.init(title: "Close", action: close)]))
+        viewController.setupLeftCloseButton(close)
+        router.push(viewController: viewController, animated: false)
+    }
+
     func detectActiveWallets(publicKey: TonSwift.PublicKey) async throws -> [ActiveWalletModel] {
         try await walletsUpdateAssembly.walletImportController().findActiveWallets(publicKey: publicKey, network: .mainnet)
     }

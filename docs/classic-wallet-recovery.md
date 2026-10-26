@@ -8,7 +8,8 @@ different derivation salts. Hiding a contract-version menu must not silently
 change the recovered key. After explicit format resolution, recovery derives
 the addresses locally and keeps only that format's candidates.
 
-Recovery retains every candidate with a positive native balance, indexed token
+Recovery retains every deployed or frozen candidate, even with zero balance,
+and every candidate with a positive native balance, indexed token
 or NFT assets, or unknown account/index state. It falls back to the format's
 default revision only when every candidate is known empty. Index queries use
 `getAccountTokens` and `getAccountNfts` with `limit: 1`; both lists must explicitly
@@ -29,7 +30,7 @@ names, bounded parameters and discovery failure through URLSession.
 The optional UI test
 `testClassicRecoveryAutomaticallyRetainsSixAccountsWithoutVersionMenu` uses
 `scripts/tests/classic_recovery_fixture.py` on loopback port 18648. This fixture
-returns public, synthetic account balances for the published test phrase. It
+returns public, synthetic active accounts with zero balances for the published test phrase. It
 accepts at most 512 requests and stops after ten minutes. It never broadcasts,
 reads custody or supplies chain proofs. This UI test does not establish actual
 network balances or mobile payment correctness.

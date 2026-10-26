@@ -7,7 +7,7 @@ public enum ClassicWalletRecovery {
         guard !models.isEmpty, models.count <= 64,
               Set(models.map { $0.address.toRaw() }).count == models.count else { throw TOSPQError.invalidInput }
         let retained = models.filter {
-            !$0.balance.isEmpty || !$0.nfts.isEmpty || $0.hasIndexedAssets ||
+            $0.isActive || !$0.balance.isEmpty || !$0.nfts.isEmpty || $0.hasIndexedAssets ||
             !$0.assetDiscoveryComplete || !$0.accountStateKnown
         }
         if !retained.isEmpty { return retained.sorted { $0.revision > $1.revision } }

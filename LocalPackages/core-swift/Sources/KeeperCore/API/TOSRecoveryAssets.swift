@@ -1,5 +1,22 @@
 import Foundation
 import CoreFoundation
+import BigInt
+
+struct TOSRecoveryAccount {
+    let amount: BigUInt
+    let deployed: Bool
+
+    static func parse(_ response: [String: Any]) throws -> Self {
+        guard let text = response["balance"] as? String, !text.isEmpty, text.utf8.count <= 37,
+              text.utf8.allSatisfy({ (48...57).contains($0) }),
+              let amount = BigUInt(text), amount.bitWidth <= 120,
+              let status = response["state"] as? String,
+              ["active", "uninit", "uninitialized", "nonexist", "frozen"].contains(status) else {
+            throw TOSRPCClient.Error.invalidResponse
+        }
+        return Self(amount: amount, deployed: status == "active" || status == "frozen")
+    }
+}
 
 /// Index hints for recovery selection, never balance proof or signing authority.
 struct TOSRecoveryAssets {

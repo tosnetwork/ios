@@ -85,16 +85,10 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
         let account = try await accountTask
         let hints = try? await hintsTask
         try Task.checkCancellation()
-        guard let text = account["balance"] as? String, !text.isEmpty, text.utf8.count <= 37,
-              text.utf8.allSatisfy({ (48...57).contains($0) }),
-              let amount = BigUInt(text), amount.bitWidth <= 120,
-              let status = account["state"] as? String,
-              ["active", "uninit", "uninitialized", "nonexist", "frozen"].contains(status) else {
-            throw TOSPQError.invalidInput
-        }
-        let balance = Balance(tonBalance: TonBalance(amount: amount), jettonsBalance: [])
+        let state = try TOSRecoveryAccount.parse(account)
+        let balance = Balance(tonBalance: TonBalance(amount: state.amount), jettonsBalance: [])
         return ActiveWalletModel(id: id, revision: revision, address: address,
-            isActive: status == "active" || !balance.isEmpty || hints?.hasAssets == true,
+            isActive: state.deployed || !balance.isEmpty || hints?.hasAssets == true,
             balance: balance, nfts: [], assetDiscoveryComplete: hints?.complete == true,
             hasIndexedAssets: hints?.hasAssets == true)
     }
