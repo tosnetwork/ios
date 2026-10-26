@@ -111,7 +111,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
+            resources: [.copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

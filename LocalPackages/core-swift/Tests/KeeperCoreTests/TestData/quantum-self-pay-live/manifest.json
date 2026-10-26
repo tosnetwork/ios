@@ -1,0 +1,97 @@
+{
+  "scope": "PUBLIC TEST: native-verified self-pay genesis states at controlled time; not deployment, signing, custody or current-live acceptance",
+  "controlled_now": 1792997636,
+  "target": {
+    "workchain": -1,
+    "shard": "8000000000000000",
+    "seqno": 4,
+    "root_hash": "d38ac3f3cbc98652621e124387a4aa11d7cf3b2713e9a1fd3533d6802e0614ff",
+    "file_hash": "777455ba9d8e18fa0c98b27f369a9382e781ad7ea06fd6bf492bde353f7cd4c2"
+  },
+  "proof_controls": {
+    "genuine": {
+      "exit": 0,
+      "status": "verified",
+      "reason": null
+    },
+    "wrong-anchor": {
+      "exit": 1,
+      "status": "refused",
+      "reason": "proof chain does not start at the authenticated block"
+    },
+    "missing-account": {
+      "exit": 1,
+      "status": "refused",
+      "reason": "account proof is missing"
+    }
+  },
+  "files": {
+    "absent/material/account.tl": {
+      "bytes": 2344,
+      "sha256": "be888dfdfccfd44a88fb269c5e6e0cfa0e328772a0c6fe6ae0ff9c5af70f25d7"
+    },
+    "absent/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+    },
+    "absent/request.json": {
+      "bytes": 354,
+      "sha256": "8620ce4fa3879802a52a852a447b39ec3825a7b9c84d6c036080d5686e621778"
+    },
+    "active/material/account.tl": {
+      "bytes": 5456,
+      "sha256": "e7eda3017e987e556d555a52f0fe9ebbab7548e38afb7005275f3dc26a2e8fd8"
+    },
+    "active/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+    },
+    "active/request.json": {
+      "bytes": 354,
+      "sha256": "c0441698bd9b5129910d1da73a8515ba2bb9030a813219472feca35249705132"
+    },
+    "anchor.json": {
+      "bytes": 231,
+      "sha256": "2b036cba4f857e81687100913197dcebf4ecae9455bf8e4a24de73d2d79a0cf6"
+    },
+    "policy/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+    },
+    "policy/material/config.tl": {
+      "bytes": 1808,
+      "sha256": "d3c4cfc21f74125c01af38f163f7d7f06e5f8eb39682a35752c13732cf4f0399"
+    },
+    "policy/material/masterchain-info.tl": {
+      "bytes": 184,
+      "sha256": "470ea517bb205644fe806bccab397f7b26dfabdab5f77089ba37e7706b8c60d2"
+    },
+    "policy/request.json": {
+      "bytes": 79,
+      "sha256": "efc52f541b6a39e7e720a9688ca13b5097f822bf29e1793e09d468334d63f5d3"
+    },
+    "prefunded/material/account.tl": {
+      "bytes": 2428,
+      "sha256": "7e70d359017b68a956e591859b27d914e6f2db49ca616d5eec84307b2c58b983"
+    },
+    "prefunded/material/chain-0000.tl": {
+      "bytes": 5536,
+      "sha256": "eeca50f733fd06dd4a989424a82debf81678b34d21a40875a12b13a8c22c5ce4"
+    },
+    "prefunded/request.json": {
+      "bytes": 354,
+      "sha256": "46d4f9f6a20ea75a918575bcbba59d77a754690b88728326ade483428efde747"
+    },
+    "public-self-pay-accounts.json": {
+      "bytes": 37363,
+      "sha256": "6e5d3f9918f3bb1568d0d710c4d991bcbe90b833ecbe9defb6eaf02d7579904d"
+    }
+  },
+  "capture_source_commit": "9011045518c378fd58cc125462979fbfb998040f",
+  "capture_script_sha256": "8d3b51c2c45cfa98acb933741044436a9e1f7000dafe47b5bc08220ca552dbf9",
+  "binaries": {
+    "validator-engine/validator-engine": "b9ce8810427a79c0d64c214d7185365517d1b9bb632312bb211fbbe8f67c2626",
+    "dht-server/dht-server": "7cf6b987c00cbd609542be2d51f4cd4f339cca950d0eaa66d7de87ec476dae40",
+    "lite-client/proof-verify/tos-proof-verify": "ece291920c118dc6861cdc52e436da5590e8a4fa88dff69cd0092fafc1f1ccfe"
+  }
+}

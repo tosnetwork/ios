@@ -133,6 +133,29 @@ public enum TOSQuantumProofBridge {
         public func requireSameCheckpoint(_ other: BoundRead) throws {
             guard anchorDigest == other.anchorDigest, checkpoint == other.checkpoint else { throw TOSPQError.keyBinding }
         }
+        /// Authenticated raw state, or nil for proven absence. No deployment/signing eligibility is implied.
+        public func provenAccountState(expectedAddress: String) throws -> Data? {
+            let account = try boundAccount(expectedAddress)
+            guard let exists = account["exists"] as? Bool else { throw TOSPQError.invalidInput }
+            if !exists { return nil }
+            guard let encoded = account["state_boc"] as? String, let bytes = Data(base64Encoded: encoded),
+                  !bytes.isEmpty else { throw TOSPQError.invalidInput }
+            return bytes
+        }
+        public func provenAccountTime(expectedAddress: String) throws -> UInt32 {
+            let account = try boundAccount(expectedAddress)
+            guard let time = account["gen_utime"] as? Int64, time >= 0, time <= Int64(UInt32.max) else {
+                throw TOSPQError.invalidInput
+            }
+            return UInt32(time)
+        }
+        private func boundAccount(_ address: String) throws -> [String: Any] {
+            guard address.range(of: "^0:[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  let account = value["account"] as? [String: Any], account["address"] as? String == address else {
+                throw TOSPQError.keyBinding
+            }
+            return account
+        }
         public func accountState(expectedAddress: String, expectedCodeHash: Data) throws -> Data {
             guard expectedAddress.range(of: "^-?[0-9]+:[0-9a-f]{64}$", options: .regularExpression) != nil,
                   expectedCodeHash.count == 32, let account = value["account"] as? [String: Any],
