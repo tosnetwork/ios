@@ -635,8 +635,8 @@ final class TOSWalletUITests: XCTestCase {
         for number in 1...6 {
             XCTAssertTrue(app.staticTexts["Wallet \(number)"].waitForExistence(timeout: 5), "Missing restored account \(number)")
         }
-        for revision in ["W5", "V5R1", "V5BETA", "V4R2", "V4R1", "V3R2", "V3R1"] {
-            XCTAssertFalse(app.staticTexts[revision].exists)
+        for revision in ["W5", "W5 BETA", "TOS W5", "v5R1", "v5BETA", "v4R2", "v4R1", "v3R2", "v3R1"] {
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", revision)).firstMatch.exists)
         }
         retainScreenshot(named: "Six classic accounts with generic names")
         app.staticTexts["Wallet 1"].tap()
