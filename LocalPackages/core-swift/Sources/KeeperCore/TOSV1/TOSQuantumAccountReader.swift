@@ -5,6 +5,29 @@ import CoreComponents
 /// signing authority nor a spendable-amount or fee estimate.
 internal final class TOSQuantumAccountReader {
     internal enum Error: Swift.Error { case busy }
+    /// The proof, not a decoded balance or RPC getter, is the authority for
+    /// subsequent transaction preparation and receipt/history anchoring.
+    internal struct Observation {
+        let id: UUID
+        let identity: TOSQuantumSelfPayIdentity
+        let profile: TOSQuantumNetworkProfile
+        let network: TOSQuantumProofBridge.BoundRead
+        let proof: TOSQuantumProofBridge.BoundRead
+        let snapshot: TOSQuantumSelfPayAccount.Snapshot
+        private let account: TOSQuantumSelfPayAccount
+
+        fileprivate init(id: UUID, identity: TOSQuantumSelfPayIdentity, profile: TOSQuantumNetworkProfile,
+                         network: TOSQuantumProofBridge.BoundRead, proof: TOSQuantumProofBridge.BoundRead,
+                         account: TOSQuantumSelfPayAccount, now: Int64) throws {
+            self.id = id; self.identity = identity; self.profile = profile
+            self.network = network; self.proof = proof; self.account = account
+            snapshot = try account.snapshot(now: now)
+        }
+        func requireFresh(now: Int64) throws {
+            try network.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
+            _ = try account.snapshot(now: now)
+        }
+    }
     internal final class Permits {
         private let lock = NSLock()
         private var active = Set<UUID>()
@@ -39,15 +62,19 @@ internal final class TOSQuantumAccountReader {
     }
 
     func read(wallet: Wallet) async throws -> TOSQuantumSelfPayAccount.Snapshot {
+        try await observe(wallet: wallet).snapshot
+    }
+
+    func observe(wallet: Wallet, configIndices: [Int] = [19]) async throws -> Observation {
         guard case .Quantum(let identity) = wallet.identity.kind, let id = UUID(uuidString: wallet.id) else {
             throw TOSPQError.keyBinding
         }
         try Task.checkCancellation()
         try permits.enter(id)
         defer { permits.leave(id) }
-        let result: TOSQuantumSelfPayAccount.Snapshot = try await withCheckedThrowingContinuation { continuation in
+        let result: Observation = try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                do { continuation.resume(returning: try self.readStored(id: id, identity: identity)) }
+                do { continuation.resume(returning: try self.observeStored(id: id, identity: identity, configIndices: configIndices)) }
                 catch { continuation.resume(throwing: error) }
             }
         }
@@ -56,17 +83,31 @@ internal final class TOSQuantumAccountReader {
     }
 
     internal func readStored(id: UUID, identity: TOSQuantumSelfPayIdentity) throws -> TOSQuantumSelfPayAccount.Snapshot {
+        try observeStored(id: id, identity: identity).snapshot
+    }
+
+    private func observeStored(id: UUID, identity: TOSQuantumSelfPayIdentity, configIndices: [Int] = [19]) throws -> Observation {
         let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: baseDirectory)
         guard record.id == id, record.identity == identity else { throw TOSPQError.keyBinding }
-        return try readEnrolled(id: id, identity: identity, profile: record.profile)
+        return try observeEnrolled(id: id, identity: identity, profile: record.profile, configIndices: configIndices)
     }
 
     internal func readEnrolled(id: UUID, identity: TOSQuantumSelfPayIdentity,
                                profile: TOSQuantumNetworkProfile) throws -> TOSQuantumSelfPayAccount.Snapshot {
+        try observeEnrolled(id: id, identity: identity, profile: profile).snapshot
+    }
+
+    private func observeEnrolled(id: UUID, identity: TOSQuantumSelfPayIdentity,
+                                profile: TOSQuantumNetworkProfile, configIndices: [Int] = [19]) throws -> Observation {
+        let allowed = Set([8, 18, 19, 20, 21, 24, 25, 48])
+        guard !configIndices.isEmpty, configIndices.count <= allowed.count, configIndices.contains(19),
+              Set(configIndices).count == configIndices.count, configIndices.allSatisfy(allowed.contains) else {
+            throw TOSPQError.invalidInput
+        }
         guard identity.wallet.initialAuthority.globalID == profile.globalID else { throw TOSPQError.keyBinding }
         let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: profile.anchor(), baseDirectory: baseDirectory)
         let relay = try transport()
-        let request = try JSONSerialization.data(withJSONObject: ["mode": "live", "max_age_seconds": Self.maximumAge, "config_params": [19]])
+        let request = try JSONSerialization.data(withJSONObject: ["mode": "live", "max_age_seconds": Self.maximumAge, "config_params": configIndices])
         let network = try session.readBound(request: request, now: now(), transport: relay)
         let config = try TOSRPCOrdinaryBOC.decode(network.provenConfigParam(19).base64EncodedString()).beginParse()
         guard try config.loadInt(bits: 32) == Int64(profile.globalID) else { throw TOSPQError.keyBinding }
@@ -77,6 +118,7 @@ internal final class TOSQuantumAccountReader {
         try network.requireSameCheckpoint(proof)
         let account = try TOSQuantumSelfPayAccount(identity: identity, proof: proof, now: now(), maximumAge: Self.maximumAge)
         try network.requireLive(now: now(), maximumAge: Self.maximumAge)
-        return try account.snapshot(now: now())
+        return try Observation(id: id, identity: identity, profile: profile, network: network,
+                               proof: proof, account: account, now: now())
     }
 }

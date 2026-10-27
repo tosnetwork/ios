@@ -1,5 +1,6 @@
 import XCTest
 import BigInt
+import TonSwift
 import CoreComponents
 @testable import KeeperCore
 
@@ -129,6 +130,30 @@ final class TOSQuantumAccountReaderTests: XCTestCase {
         try gate.enter(one); gate.leave(one)
     }
 
+    func testObservationRetainsProofHeadAndRechecksItsFreshness() async throws {
+        let f = try Fixture(); try f.enroll(); let t = try f.transcript(account: true)
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { t.query }, now: { f.now })
+        let value = try await reader.observe(wallet: f.wallet(), configIndices: [8, 19, 48])
+        XCTAssertEqual(value.id, f.id); XCTAssertEqual(value.identity, f.identity)
+        XCTAssertEqual(value.profile, f.profile); XCTAssertEqual(t.calls, 5)
+        try value.requireFresh(now: f.now)
+        XCTAssertThrowsError(try value.requireFresh(now: f.now + 301))
+        let head = try value.proof.provenTransactionHead(expectedAddress: f.identity.address.toRaw())
+        XCTAssertEqual(head.logicalTime, 0); XCTAssertEqual(head.hash, Data(repeating: 0, count: 32))
+        XCTAssertThrowsError(try value.proof.provenTransactionHead(expectedAddress: "0:" + String(repeating: "0", count: 64)))
+    }
+
+    func testDuplicateOrUnboundedConfigurationRequestsDoNotOpenRelay() async throws {
+        let f = try Fixture()
+        var opened = false
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { opened = true; throw TOSPQError.invalidInput })
+        for indices in [[], [19, 19], [19, 999], Array(0..<100)] {
+            do { _ = try await reader.observe(wallet: f.wallet(), configIndices: indices); XCTFail("Unbounded config request accepted") }
+            catch TOSPQError.invalidInput { }
+        }
+        XCTAssertFalse(opened)
+    }
+
     func testLiveNativeReaderUsesOriginalEnrollment() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let root = env["TOS_QUANTUM_ROOT_HASH"], !root.isEmpty,
@@ -160,5 +185,74 @@ final class TOSQuantumAccountReaderTests: XCTestCase {
         let result = try await TOSQuantumAccountReader(baseDirectory: base, transport: { transport }).read(wallet: f.wallet())
         guard case .active = result.status else { return XCTFail("Expected public genesis active account") }
         XCTAssertEqual(result.balance, 1_000_000_000_000_000)
+    }
+
+    func testLiveHistoryUsesProvenHeadRawCellsAndBoundPagination() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let root = env["TOS_QUANTUM_ROOT_HASH"], !root.isEmpty,
+              let file = env["TOS_QUANTUM_FILE_HASH"], !file.isEmpty,
+              env["TOS_QUANTUM_GLOBAL_ID"] == "1",
+              let expectedString = env["TOS_QUANTUM_EXTERNAL_HASH"], expectedString.count == 64,
+              let expectedHash = Data(hex: expectedString), expectedHash.count == 32,
+              let endpoint = env["TOS_UI_RPC_URL"], let url = URL(string: endpoint + "/jsonRPC") else {
+            throw XCTSkip("Requires a public test chain with two signed transfers and an independently supplied message hash")
+        }
+        let f = try Fixture(), base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let profile = try TOSQuantumNetworkProfile(globalID: 1, rootHash: root, fileHash: file)
+        try TOSQuantumCreationRecord(id: f.id, profile: profile, identity: f.identity).save(baseDirectory: base)
+        let anchor = try profile.anchor(), id = f.id
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    let relay = try TOSQuantumProofHTTPTransport(endpoint: url)
+                    let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: anchor, baseDirectory: base)
+                    _ = try session.enrollBound(request: TOSQuantumSelfPayNetwork.request(maximumAge: 300),
+                        now: Int64(Date().timeIntervalSince1970), transport: { try relay.query($0, maximumBytes: $1) })
+                    continuation.resume()
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
+        let relay = try TOSQuantumProofHTTPTransport(endpoint: url)
+        let accounts = TOSQuantumAccountReader(baseDirectory: base, transport: { { try relay.query($0, maximumBytes: $1) } })
+        let previousEndpoint = TOSRPCSettings.customEndpoint
+        try TOSRPCSettings.setCustomEndpoint(endpoint)
+        defer {
+            if let previousEndpoint { _ = try? TOSRPCSettings.setCustomEndpoint(previousEndpoint) }
+            else { TOSRPCSettings.reset() }
+        }
+        let history = TOSQuantumHistoryReader(accounts: accounts)
+        let first = try await history.read(wallet: f.wallet(), limit: 1)
+        XCTAssertEqual(first.transactions.count, 1); XCTAssertTrue(first.hasMore)
+        let cursor = try XCTUnwrap(first.next)
+        let second = try await history.read(wallet: f.wallet(), cursor: cursor, limit: 1)
+        XCTAssertEqual(second.transactions.count, 1); XCTAssertFalse(second.hasMore)
+        XCTAssertEqual(first.checkpointTime, second.checkpointTime)
+        let firstTransaction = try XCTUnwrap(first.transactions.first)
+        let secondTransaction = try XCTUnwrap(second.transactions.first)
+        XCTAssertEqual(firstTransaction.previousHash, secondTransaction.hash)
+        let recipientFixture = try XCTUnwrap(JSONSerialization.jsonObject(with: f.data("public-self-pay-accounts.json")) as? [String: Any])
+        let records = try XCTUnwrap(recipientFixture["accounts"] as? [String: [String: Any]])
+        let recipient = try TOSQuantumSelfPayIdentity(boc: XCTUnwrap(Data(base64Encoded:
+            XCTUnwrap(records["absent"]?["identity_boc"] as? String))))
+        let tx = firstTransaction
+        XCTAssertTrue(tx.matchesOutgoingTransfer(externalHash: expectedHash, sender: f.identity.address, recipient: recipient.address,
+                                       amount: 10_000_000_000, bodyHash: try Builder().endCell().hash()))
+        XCTAssertGreaterThan(tx.timestamp, 0)
+        XCTAssertNotEqual(tx.fees, 999_999_999_999)
+        func mode(_ value: String) async throws {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: endpoint + "/__history_mode")))
+            request.httpMethod = "POST"; request.httpBody = try JSONSerialization.data(withJSONObject: ["mode": value])
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let (bytes, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200); XCTAssertLessThan(bytes.count, 128)
+        }
+        try await mode("corrupt")
+        do { _ = try await history.read(wallet: f.wallet()); XCTFail("Changed transaction fee bytes bypassed the proven transaction hash") }
+        catch TOSPQError.invalidInput { }
+        try await mode("normal")
+        let restored = try await history.read(wallet: f.wallet())
+        XCTAssertEqual(restored.transactions.count, 2); XCTAssertFalse(restored.hasMore)
+        XCTAssertEqual(restored.transactions.first?.hash, firstTransaction.hash)
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import CryptoKit
 import TOSProofVerify
 
@@ -10,6 +11,36 @@ public enum TOSQuantumProofBridge {
         public init(kind: UInt32, bytes: Data) { self.kind = kind; self.bytes = bytes }
     }
     public struct Result { public let verified: Data; public let nextState: Data }
+
+    /// Integer storage is required: a rounded floating-point value must never
+    /// become a history cursor, even when converting it to UInt64 would succeed.
+    internal static func transactionLogicalTime(_ value: Any?) throws -> UInt64 {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(), !(number is NSDecimalNumber),
+              ["c", "s", "i", "l", "q", "C", "S", "I", "L", "Q"].contains(String(cString: number.objCType)),
+              let result = UInt64(number.stringValue) else { throw TOSPQError.invalidInput }
+        return result
+    }
+
+    /// Decode only after binding to an authenticated account head/predecessor.
+    /// Successful verification does not establish a completed payment.
+    public static func verifyWalletTransaction(workchain: Int32, accountHash: Data, logicalTime: UInt64,
+                                              expectedHash: Data, boc: Data) throws -> Data {
+        guard workchain == 0, accountHash.count == 32, expectedHash.count == 32, logicalTime > 0,
+              (1...1_048_576).contains(boc.count) else { throw TOSPQError.invalidInput }
+        // Separate arrays also satisfy the native ABI's disjoint borrowed ranges
+        // when a caller passes Data values sharing the same storage.
+        let account = [UInt8](accountHash), hash = [UInt8](expectedHash), bytes = [UInt8](boc)
+        var output = Data(count: 1_048_576), used = 0
+        let status = account.withUnsafeBufferPointer { a in hash.withUnsafeBufferPointer { h in
+            bytes.withUnsafeBufferPointer { b in output.withUnsafeMutableBytes { result in
+                tos_proof_verify_wallet_transaction(workchain, a.baseAddress, logicalTime, h.baseAddress,
+                    b.baseAddress, b.count, result.bindMemory(to: CChar.self).baseAddress, result.count, &used)
+            } }
+        } }
+        guard status == 0, used > 0, used <= output.count else { throw TOSPQError.invalidInput }
+        return Data(output.prefix(used))
+    }
     public static func verify(anchor: Data, request: Data, state: Data, now: Int64, material: [Material]) throws -> Result {
         guard now > 0, (1...1_048_576).contains(anchor.count), (1...1_048_576).contains(request.count),
               state.count <= 1_048_576, material.count <= 1045,
@@ -148,6 +179,26 @@ public enum TOSQuantumProofBridge {
                 throw TOSPQError.invalidInput
             }
             return UInt32(time)
+        }
+        /// Authenticated ShardAccount transaction head. RPC transaction metadata
+        /// is not an anchor; callers must hash-check each raw transaction and
+        /// follow its committed previous hash/lt, with a bounded walk.
+        public func provenTransactionHead(expectedAddress: String) throws -> (logicalTime: UInt64, hash: Data) {
+            let account = try boundAccount(expectedAddress)
+            let logicalTime = try TOSQuantumProofBridge.transactionLogicalTime(account["last_trans_lt"])
+            guard let encoded = account["last_trans_hash"] as? String, encoded.utf8.count == 64,
+                  encoded.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+                throw TOSPQError.invalidInput
+            }
+            var hash = Data()
+            for offset in stride(from: 0, to: encoded.count, by: 2) {
+                let start = encoded.index(encoded.startIndex, offsetBy: offset)
+                let end = encoded.index(start, offsetBy: 2)
+                guard let byte = UInt8(encoded[start..<end], radix: 16) else { throw TOSPQError.invalidInput }
+                hash.append(byte)
+            }
+            guard (logicalTime == 0) == hash.allSatisfy({ $0 == 0 }) else { throw TOSPQError.invalidInput }
+            return (logicalTime, hash)
         }
         private func boundAccount(_ address: String) throws -> [String: Any] {
             guard address.range(of: "^0:[0-9a-f]{64}$", options: .regularExpression) != nil,
