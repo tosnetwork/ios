@@ -34,7 +34,22 @@ and transport errors. The optional live-history test requires a disposable
 network and explicit test environment; a default conditional skip is not a live
 network acceptance result.
 
-This backend is not yet wired to product history/send UI. Actual protected
-custody deployment/payment, durable prebroadcast outbox and fee budgeting,
-backup/rescue/migration, final artifacts and release gates remain required.
-Run package tests only through the repository Makefile.
+The product History tab and Quantum native-coin details now use
+`TOSQuantumHistoryService` and its native-derived presentation records, without
+creating the ordinary event list for Quantum wallets. The UI retains the current
+20 records and at most 128 pagination positions, cancels on disappearance, checks
+request identity before publishing, clears stale rows on error and retries only
+the bounded reader-busy refusal. An interrupted initial read can restart when
+the page returns. Details preserve exact decimal money and UInt64 time, display
+actual transaction fees and keep message bodies opaque.
+
+The additional public receiver fixture covers compute-skipped/aborted incoming
+messages that still credit undeployed accounts: these records are Included,
+not failed incoming payments. A skipped outgoing action remains Send skipped.
+Product UI tests use a fresh chain and public-source prefunding, then exercise
+history/detail, raw timestamp corruption, clearing old rows, restored retry and
+coin details. They do not sign payments from phone custody.
+
+Actual protected-custody deployment/payment, durable prebroadcast outbox and fee
+budgeting, backup/rescue/migration, final artifacts and release gates remain
+required. Run package tests only through the repository Makefile.

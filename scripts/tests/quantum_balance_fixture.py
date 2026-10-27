@@ -18,6 +18,7 @@ from pathlib import Path
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--history', action='store_true', help='Falsify transaction metadata and enable raw-cell corruption controls')
     p.add_argument('--device', required=True)
     p.add_argument('--bundle-id', required=True)
     p.add_argument('--port', type=int, required=True)
@@ -38,7 +39,8 @@ def main():
         raise ValueError('requires isolated public self-pay genesis')
     source = fixture['accounts']['active']
     poisoned = False
-    counts = {'proofs': 0, 'ordinary': 0}
+    corrupt_history = False
+    counts = {'proofs': 0, 'ordinary': 0, 'transactions': 0, 'legacy_history': 0}
     traffic = []
     funded = None
     funded_boc = None
@@ -135,7 +137,7 @@ def main():
             self.wfile.write(raw)
 
         def do_POST(self):
-            nonlocal poisoned
+            nonlocal poisoned, corrupt_history
             try:
                 length = int(self.headers.get('Content-Length', '0'))
                 if not 0 <= length <= 2 * 1024 * 1024:
@@ -147,6 +149,9 @@ def main():
                     action = self.path.rsplit('/', 1)[-1]
                     if action in ('poison', 'normal'):
                         poisoned = action == 'poison'
+                        value = {'status': action}
+                    elif a.history and action in ('history-corrupt', 'history-normal'):
+                        corrupt_history = action == 'history-corrupt'
                         value = {'status': action}
                     elif action == 'snapshot':
                         value = snapshot()
@@ -164,6 +169,10 @@ def main():
                 if len(traffic) < 128:
                     traffic.append({'method': method, 'poisoned': poisoned})
                 (a.out / 'traffic.json').write_text(json.dumps({'counts': counts, 'requests': traffic}, indent=2) + '\n')
+                if method == 'getTransactions':
+                    counts['transactions'] += 1
+                elif method == 'getAccountEvents':
+                    counts['legacy_history'] += 1
                 if method == 'getProofQuery':
                     counts['proofs'] += 1
                     if poisoned:
@@ -181,6 +190,20 @@ def main():
                     raw = response.read(16 * 1024 * 1024 + 1)
                 if len(raw) > 16 * 1024 * 1024:
                     raise ValueError('response limit')
+                if a.history and method == 'getTransactions':
+                    value = json.loads(raw)
+                    for transaction in value.get('result', []):
+                        transaction.update(fee='999999999999', utime=0, aborted=True,
+                            transaction_id={'lt': '0', 'hash': 'AA=='})
+                        if corrupt_history:
+                            cell = from_boc(base64.b64decode(transaction['data'], validate=True))
+                            # Flip one timestamp bit without changing the typed layout.
+                            # Only the proof-anchored transaction hash can detect this.
+                            if len(cell.bits) < 676:
+                                raise ValueError('short transaction header')
+                            cell.bits = cell.bits[:675] + str(1 - int(cell.bits[675])) + cell.bits[676:]
+                            transaction['data'] = base64.b64encode(cell.boc()).decode()
+                    raw = json.dumps(value).encode()
                 self.send(200, raw)
             except Exception as error:
                 value = {'error': type(error).__name__ + ': ' + str(error)}

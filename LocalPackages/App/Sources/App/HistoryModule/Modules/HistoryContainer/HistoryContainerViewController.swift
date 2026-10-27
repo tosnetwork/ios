@@ -5,7 +5,7 @@ import UIKit
 final class HistoryContainerViewController: GenericViewViewController<HistoryContainerView>, ScrollViewController {
     private let viewModel: HistoryContainerViewModel
 
-    var historyViewController: HistoryViewController? {
+    var historyViewController: (UIViewController & ScrollViewController)? {
         didSet {
             oldValue?.willMove(toParent: nil)
             customView.setContentView(nil)

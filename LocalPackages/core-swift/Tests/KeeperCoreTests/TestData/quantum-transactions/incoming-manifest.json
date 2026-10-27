@@ -1,0 +1,17 @@
+{
+  "source_commit": "f2d2d391ed4a2e3da77582fca7c5fc956adaf198",
+  "scope": "Public-test chain receiver transactions; no private signing material, not mobile custody acceptance",
+  "account": "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0",
+  "proven_head": "a29a983ae037be2634dd2293c996e0b8ad979b7c7c487dc1f516f4689db2502e",
+  "proven_lt": "10000003",
+  "transactions": [
+    {
+      "file": "incoming-0.boc",
+      "sha256": "191172c1f1a897027d4c43af715133f86985ebc096d69641fd89d3dd99632ae5"
+    },
+    {
+      "file": "incoming-1.boc",
+      "sha256": "f8a0cab865210cad910c167ffddd3d17c4704333c9242abbc5290d8935b2f4f4"
+    }
+  ]
+}

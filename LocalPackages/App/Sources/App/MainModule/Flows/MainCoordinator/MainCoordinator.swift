@@ -1127,20 +1127,26 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     func openTonDetails(wallet: Wallet) {
         guard let navigationController = router.rootViewController.navigationController else { return }
 
-        let historyListModule = HistoryModule(
-            dependencies: HistoryModule.Dependencies(
-                coreAssembly: coreAssembly,
-                keeperCoreMainAssembly: keeperCoreMainAssembly
-            )
-        ).createTonHistoryListModule(wallet: wallet)
+        let historyContent: TokenDetailsListContentViewController
+        if wallet.kind == .quantum {
+            historyContent = TOSQuantumHistoryViewController(wallet: wallet, embedded: true)
+        } else {
+            let historyListModule = HistoryModule(
+                dependencies: HistoryModule.Dependencies(
+                    coreAssembly: coreAssembly,
+                    keeperCoreMainAssembly: keeperCoreMainAssembly
+                )
+            ).createTonHistoryListModule(wallet: wallet)
 
-        historyListModule.output.didSelectEvent = { [weak self] event in
-            switch event {
-            case let .tonEvent(event):
-                self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
-            case let .tronEvent(event):
-                self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+            historyListModule.output.didSelectEvent = { [weak self] event in
+                switch event {
+                case let .tonEvent(event):
+                    self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
+                case let .tronEvent(event):
+                    self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+                }
             }
+            historyContent = historyListModule.view
         }
 
         let module = TokenDetailsAssembly.module(
@@ -1156,8 +1162,8 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 ),
                 configuration: keeperCoreMainAssembly.configurationAssembly.configuration
             ),
-            tokenDetailsListContentViewController: historyListModule.view,
-            chartViewControllerProvider: { [keeperCoreMainAssembly, coreAssembly] in
+            tokenDetailsListContentViewController: historyContent,
+            chartViewControllerProvider: wallet.kind == .quantum ? nil : { [keeperCoreMainAssembly, coreAssembly] in
                 ChartAssembly.module(
                     token: .ton(.ton),
                     coreAssembly: coreAssembly,

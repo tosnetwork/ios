@@ -336,6 +336,83 @@ final class TOSWalletUITests: XCTestCase {
         retainScreenshot(named: "Resumed Quantum address after registration failure")
     }
 
+    func testQuantumProductHistoryUsesNativeTransactionsAndRejectsCorruption() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires a disposable native chain and local balance relay fixture")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let bytes = try synchronousData(request: request, description: "local Quantum balance fixture")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields {
+            let field = app.textFields[name]; XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); endpoint.tap()
+        endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        createNativeWalletToHome()
+        _ = try control("fund")
+        app.buttons["History"].tap()
+        let table = app.tables["quantum.history.records"]
+        XCTAssertTrue(table.waitForExistence(timeout: 10))
+        let refresh = app.buttons["quantum.history.newest"]
+        let row = table.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "quantum.history.record.")).firstMatch
+        for _ in 0..<5 {
+            if row.waitForExistence(timeout: 8) { break }
+            if waitForEnabled(refresh, expected: true) { refresh.tap() }
+        }
+        XCTAssertTrue(row.exists, "A real incoming transfer must appear through the product History route")
+        XCTAssertTrue(row.staticTexts["Incoming transfer"].exists)
+        XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "10 TOS")).firstMatch.exists)
+        XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Included")).firstMatch.exists)
+        let originalID = row.identifier
+        row.tap()
+        let detail = app.tables["quantum.history.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertTrue(detail.staticTexts["Transaction hash"].exists)
+        XCTAssertTrue(detail.staticTexts["Logical time"].exists)
+        XCTAssertFalse(detail.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "999999999")).firstMatch.exists)
+        retainScreenshot(named: "Quantum authenticated incoming transaction detail")
+        app.buttons["quantum.history.detail.done"].tap()
+        _ = try control("history-corrupt")
+        defer { _ = try? control("history-normal") }
+        XCTAssertTrue(waitForEnabled(refresh, expected: true)); refresh.tap()
+        XCTAssertTrue(app.staticTexts["Unable to verify history. Refresh to try again."].waitForExistence(timeout: 30))
+        XCTAssertFalse(row.exists, "Failed native verification must remove previously rendered rows")
+        _ = try control("history-normal")
+        refresh.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        XCTAssertEqual(row.identifier, originalID)
+        // A tab change cancels pending work and must allow a subsequent read.
+        app.buttons["Wallet"].tap(); app.buttons["History"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        let status = try control("status")
+        XCTAssertGreaterThan(Int(status["transactions"] ?? "0") ?? 0, 0)
+        XCTAssertEqual(status["legacy_history"], "0", "Quantum history must not use unverified event summaries")
+        retainScreenshot(named: "Quantum history recovered after raw transaction corruption")
+        app.buttons["Wallet"].tap()
+        let nativeCoin = app.collectionViews["wallet.balance.list"].cells.containing(.staticText, identifier: "TOS").firstMatch
+        XCTAssertTrue(nativeCoin.waitForExistence(timeout: 10)); nativeCoin.tap()
+        XCTAssertTrue(app.tables["quantum.history.records"].waitForExistence(timeout: 10))
+        let embeddedRow = app.tables["quantum.history.records"].cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "quantum.history.record.")).firstMatch
+        XCTAssertTrue(embeddedRow.waitForExistence(timeout: 30))
+        XCTAssertEqual(embeddedRow.identifier, originalID)
+        retainScreenshot(named: "Quantum coin details share authenticated history")
+    }
+
     func testQuantumProofBalanceReceivesFundingAndRefusesPoisonedRelay() throws {
         let environment = ProcessInfo.processInfo.environment
         let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
