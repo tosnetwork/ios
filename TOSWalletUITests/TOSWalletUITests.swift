@@ -1838,7 +1838,14 @@ final class TOSWalletUITests: XCTestCase {
             ?? "http://127.0.0.1:18645"
         app.launch()
         openRecoveryPhraseImport()
-        app.descendants(matching: .any)["mnemonic.paste"].tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        let paste = app.descendants(matching: .any)["mnemonic.paste"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            keyboard.exists && paste.isHittable && paste.frame.maxY <= keyboard.frame.minY
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        paste.tap()
     }
 
     private func openSettings() {

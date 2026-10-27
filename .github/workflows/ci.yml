@@ -59,6 +59,7 @@ jobs:
       - name: Recover classic accounts without contract version choices
         shell: bash
         run: |
+          make test_classic_recovery_fixture
           python3 -u scripts/tests/classic_recovery_fixture.py > build/classic-recovery-fixture.log 2>&1 &
           fixture_pid=$!
           trap 'kill "$fixture_pid" 2>/dev/null || true; wait "$fixture_pid" 2>/dev/null || true' EXIT
@@ -68,7 +69,11 @@ jobs:
             if grep -q PUBLIC_CLASSIC_FIXTURE_READY build/classic-recovery-fixture.log; then ready=1; break; fi
             sleep 1
           done
-          test "$ready" -eq 1
+          if test "$ready" -ne 1; then
+            cat build/classic-recovery-fixture.log
+            ps -p "$fixture_pid" -o pid=,etime=,comm= || true
+            exit 1
+          fi
           make test_project_scheme SCHEME=TOSWalletUITests \
             TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testClassicRecoveryAutomaticallyRetainsSixAccountsWithoutVersionMenu \
             TEST_DESTINATION="$TEST_DESTINATION" TOS_UI_RPC_URL=http://127.0.0.1:18648

@@ -4,6 +4,14 @@ import base64
 import json
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from socketserver import TCPServer
+
+
+class LoopbackHTTPServer(HTTPServer):
+    def server_bind(self):
+        # Numeric loopback tests need no reverse DNS to bind or report ready.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 def cell(payload):
@@ -64,7 +72,7 @@ def main():
             except (ValueError, KeyError, OSError):
                 self.close_connection = True
 
-    with HTTPServer(('127.0.0.1', args.port), Handler) as server:
+    with LoopbackHTTPServer(('127.0.0.1', args.port), Handler) as server:
         server.timeout = 1
         deadline = time.monotonic() + 600
         print('PUBLIC_CLASSIC_FIXTURE_READY', flush=True)

@@ -116,6 +116,10 @@ test_brand_boundary:
 test_v1_runtime_secrets:
 	@TOS_TEST_DESTINATION='$(TEST_DESTINATION)' sh scripts/tests/test_v1_runtime_secrets.sh
 
+.PHONY: test_classic_recovery_fixture
+test_classic_recovery_fixture:
+	python3 scripts/tests/test_classic_recovery_fixture.py
+
 test_v1_static: compile test_brand_boundary
 	@sh scripts/tests/test_v1_static.sh
 
