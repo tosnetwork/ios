@@ -1027,16 +1027,80 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         let f = try Fixture(), coordinator = f.coordinator()
         let quote = try await coordinator.authorizeAndEstimate(f.payment())
         let directory = f.base.appendingPathComponent("outbox")
-        let mode = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)
-        let originalACL = try XCTUnwrap(acl_get_file(directory.path, ACL_TYPE_EXTENDED),
-                                       "Cannot capture original directory ACL; record platform support failure")
-        defer {
-            XCTAssertEqual(acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL), 0, "Restore original ACL")
-            XCTAssertNoThrow(try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path), "Restore original mode")
-            acl_free(UnsafeMutableRawPointer(originalACL))
+        var originalDirectory = stat()
+        guard lstat(directory.path, &originalDirectory) == 0,
+              originalDirectory.st_mode & S_IFMT == S_IFDIR,
+              originalDirectory.st_uid == geteuid(), originalDirectory.st_mode & 0o7777 == 0o700 else {
+            throw TOSPQError.invalidInput
         }
-        var deniedACL: acl_t? = try XCTUnwrap(acl_dup(originalACL))
+        let mode = NSNumber(value: originalDirectory.st_mode & 0o7777)
+        func aclFailure(_ operation: String, _ code: Int32) -> NSError {
+            NSError(domain: NSPOSIXErrorDomain, code: Int(code),
+                    userInfo: [NSLocalizedDescriptionKey: operation + "; errno=\(code)"])
+        }
+        func hasExtendedACLOnOriginalDirectory() throws -> Bool {
+            guard let security = filesec_init() else { throw aclFailure("filesec_init", errno) }
+            defer { filesec_free(security) }
+            var current = stat()
+            guard lstatx_np(directory.path, &current, security) == 0 else { throw aclFailure("lstatx_np", errno) }
+            guard current.st_dev == originalDirectory.st_dev, current.st_ino == originalDirectory.st_ino,
+                  current.st_mode & S_IFMT == S_IFDIR, current.st_uid == originalDirectory.st_uid,
+                  current.st_mode & 0o7777 == 0o700 else { throw TOSPQError.keyBinding }
+            var present: Int32 = 0
+            guard filesec_query_property(security, FILESEC_ACL, &present) == 0 else {
+                throw aclFailure("filesec_query_property(FILESEC_ACL)", errno)
+            }
+            return present != 0
+        }
+        errno = 0
+        let originalACL = acl_get_file(directory.path, ACL_TYPE_EXTENDED)
+        let originalACLErrno = errno // Capture before XCTest/Foundation/another syscall.
+        defer { if let originalACL { acl_free(UnsafeMutableRawPointer(originalACL)) } }
+        let originalHadACL = try hasExtendedACLOnOriginalDirectory()
+        if originalACL == nil {
+            guard originalACLErrno == ENOENT, !originalHadACL else {
+                throw aclFailure("acl_get_file returned nil without verified absent ACL", originalACLErrno)
+            }
+        } else {
+            guard originalHadACL else { throw TOSPQError.keyBinding }
+        }
+        func restoreOriginalACLAndMode() throws {
+            // Recheck path identity before restoring any security state.
+            _ = try hasExtendedACLOnOriginalDirectory()
+            if let originalACL {
+                guard acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL) == 0 else {
+                    throw aclFailure("Restore original ACL", errno)
+                }
+            } else {
+                guard let security = filesec_init() else { throw aclFailure("Restore filesec_init", errno) }
+                defer { filesec_free(security) }
+                // sys/fcntl.h defines _FILESEC_REMOVE_ACL as ((void *)1).
+                // Restore absence, rather than replacing it with an empty ACL.
+                let removeACL = UnsafeRawPointer(bitPattern: 1)!
+                guard filesec_set_property(security, FILESEC_ACL, removeACL) == 0 else {
+                    throw aclFailure("Set FILESEC_REMOVE_ACL", errno)
+                }
+                guard chmodx_np(directory.path, security) == 0 else { throw aclFailure("Remove test ACL", errno) }
+            }
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
+            guard try hasExtendedACLOnOriginalDirectory() == originalHadACL else { throw TOSPQError.keyBinding }
+            if !originalHadACL {
+                errno = 0
+                let restored = acl_get_file(directory.path, ACL_TYPE_EXTENDED)
+                let restoredErrno = errno
+                defer { if let restored { acl_free(UnsafeMutableRawPointer(restored)) } }
+                guard restored == nil, restoredErrno == ENOENT else {
+                    throw aclFailure("Original ACL absence was not restored", restoredErrno)
+                }
+            }
+        }
+        defer { XCTAssertNoThrow(try restoreOriginalACLAndMode(), "Restore exact original ACL presence and mode") }
+        var deniedACL: acl_t?
+        if let originalACL { deniedACL = acl_dup(originalACL) } else { deniedACL = acl_init(0) }
+        guard deniedACL != nil else { throw aclFailure("Create independent test ACL", errno) }
         defer { if let deniedACL { acl_free(UnsafeMutableRawPointer(deniedACL)) } }
+        let originalState = XCTAttachment(string: "acl_get_file nil=\(originalACL == nil), errno=\(originalACLErrno), FILESEC_ACL present=\(originalHadACL); original inode/owner/mode0700 revalidated")
+        originalState.name = "original-directory-acl-state"; originalState.lifetime = .keepAlways; add(originalState)
         var deniedEntry: acl_entry_t?
         guard acl_create_entry_np(&deniedACL, &deniedEntry, 0) == 0, let deniedEntry else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
@@ -1092,8 +1156,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             XCTAssertEqual(failure.domain, NSCocoaErrorDomain, "Cancellation masked the actual durable-write error")
             XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
         }
-        XCTAssertEqual(acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL), 0)
-        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
+        try restoreOriginalACLAndMode()
         XCTAssertEqual(f.sends.count, 1); XCTAssertEqual(f.signs, 1)
         let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
         XCTAssertEqual(entry.phase, .submitting); XCTAssertNotNil(entry.feeApproval)

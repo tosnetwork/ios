@@ -149,3 +149,26 @@ explicit `UnsafeMutableRawPointer` bridge, without changing ACL logic or product
 source. Current test SHA-256: `f610a23c0ae26cb82efd5da05dd65b4d690f037b8341087ea4bf57d17607130b`. This bridge repair is uncompiled/unrun.
 The original first ACL build log remains in
 `ios-r03-b-acl-first-1793228344827035000/first-result.json`.
+
+
+## Absent-ACL fixture repair (source only)
+
+The db55afd run compiled: 63 selected methods, 61 passed, one failed at the
+original ACL getter, one physical-device skip. It never installed the deny ACL
+or reached the EACCES/Cocoa513 probe; the getter's errno was not retained.
+
+The fixture now captures errno immediately. A nil getter is accepted only for
+ENOENT plus an independent lstatx/filesec property query proving no extended ACL
+on the same device/inode, directory type, current owner and exact 0700 mode.
+Only that verified absence uses acl_init(0) to construct the test ACL. Other errno
+or an inconsistent ACL presence remains an explicit failure with its saved code.
+Restoration preserves an existing captured ACL, or uses the SDK's documented
+FILESEC_REMOVE_ACL/chmodx_np operation to restore actual absence. It then checks
+identity/mode/property presence again, and absent ACL additionally requires a new
+nil getter with immediate ENOENT. The deny-only ADD_FILE setup, real O_CREAT
+EACCES probe and actual cancelled-write Cocoa513 assertions remain intact.
+
+Current test SHA-256: `af8107d60baa75adf5b729ca356181020bb08df67aae9c20cb94b1fe2390bbc4`.
+This repair is uncompiled/unrun; source predicate checks do not establish ACL
+runtime support. Exact historical failures remain preserved. No product source,
+permission gate or skip behavior changed.
