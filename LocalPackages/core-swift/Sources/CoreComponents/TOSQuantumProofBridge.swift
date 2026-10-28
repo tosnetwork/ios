@@ -12,6 +12,23 @@ public enum TOSQuantumProofBridge {
     }
     public struct Result { public let verified: Data; public let nextState: Data }
 
+    /// Native local execution with its checkpoint already durably committed.
+    /// This payload is an estimate, never a verified receipt or balance update.
+    public final class LocalSimulation {
+        public let encoded: Data
+        fileprivate init(_ encoded: Data, message: Data) throws {
+            guard let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any],
+                  object["interface"] as? String == "tos-self-pay-simulation/1",
+                  object["scope"] as? String == "local_estimate",
+                  let status = object["status"] as? String,
+                  ["executed", "unsupported", "import_rejected", "not_accepted"].contains(status),
+                  object["message_bytes_hash"] as? String == Data(SHA256.hash(data: message))
+                    .map({ String(format: "%02x", $0) }).joined() else { throw TOSPQError.invalidInput }
+            self.encoded = encoded
+        }
+    }
+    public enum SimulationError: Error, Equatable { case native(Int32) }
+
     /// Integer storage is required: a rounded floating-point value must never
     /// become a history cursor, even when converting it to UInt64 would succeed.
     internal static func transactionLogicalTime(_ value: Any?) throws -> UInt64 {
@@ -135,6 +152,50 @@ public enum TOSQuantumProofBridge {
         if let failure = context.failure { throw failure }
         guard status == 0, used > 0, used <= output.count else { throw TOSPQError.invalidInput }
         return Data(output.prefix(used))
+    }
+
+    internal static func simulatePersisted(directory: URL, anchor: Data, request: Data, now: Int64,
+                                           signedMessage: Data, transport: @escaping Transport) throws -> LocalSimulation {
+        guard now > 0, now <= Int64(UInt32.max),
+              (1...1_048_576).contains(anchor.count), (1...1_048_576).contains(request.count),
+              (1...1_048_576).contains(signedMessage.count), !directory.path.utf8.contains(0) else {
+            throw TOSPQError.invalidInput
+        }
+        let context = QueryContext(transport)
+        let opaque = Unmanaged.passUnretained(context).toOpaque()
+        let callback: tos_proof_query_callback = { opaque, query, querySize, response, capacity, used in
+            guard let opaque, let query, let response, let used,
+                  (1...16384).contains(querySize), (1...67_108_864).contains(capacity) else { return -1 }
+            used.pointee = 0
+            let context = Unmanaged<QueryContext>.fromOpaque(opaque).takeUnretainedValue()
+            do {
+                let bytes = try context.transport(Data(bytes: query, count: querySize), capacity)
+                guard !bytes.isEmpty, bytes.count <= capacity else { throw TOSPQError.invalidInput }
+                bytes.copyBytes(to: response, count: bytes.count)
+                used.pointee = bytes.count
+                return 0
+            } catch {
+                context.failure = error
+                return -1
+            }
+        }
+        // Separate message storage keeps all borrowed C ABI input ranges disjoint.
+        let message = [UInt8](signedMessage), anchorBytes = [UInt8](anchor), requestBytes = [UInt8](request)
+        var output = Data(count: 2_097_152), used = 0
+        let status = withExtendedLifetime(context) {
+            directory.path.withCString { path in anchorBytes.withUnsafeBufferPointer { a in requestBytes.withUnsafeBufferPointer { r in
+                message.withUnsafeBufferPointer { m in output.withUnsafeMutableBytes { out in
+                    tos_proof_acquire_simulate_self_pay_persisted(path,
+                        a.baseAddress.map { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) }, a.count,
+                        r.baseAddress.map { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) }, r.count, now, callback, opaque,
+                        m.baseAddress, m.count, out.bindMemory(to: CChar.self).baseAddress, out.count, &used)
+                } }
+            } } }
+        }
+        if let failure = context.failure { throw failure }
+        guard status == 0 else { throw SimulationError.native(status) }
+        guard used > 0, used <= output.count else { throw TOSPQError.invalidInput }
+        return try LocalSimulation(Data(output.prefix(used)), message: signedMessage)
     }
 
     /// A capability produced only by native verification. Binding alone does not authorize signing.

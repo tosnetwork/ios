@@ -43,6 +43,15 @@ public final class TOSQuantumProofSession {
         try TOSQuantumProofBridge.acquireBound(directory: directory, initialize: false, anchor: anchor, request: request, now: now, transport: transport)
     }
 
+    /// Uses the existing enrollment and the same cross-process checkpoint lock.
+    /// A signed message must already be durable in the outbox; this call neither
+    /// broadcasts it nor releases its authorization slot, even on refusal.
+    public func simulate(request: Data, now: Int64, signedMessage: Data,
+                         transport: @escaping TOSQuantumProofBridge.Transport) throws -> TOSQuantumProofBridge.LocalSimulation {
+        try TOSQuantumProofBridge.simulatePersisted(directory: directory, anchor: anchor, request: request,
+            now: now, signedMessage: signedMessage, transport: transport)
+    }
+
     public static func removeCheckpoint(walletID: UUID, baseDirectory: URL? = nil) throws {
         try removeCheckpointDirectory(walletID: walletID, baseDirectory: baseDirectory)
     }

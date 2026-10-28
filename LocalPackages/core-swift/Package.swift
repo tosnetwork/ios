@@ -73,7 +73,7 @@ let package = Package(
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
-            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-proof-PROVENANCE.json")],
+            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-self-pay-simulation"), .copy("TestData/quantum-proof-PROVENANCE.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
