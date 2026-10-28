@@ -52,6 +52,8 @@ public final class TOSQuantumPaymentCoordinator {
             if DispatchTime.now() >= deadline { throw Error.timedOut }
         }
         func failure(_ error: Swift.Error) -> Swift.Error {
+            // Cancellation must not hide an uncertain durable write/checkpoint.
+            if error is TOSQuantumOutbox.Error || error is TOSQuantumProofBridge.SimulationError { return error }
             do { try check(); return error } catch { return error }
         }
     }
