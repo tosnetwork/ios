@@ -2056,11 +2056,26 @@ final class TOSWalletUITests: XCTestCase {
         openRecoveryPhraseImport()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        // A fresh iOS keyboard can show its system slide-typing introduction.
+        // Dismiss only that identified keyboard panel; the actual paste control
+        // must still pass the original visibility/geometry check below.
+        let slideTypingTip = keyboard.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if slideTypingTip.waitForExistence(timeout: 1) {
+            let continueTyping = keyboard.buttons["Continue"]
+            XCTAssertTrue(continueTyping.isHittable, "The identified system keyboard introduction must expose its Continue action")
+            retainScreenshot(named: "System slide typing introduction before recovery import")
+            continueTyping.tap()
+        }
         let paste = app.descendants(matching: .any)["mnemonic.paste"]
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             keyboard.exists && paste.isHittable && paste.frame.maxY <= keyboard.frame.minY
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+        let readyResult = XCTWaiter.wait(for: [ready], timeout: 5)
+        if readyResult != .completed {
+            let diagnostic = XCTAttachment(string: app.debugDescription)
+            diagnostic.name = "recovery-paste-readiness-hierarchy"; diagnostic.lifetime = .keepAlways; add(diagnostic)
+        }
+        XCTAssertEqual(readyResult, .completed)
         paste.tap()
     }
 
