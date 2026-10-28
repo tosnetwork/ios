@@ -54,6 +54,7 @@ public final class TOSQuantumPaymentCoordinator {
         func failure(_ error: Swift.Error) -> Swift.Error {
             // Cancellation must not hide an uncertain durable write/checkpoint.
             if error is TOSQuantumOutbox.Error || error is TOSQuantumProofBridge.SimulationError { return error }
+            if [NSCocoaErrorDomain, NSPOSIXErrorDomain].contains((error as NSError).domain) { return error }
             do { try check(); return error } catch { return error }
         }
     }
@@ -117,6 +118,10 @@ public final class TOSQuantumPaymentCoordinator {
             try job.check()
             let bytes = try outbox.beginPaymentSubmission(entry, quote: quote, now: now())
             do {
+                try job.check()
+                // Lock waits and full fsync may outlive the time sampled before
+                // durable publication. Recheck immediately before dispatch.
+                try quote.requireFresh(entry: entry, now: now())
                 try job.check()
                 try broadcaster(bytes, { job.isCancelled() })
             } catch {

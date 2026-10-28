@@ -11,6 +11,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         var clock: Int64
         var signs = 0, sends = [Data]()
         var onSign: (() -> Void)?, onBroadcast: (() throws -> Void)?
+        var onNowRead: (() -> Void)?
         init() throws {
             let resources = try XCTUnwrap(Bundle.module.url(forResource: "quantum-payment", withExtension: nil))
             assets = resources
@@ -69,7 +70,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 XCTAssertEqual(stored.phase, .submitting); XCTAssertNotNil(stored.feeApproval)
                 XCTAssertEqual(bytes, stored.signedBOC)
                 self.sends.append(bytes); try self.onBroadcast?()
-            }, now: { self.clock })
+            }, now: { let value = self.clock; self.onNowRead?(); return value })
         }
     }
 
@@ -190,5 +191,49 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         catch { guard case TOSQuantumPaymentQuote.Error.binding = error else { return XCTFail("Wrong refusal: \(error)") } }
         XCTAssertTrue(f.sends.isEmpty); XCTAssertEqual(f.signs, 1)
         XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+    }
+
+    func testRealStorageFailureDuringCancelledBroadcastIsNotReportedAsCancellation() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        let directory = f.base.appendingPathComponent("outbox")
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        let entered = expectation(description: "Durable broadcast entered"), resume = DispatchSemaphore(value: 0)
+        enum RelayFailure: Error { case responseLost }
+        f.onBroadcast = { entered.fulfill(); _ = resume.wait(timeout: .now() + 20); throw RelayFailure.responseLost }
+        let sending = Task { try await coordinator.submit(quote) }
+        await fulfillment(of: [entered], timeout: 10)
+        // Existing .lock can still be opened and the directory enumerated, but
+        // Data.write cannot create the next private .pending file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        sending.cancel(); resume.signal()
+        do { try await sending.value; XCTFail("Uncertain storage returned success") }
+        catch {
+            let failure = error as NSError
+            XCTAssertEqual(failure.domain, NSCocoaErrorDomain, "Cancellation masked the actual durable-write error")
+            XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
+        }
+        XCTAssertEqual(f.sends.count, 1); XCTAssertEqual(f.signs, 1)
+        let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(entry.phase, .submitting); XCTAssertNotNil(entry.feeApproval)
+        XCTAssertEqual(entry.signedBOC, f.sends.first)
+    }
+
+    func testQuoteExpiryDuringPersistenceIsRecheckedBeforeBroadcast() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        var advanced = false
+        f.onNowRead = { [weak f] in
+            guard let f, !advanced else { return }
+            // beginPaymentSubmission receives its previously read timestamp;
+            // represent time passing while waiting for its lock/fsync.
+            advanced = true; f.clock += 31
+        }
+        do { try await coordinator.submit(quote); XCTFail("Quote expired during persistence was submitted") }
+        catch { XCTAssertTrue(error is TOSPQError) }
+        XCTAssertTrue(advanced); XCTAssertTrue(f.sends.isEmpty)
+        let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(entry.phase, .unknown); XCTAssertNotNil(entry.feeApproval)
+        XCTAssertEqual(f.signs, 1)
     }
 }

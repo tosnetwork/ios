@@ -52,6 +52,8 @@ before exposing bytes to transport. The generic raw submission API refuses
 entries with a payment intent. Approval metadata is not a reusable capability;
 stored amounts/hash are revalidated on read. Both RPC acceptance and transport
 failure retain `unknown`; cancellation does too. RPC responses never mean paid.
+The quote is checked again after lock waits/full fsync and immediately before
+network dispatch. A refusal there keeps the signed slot and unknown attempt.
 
 ## Bounds, lifetime and failure evidence
 
@@ -82,6 +84,14 @@ message's cost and guessed a total-fee split. The actual Swift message has relax
 source/creation fields and an inline empty body, so it is a different input. The
 test now pins its measured full deduction and checks that `total_fees` undercounts
 that deduction, without inventing a split from the older message.
+
+Independent review of the initial coordinator requested two corrections. An
+actual read-only journal directory during cancelled broadcast showed that raw
+Foundation write error 513 was masked as CancellationError; Cocoa/POSIX storage
+errors now keep their original identity. A clock that advances 31 seconds after
+the pre-write sample showed a stale quote could reach broadcast after durable
+publication; the final freshness check closes that gap. Both original failures
+and the corrected regression are retained, without weakening their assertions.
 
 Compiled source controls must reject using total fees alone, omitting fresh-quote
 validation, omitting pre-broadcast persistence, reusing a quote for a replacement
