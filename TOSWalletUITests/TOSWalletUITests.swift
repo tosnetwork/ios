@@ -353,6 +353,69 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(retained["fee_confirmed"] as? Bool, true)
         _ = try paymentControl("normal")
         retainScreenshot(named: "Quantum actual App payment retained after relaunch")
+        if environment["TOS_QUANTUM_RETIREMENT_LIVE"] == "1" {
+            // This is a separate B acceptance extension. It is not part of the
+            // previously recorded first-payment result and must run on a fresh
+            // isolated candidate with the original protected custody unchanged.
+            tapPayment("end")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.end"]))
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Authorization is not expired"),
+                          "Must actually test the original-deadline guard before expiry")
+            XCTAssertFalse(app.buttons["quantum.payment.confirmEnd"].exists)
+            XCTAssertEqual(try paymentControl("pending")["signed_boc_sha256"] as? String, originalBOC)
+            let expiryWait = Date().addingTimeInterval(160)
+            while !app.buttons["quantum.payment.confirmEnd"].exists && Date() < expiryWait {
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+                tapPayment("end")
+                let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    let confirmation = self.app.buttons["quantum.payment.confirmEnd"]
+                    let retry = self.app.buttons["quantum.payment.end"]
+                    return (confirmation.exists && confirmation.isEnabled) || (retry.exists && retry.isEnabled)
+                }, object: app)
+                XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 60), .completed)
+            }
+            XCTAssertTrue(app.buttons["quantum.payment.confirmEnd"].exists)
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            XCTAssertTrue(details.label.contains("Original authorization deadline:"))
+            retainScreenshot(named: "Quantum expired original authorization review")
+            tapPayment("confirmEnd")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+            XCTAssertFalse(recipientField.isEnabled)
+            app.terminate(); app.launch(); assertNativeWalletHome(); openSavedPayment()
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+            XCTAssertEqual(recipientField.value as? String, "Full recipient address")
+            XCTAssertFalse(recipientField.isEnabled)
+            XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+            XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+            retainScreenshot(named: "Quantum ended authorization remains gated after relaunch")
+            tapPayment("history")
+            XCTAssertTrue(app.alerts["Local authorization records"].waitForExistence(timeout: 5))
+            app.alerts["Local authorization records"].buttons["Close"].tap()
+            tapPayment("startAnother")
+            XCTAssertTrue(enabled(recipientField))
+            recipientField.tap(); recipientField.typeText(recipient)
+            amount.tap(); amount.typeText("0.200000002")
+            comment.tap(); comment.typeText("App second explicit payment")
+            tapPayment("review"); XCTAssertTrue(enabled(sign))
+            XCTAssertTrue(details.label.contains("Wallet deployment: Already deployed"))
+            tapPayment("sign")
+            XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10)); enterPasscode("1234")
+            XCTAssertTrue(enabled(send))
+            let second = try paymentControl("pending")
+            XCTAssertNotEqual(second["operation_id"] as? String, originalOperation)
+            XCTAssertNotEqual(second["signed_boc_sha256"] as? String, originalBOC)
+            tapPayment("send"); XCTAssertTrue(enabled(verify))
+            for _ in 0..<8 {
+                tapPayment("verify"); XCTAssertTrue(enabled(verify))
+                if app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent") { break }
+            }
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            XCTAssertTrue(details.label.contains("0.200000002 TOS"))
+            let secondReceipt = XCTAttachment(string: details.label)
+            secondReceipt.name = "public-app-second-sender-receipt"; secondReceipt.lifetime = .keepAlways; add(secondReceipt)
+            XCTAssertEqual(try control("snapshot"), original)
+            retainScreenshot(named: "Quantum explicit second protected payment verified")
+        }
     }
 
     func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {

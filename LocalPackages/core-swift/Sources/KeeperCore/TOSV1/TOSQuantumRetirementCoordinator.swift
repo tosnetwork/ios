@@ -65,6 +65,10 @@ public final class TOSQuantumRetirementCoordinator {
         }
         try Task.checkCancellation(); return result
     }
+    /// Display-only strict original deadline. This cannot release a slot.
+    public static func originalDeadline(_ entry: TOSQuantumOutbox.Entry) throws -> UInt32 {
+        try TOSQuantumStoredRequest(entry: entry).deadline
+    }
     public func inspect(wallet: Wallet) async throws -> State {
         guard let id = UUID(uuidString: wallet.id) else { throw Error.binding }
         return try await perform(id: id) { [self] in

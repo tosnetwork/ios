@@ -84,3 +84,23 @@ is injected syscall-error evidence, not a physical disk failure claim. Coverage 
 
 The original signing-only matrix was never full B acceptance. Actual receipt
 branches and App end/history/lifecycle behavior remain acceptance gaps until run.
+
+
+## App wiring checkpoint (source only)
+
+The Saved payment page now uses retirement inspection before ordinary pending
+reads, so a missing canonical with a full retirement snapshot remains recoverable
+and blocked. It displays the strict original deadline independently of the fee
+quote, offers explicit fresh verification and optional explicitly unverified
+expiry review, then a separate confirmation to finish. A completed local record
+clears old input and requires Start another payment. Reload/relaunch with no
+pending but completed local history returns to this ended screen; local history
+only gates UI and cannot release a slot. UNKNOWN retry stays disabled.
+
+An opt-in continuation of the existing protected-App candidate test is written
+for pre-deadline refusal, fresh expiry/end confirmation, ended-page relaunch and
+history, followed by an explicitly entered second payment with a new passcode
+confirmation, new operation/BOC and sender receipt. It has not run. The narrow
+cancel-between-durable-completion-and-UI-callback window still needs a designated
+runtime control; normal relaunch coverage alone does not prove that window. The
+committed production Send gate is unchanged and closed.
