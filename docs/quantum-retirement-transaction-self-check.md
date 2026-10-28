@@ -140,3 +140,12 @@ membership module and its `mbr_uid_to_uuid` declaration. No ACL logic or product
 source changed in this import repair. The test file SHA-256 is
 `8864060866818ce0efdeca7b44a7b48ca6882604cfde0c1ef4c79455b4277a1f`. This repair remains uncompiled/unrun pending review and the next
 exclusive iOS build lease.
+
+
+The exact 5e0764e ACL attempt failed at compilation in the two `acl_free` calls:
+the imported ACL type is an OpaquePointer and the C API takes void*. No tests ran
+and no runtime ACL support was established. Both cleanup arguments now use an
+explicit `UnsafeMutableRawPointer` bridge, without changing ACL logic or product
+source. Current test SHA-256: `f610a23c0ae26cb82efd5da05dd65b4d690f037b8341087ea4bf57d17607130b`. This bridge repair is uncompiled/unrun.
+The original first ACL build log remains in
+`ios-r03-b-acl-first-1793228344827035000/first-result.json`.

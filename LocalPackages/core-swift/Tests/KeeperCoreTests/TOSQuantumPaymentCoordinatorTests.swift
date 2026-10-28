@@ -1033,10 +1033,10 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         defer {
             XCTAssertEqual(acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL), 0, "Restore original ACL")
             XCTAssertNoThrow(try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path), "Restore original mode")
-            acl_free(originalACL)
+            acl_free(UnsafeMutableRawPointer(originalACL))
         }
         var deniedACL: acl_t? = try XCTUnwrap(acl_dup(originalACL))
-        defer { if let deniedACL { acl_free(deniedACL) } }
+        defer { if let deniedACL { acl_free(UnsafeMutableRawPointer(deniedACL)) } }
         var deniedEntry: acl_entry_t?
         guard acl_create_entry_np(&deniedACL, &deniedEntry, 0) == 0, let deniedEntry else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
