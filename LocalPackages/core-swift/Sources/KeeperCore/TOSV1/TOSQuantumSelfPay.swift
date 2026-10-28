@@ -125,6 +125,10 @@ public enum TOSQuantumSelfPayAction {
 public struct TOSQuantumSelfPayRequest {
     public let request: Cell
     public let role: TOSQuantumRole
+    public let wallet: Address
+    public let globalID: Int32
+    public let namespace: Data
+    public let signingPublicKey: Data
     public var digest: Data { request.hash() }
     public var context: String { role == .primary ? "TOS-QSP-MLDSA44-v1" : "TOS-QSP-SLH128S-v1" }
 
@@ -161,6 +165,10 @@ public struct TOSQuantumSelfPayRequest {
             try TOSQuantumRetirementPolicy.requirePrimary(primaryPolicy, network: state.authority.namespace, now: provenTime)
         }
         self.role = role
+        self.wallet = wallet
+        self.globalID = state.authority.globalID
+        self.namespace = state.authority.namespace
+        self.signingPublicKey = role == .primary ? state.authority.primaryKey : state.authority.rescueKey
         request = try Builder().store(uint: 0x51535031, bits: 32).store(int: state.authority.globalID, bits: 32)
             .store(data: state.authority.namespace).store(wallet).store(data: state.authority.hash)
             .store(uint: role.rawValue, bits: 8).store(uint: state.epoch, bits: 64).store(uint: nonce, bits: 64)
