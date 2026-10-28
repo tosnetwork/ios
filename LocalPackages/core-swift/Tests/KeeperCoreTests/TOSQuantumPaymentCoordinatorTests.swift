@@ -10,6 +10,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         let profile: TOSQuantumNetworkProfile, identity: TOSQuantumSelfPayIdentity
         var clock: Int64
         var signs = 0, sends = [Data]()
+        var corruptedProofs = 0
         var onSign: (() -> Void)?, onBroadcast: (() throws -> Void)?
         var onNowRead: (() -> Void)?
         init() throws {
@@ -42,7 +43,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             case 4: name = "masterchain-info.tl"
             case 168: name = "chain-0000.tl"
             case 120: name = "account.tl"
-            case 88, 104: name = "exec-config.tl"
+            case 88, 96, 104: name = "exec-config.tl"
             default: throw TOSPQError.invalidInput
             }
             let bytes = try Data(contentsOf: assets.appendingPathComponent("material/" + name))
@@ -55,6 +56,26 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             let recipient = try Address.parse("0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0")
             let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: amount, bounce: false, comment: comment)
             return try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: clock, ttl: 120)
+        }
+        func wallet() -> Wallet {
+            Wallet(id: id.uuidString, identity: WalletIdentity(network: .mainnet, kind: .Quantum(identity), networkGlobalId: profile.globalID),
+                metaData: WalletMetaData(label: "Public fixture", tintColor: .defaultColor, icon: .icon(.wallet)),
+                setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+        }
+        func outcomes(corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumPaymentOutcomeReader {
+            TOSQuantumPaymentOutcomeReader(outbox: outbox, baseDirectory: base, accounts: { flag in
+                TOSQuantumAccountReader(baseDirectory: self.base, transport: {
+                    return { query, capacity in
+                        beforeProof?(flag)
+                        guard !flag.stopped() else { throw TOSPQError.invalidInput }
+                        var bytes = try self.query(query, capacity: capacity)
+                        if corruptProof && query.count == 120 { bytes[bytes.count / 2] ^= 1; self.corruptedProofs += 1 }
+                        return bytes
+                    }
+                }, now: { self.clock })
+            }, query: { _ in
+                return { _, _, _ in XCTFail("Proven genesis head must not query transactions"); throw TOSPQError.invalidInput }
+            }, now: { self.clock })
         }
         func coordinator() -> TOSQuantumPaymentCoordinator {
             TOSQuantumPaymentCoordinator(outbox: outbox, baseDirectory: base, transport: { _ in self.query }, signer: { entry, id, context in
@@ -102,6 +123,106 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         XCTAssertEqual(f.sends.count, 2); XCTAssertEqual(f.sends[0], f.sends[1]); XCTAssertEqual(f.signs, 1)
         XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .unknown)
         XCTAssertThrowsError(try f.outbox.cancelUnsigned(stored))
+    }
+
+    func testOutcomeReaderRestartsFromDurableEntryAndKeepsUnverifiedSlot() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        try await coordinator.submit(quote)
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        let page = try await f.outcomes().read(wallet: f.wallet())
+        XCTAssertEqual(page.operationID, stored.id)
+        XCTAssertEqual(page.scannedCount, 0); XCTAssertNil(page.receipt); XCTAssertNil(page.next)
+        XCTAssertFalse(page.authorizationExpired)
+        let after = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(after.phase, .unknown); XCTAssertEqual(after.signedBOC, stored.signedBOC)
+        XCTAssertEqual(f.signs, 1); XCTAssertEqual(f.sends.count, 1)
+    }
+
+    func testOutcomeExpiryUsesProvenShardTimeAndNeverReleasesAuthorization() async throws {
+        for expectedExpired in [false, true] {
+            let f = try Fixture(), payment = try f.payment()
+            let state = try TOSQuantumSelfPayState.parse(f.identity.wallet.initialData)
+            let accounts = TOSQuantumAccountReader(baseDirectory: f.base, transport: { f.query }, now: { f.clock })
+            let observation = try accounts.observeEnrolled(id: f.id, identity: f.identity, profile: f.profile, configIndices: [8, 19, 48])
+            let policy = try TOSRPCOrdinaryBOC.decode(observation.network.provenConfigParam(48).base64EncodedString())
+            let time = try observation.proof.provenAccountTime(expectedAddress: f.identity.address.toRaw())
+            let deadline = expectedExpired ? time - 1 : time
+            let request = try TOSQuantumSelfPayRequest(wallet: f.identity.address, state: state, role: .primary,
+                validUntil: deadline, action: .execute(payment.intent.actions()), provenTime: deadline - 1, primaryPolicy: policy)
+            let entry = try f.outbox.reserve(identity: f.identity, profile: f.profile, request: request, deploy: false,
+                paymentIntent: payment.intent)
+            try f.outbox.signReserved(entry) { stored in
+                try TOSQuantumSigner.sign(role: .primary, purpose: .selfPay, seed: Data(repeating: 0x11, count: 32),
+                    expectedPublicKey: stored.signingPublicKey, digest: stored.requestHash)
+            }
+            let page = try await f.outcomes().read(wallet: f.wallet())
+            XCTAssertEqual(page.provenShardTime, time)
+            XCTAssertEqual(page.authorizationExpired, expectedExpired); XCTAssertNil(page.receipt)
+            XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, entry.id)
+            XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+        }
+    }
+
+    func testLocalClockExpiryCannotReplaceProvenExpiryOrReleaseSlot() async throws {
+        let f = try Fixture()
+        _ = try await f.coordinator().authorizeAndEstimate(f.payment())
+        let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        f.clock += 121
+        let page = try await f.outcomes().read(wallet: f.wallet())
+        XCTAssertFalse(page.authorizationExpired); XCTAssertNil(page.receipt)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, entry.id)
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+    }
+
+    func testOutcomeReaderRejectsUnsignedInterruptedSigningAndDamagedAccountProof() async throws {
+        let f = try Fixture(), payment = try f.payment()
+        let entry = try f.outbox.reserve(payment: payment, now: f.clock)
+        _ = try f.outbox.beginSigning(entry)
+        do { _ = try await f.outcomes().read(wallet: f.wallet()); XCTFail("Unknown signer result reconciled without BOC") }
+        catch { guard case TOSQuantumPaymentOutcomeReader.Error.missingSignedPayment = error else { return XCTFail("Wrong error: \(error)") } }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signing)
+        let signed = try Fixture()
+        _ = try await signed.coordinator().authorizeAndEstimate(signed.payment())
+        do { _ = try await signed.outcomes(corruptProof: true).read(wallet: signed.wallet()); XCTFail("Damaged proof accepted") }
+        catch { }
+        XCTAssertEqual(signed.corruptedProofs, 1, "Refusal must actually reach the damaged account proof")
+        XCTAssertEqual(try signed.outbox.pending(identity: signed.identity)?.phase, .signed)
+        XCTAssertTrue(signed.sends.isEmpty)
+    }
+
+    func testOutcomeReaderRejectsConcurrentAliasesAndCancellationPreservesAuthorization() async throws {
+        let f = try Fixture()
+        _ = try await f.coordinator().authorizeAndEstimate(f.payment())
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        let entered = expectation(description: "Proof query entered"), resume = DispatchSemaphore(value: 0)
+        let lock = NSLock(); var first = true
+        let reader = f.outcomes(beforeProof: { _ in
+            let shouldWait = lock.withLock { let value = first; first = false; return value }
+            if shouldWait { entered.fulfill(); _ = resume.wait(timeout: .now() + 20) }
+        })
+        let otherID = UUID()
+        try TOSQuantumCreationRecord(id: otherID, profile: f.profile, identity: f.identity).save(baseDirectory: f.base)
+        let session = try TOSQuantumProofSession(walletID: otherID, locallyProvisionedAnchor: f.profile.anchor(), baseDirectory: f.base)
+        let request = try JSONSerialization.data(withJSONObject: ["mode":"live", "max_age_seconds":300, "config_params":[8,19,48]])
+        let material = try [(1,"masterchain-info.tl"), (2,"chain-0000.tl"), (4,"exec-config.tl")].map { kind, name in
+            TOSQuantumProofBridge.Material(kind: UInt32(kind), bytes: try Data(contentsOf: f.assets.appendingPathComponent("material/" + name)))
+        }
+        _ = try session.enroll(request: request, now: f.clock, material: material)
+        let work = Task { try await reader.read(wallet: f.wallet()) }
+        await fulfillment(of: [entered], timeout: 10)
+        let original = f.wallet()
+        let alias = Wallet(id: otherID.uuidString, identity: original.identity, metaData: original.metaData,
+            setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+        do { _ = try await f.outcomes().read(wallet: alias); XCTFail("Alias bypassed the birth-identity read permit") }
+        catch { guard case TOSQuantumAccountReader.Error.busy = error else { resume.signal(); return XCTFail("Wrong refusal: \(error)") } }
+        work.cancel(); resume.signal()
+        do { _ = try await work.value; XCTFail("Cancelled proof published a result") } catch { }
+        let restored = try await f.outcomes().read(wallet: f.wallet())
+        XCTAssertNil(restored.receipt)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, stored.id)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, stored.signedBOC)
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
     }
 
     func testExpiredQuoteNeverBroadcastsOrReleasesSignedAuthorization() async throws {

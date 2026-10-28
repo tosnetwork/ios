@@ -93,7 +93,8 @@ internal final class TOSQuantumHistoryReader {
     /// Hash-chain codec only. The production caller above obtains its head from
     /// provenTransactionHead, rather than an RPC transaction_id or caller input.
     static func walk(address: Address, logicalTime: UInt64, hash: Data, limit: Int,
-                     query: Query, stopped: () -> Bool = { false }) throws -> (transactions: [TOSQuantumTransaction], hasMore: Bool, nextTime: UInt64, nextHash: Data) {
+                     query: Query, stopped: () -> Bool = { false },
+                     until: (TOSQuantumTransaction) -> Bool = { _ in false }) throws -> (transactions: [TOSQuantumTransaction], hasMore: Bool, nextTime: UInt64, nextHash: Data) {
         guard (1...20).contains(limit), hash.count == 32,
               (logicalTime == 0) == hash.allSatisfy({ $0 == 0 }) else { throw TOSPQError.invalidInput }
         var nextTime = logicalTime, nextHash = hash, values = [TOSQuantumTransaction]()
@@ -107,6 +108,7 @@ internal final class TOSQuantumHistoryReader {
             }
             values.append(transaction)
             nextTime = transaction.previousLogicalTime; nextHash = transaction.previousHash
+            if until(transaction) { break }
         }
         guard !stopped() else { throw TOSPQError.invalidInput }
         return (values, nextTime != 0, nextTime, nextHash)

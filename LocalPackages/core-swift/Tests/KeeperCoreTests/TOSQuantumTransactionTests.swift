@@ -63,8 +63,8 @@ final class TOSQuantumTransactionTests: XCTestCase {
         try Builder().store(uint: 8, bits: 4).store(sender).store(varuint: 0, limit: 16)
             .store(bit: false).store(bit: true).store(ref: body()).endCell()
     }
-    private func internalMessage(amount: BigUInt, to: Address? = nil) throws -> Cell {
-        try Builder().store(uint: 4, bits: 4).store(sender).store(to ?? recipient)
+    private func internalMessage(amount: BigUInt, to: Address? = nil, bounce: Bool = false) throws -> Cell {
+        try Builder().store(uint: bounce ? 6 : 4, bits: 4).store(sender).store(to ?? recipient)
             .store(varuint: amount, limit: 16).store(bit: false).store(varuint: 0, limit: 16)
             .store(varuint: 0, limit: 16).store(uint: 123, bits: 64).store(uint: 1_793_000_000, bits: 32)
             .store(bit: false).store(bit: true).store(ref: body()).endCell()
@@ -145,6 +145,27 @@ final class TOSQuantumTransactionTests: XCTestCase {
                                            amount: 10, bodyHash: try body().hash()))
     }
 
+    func testStrictPaymentRequiresExactBounceSingleOutputAndNoSkippedActions() throws {
+        let incoming = try external()
+        let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: 10, bounce: false, comment: "Payment")
+        let success = try decode(transaction(incoming: incoming, outgoing: [internalMessage(amount: 10)]))
+        XCTAssertEqual(success.outbound[0].bounce, false)
+        XCTAssertTrue(try success.matchesPayment(externalHash: incoming.hash(), sender: sender, intent: intent))
+        let mismatchedBounce = try decode(transaction(incoming: incoming, outgoing: [internalMessage(amount: 10, bounce: true)]))
+        XCTAssertEqual(mismatchedBounce.outbound[0].bounce, true)
+        XCTAssertFalse(try mismatchedBounce.matchesPayment(externalHash: incoming.hash(), sender: sender, intent: intent))
+        let multiple = try decode(transaction(incoming: incoming,
+            outgoing: [internalMessage(amount: 10), internalMessage(amount: 11)]))
+        XCTAssertTrue(multiple.matchesOutgoingTransfer(externalHash: incoming.hash(), sender: sender,
+            recipient: recipient, amount: 10, bodyHash: try body().hash()))
+        XCTAssertFalse(try multiple.matchesPayment(externalHash: incoming.hash(), sender: sender, intent: intent))
+        let skipped = try decode(transaction(incoming: incoming, outgoing: [internalMessage(amount: 10)], skipped: 1))
+        XCTAssertTrue(skipped.successfulExecution)
+        XCTAssertFalse(try skipped.matchesPayment(externalHash: incoming.hash(), sender: sender, intent: intent))
+        let failed = try decode(transaction(incoming: incoming, outgoing: [internalMessage(amount: 10)], successful: false))
+        XCTAssertFalse(try failed.matchesPayment(externalHash: incoming.hash(), sender: sender, intent: intent))
+    }
+
     func testUntrustedHashAddressLogicalTimeAndMalformedLayoutsFailClosed() throws {
         let cell = try transaction()
         let encoded = try cell.toBoc().base64EncodedString()
@@ -158,6 +179,22 @@ final class TOSQuantumTransactionTests: XCTestCase {
         XCTAssertThrowsError(try decode(transaction(previous: (1, Data(repeating: 0, count: 32)))))
         XCTAssertThrowsError(try decode(transaction(outgoing: [internalMessage(amount: 1)], outputKey: 2)))
         XCTAssertThrowsError(try decode(transaction(trailing: true)))
+    }
+
+    func testHashChainStopsAfterExactMatchWithoutRequiringOlderRetainedTransactions() throws {
+        let older = try transaction(logicalTime: 900)
+        let incoming = try external()
+        let newest = try transaction(previous: (900, older.hash()), incoming: incoming,
+            outgoing: [internalMessage(amount: 10)])
+        var calls = 0
+        let page = try TOSQuantumHistoryReader.walk(address: sender, logicalTime: 1_000, hash: newest.hash(),
+            limit: 20, query: { _, lt, _ in
+                calls += 1
+                guard lt == 1_000 else { XCTFail("Matched payment needlessly required older retained history"); throw TOSPQError.invalidInput }
+                return try newest.toBoc().base64EncodedString()
+            }, until: { $0.inbound?.hash == incoming.hash() })
+        XCTAssertEqual(calls, 1); XCTAssertEqual(page.transactions.count, 1)
+        XCTAssertTrue(page.hasMore); XCTAssertEqual(page.nextTime, 900)
     }
 
     func testHashChainWalkIsBoundedAndRetainsUnsigned64BitLogicalTimes() throws {

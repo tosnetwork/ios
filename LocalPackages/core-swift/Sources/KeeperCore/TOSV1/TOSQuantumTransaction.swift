@@ -16,6 +16,7 @@ internal struct TOSQuantumTransaction {
         let amount: BigUInt?
         let otherCurrencies: Bool
         let bounced: Bool
+        let bounce: Bool?
     }
     struct ActionResult {
         let success: Bool
@@ -56,6 +57,15 @@ internal struct TOSQuantumTransaction {
             $0.kind == .internalMessage && $0.source == sender && $0.destination == recipient &&
             !$0.bounced && !$0.otherCurrencies && $0.amount == amount && $0.bodyHash == bodyHash
         }
+    }
+
+    /// Strict single-payment receipt predicate. Inclusion and a matching output
+    /// alone do not prove that this exact authorized operation executed fully.
+    func matchesPayment(externalHash: Data, sender: Address, intent: TOSQuantumPaymentIntent) throws -> Bool {
+        guard !otherFeeCurrencies, let action, action.skipped == 0, action.created == 1,
+              outbound.count == 1, outbound[0].bounce == intent.bounce else { return false }
+        return matchesOutgoingTransfer(externalHash: externalHash, sender: sender, recipient: intent.recipient,
+            amount: intent.amount, bodyHash: try intent.internalMessage().body.hash())
     }
 
     init(encoded: String, expectedHash: Data, expectedLogicalTime: UInt64, address: Address) throws {
@@ -122,7 +132,7 @@ internal struct TOSQuantumTransaction {
             amount = nil; other = false; bounced = false
         }
         return MessageValue(hash: try digest(wire.hash), bodyHash: try digest(wire.bodyHash), kind: kind,
-            source: source, destination: destination, amount: amount, otherCurrencies: other, bounced: bounced)
+            source: source, destination: destination, amount: amount, otherCurrencies: other, bounced: bounced, bounce: wire.bounce)
     }
     private static func address(_ text: String) throws -> Address {
         guard text.utf8.count <= 76 else { throw TOSPQError.invalidInput }
