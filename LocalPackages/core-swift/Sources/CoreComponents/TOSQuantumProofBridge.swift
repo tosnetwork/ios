@@ -16,7 +16,10 @@ public enum TOSQuantumProofBridge {
     /// This payload is an estimate, never a verified receipt or balance update.
     public final class LocalSimulation {
         public let encoded: Data
-        fileprivate init(_ encoded: Data, message: Data) throws {
+        private let anchorDigest: Data, requestDigest: Data, messageDigest: Data
+        private let verifiedNow: Int64
+        public var verifiedAt: Int64 { verifiedNow }
+        fileprivate init(_ encoded: Data, message: Data, anchor: Data, request: Data, now: Int64) throws {
             guard let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any],
                   object["interface"] as? String == "tos-self-pay-simulation/1",
                   object["scope"] as? String == "local_estimate",
@@ -25,6 +28,20 @@ public enum TOSQuantumProofBridge {
                   object["message_bytes_hash"] as? String == Data(SHA256.hash(data: message))
                     .map({ String(format: "%02x", $0) }).joined() else { throw TOSPQError.invalidInput }
             self.encoded = encoded
+            anchorDigest = Data(SHA256.hash(data: anchor))
+            requestDigest = Data(SHA256.hash(data: request))
+            messageDigest = Data(SHA256.hash(data: message))
+            verifiedNow = now
+        }
+        /// Binds a quote to the original trust root, acquisition request and exact
+        /// signed bytes. A local confirmation window is not an on-chain fee cap.
+        public func requireBinding(anchor: Data, request: Data, signedMessage: Data,
+                                   now: Int64, maximumAge: Int64) throws {
+            guard anchorDigest == Data(SHA256.hash(data: anchor)),
+                  requestDigest == Data(SHA256.hash(data: request)),
+                  messageDigest == Data(SHA256.hash(data: signedMessage)) else { throw TOSPQError.keyBinding }
+            guard (1...300).contains(maximumAge), now >= verifiedNow,
+                  now - verifiedNow < maximumAge else { throw TOSPQError.invalidInput }
         }
     }
     public enum SimulationError: Error, Equatable { case native(Int32) }
@@ -195,7 +212,7 @@ public enum TOSQuantumProofBridge {
         if let failure = context.failure { throw failure }
         guard status == 0 else { throw SimulationError.native(status) }
         guard used > 0, used <= output.count else { throw TOSPQError.invalidInput }
-        return try LocalSimulation(Data(output.prefix(used)), message: signedMessage)
+        return try LocalSimulation(Data(output.prefix(used)), message: signedMessage, anchor: anchor, request: request, now: now)
     }
 
     /// A capability produced only by native verification. Binding alone does not authorize signing.

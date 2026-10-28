@@ -23,6 +23,7 @@ public final class TOSQuantumOutbox {
         public fileprivate(set) var phase: Phase
         public fileprivate(set) var signature: Data?
         public fileprivate(set) var signedBOC: Data?
+        public fileprivate(set) var feeApproval: TOSQuantumPaymentQuote.Approval? = nil
     }
 
     private static let mutex = NSLock()
@@ -82,7 +83,8 @@ public final class TOSQuantumOutbox {
             let maximum = try signedMessageUpperBound(request.request, identity: identity, deploy: deploy, role: entry.role)
             guard maximum <= Self.maximumMessageBytes else { throw Error.capacity }
             largest.signedBOC = Data(count: maximum)
-            guard try encode(largest).count <= Self.maximumFileBytes else { throw Error.capacity }
+            // Reserve bounded space for the later exact-message fee confirmation.
+            guard try encode(largest).count <= Self.maximumFileBytes - 2048 else { throw Error.capacity }
             try write(entry)
             return entry
         }
@@ -92,9 +94,9 @@ public final class TOSQuantumOutbox {
         try locked { try read(identity) }
     }
 
-    /// Used after the dedicated confirmation flow has validated fees. Preparation
-    /// alone is not fee approval; this method only rechecks proof/deadline and
-    /// persists the exact visible intent together with its authorization payload.
+    /// Used after the user confirms the intent for local signing/estimation.
+    /// This is not fee approval or permission to broadcast. It rechecks freshness
+    /// and persists the visible intent before protected key access.
     public func reserve(payment: TOSQuantumPreparedPayment,
                         now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> Entry {
         try payment.requireFresh(now: now)
@@ -148,8 +150,23 @@ public final class TOSQuantumOutbox {
     public func beginSubmission(_ entry: Entry) throws -> Data {
         var result: Data?
         try update(entry, allowed: [.signed, .submitting, .unknown]) { current in
-            guard let boc = current.signedBOC else { throw Error.invalidRecord }
+            guard current.paymentIntent == nil, let boc = current.signedBOC else { throw Error.invalidTransition }
             current.phase = .submitting; result = boc
+        }
+        guard let result else { throw Error.invalidRecord }
+        return result
+    }
+
+    /// Payment broadcast requires a current native quote capability. Save both
+    /// the fee confirmation and attempt before exposing any bytes to transport.
+    internal func beginPaymentSubmission(_ entry: Entry, quote: TOSQuantumPaymentQuote, now: Int64) throws -> Data {
+        var result: Data?
+        try update(entry, allowed: [.signed, .submitting, .unknown]) { current in
+            try quote.requireFresh(entry: current, now: now)
+            guard let boc = current.signedBOC else { throw Error.invalidRecord }
+            current.feeApproval = quote.approval
+            current.phase = .submitting
+            result = boc
         }
         guard let result else { throw Error.invalidRecord }
         return result
@@ -249,7 +266,7 @@ public final class TOSQuantumOutbox {
         try entry.paymentIntent?.requireBound(request: request, role: entry.role)
         switch entry.phase {
         case .reserved, .signing:
-            guard entry.signature == nil, entry.signedBOC == nil else { throw Error.invalidRecord }
+            guard entry.signature == nil, entry.signedBOC == nil, entry.feeApproval == nil else { throw Error.invalidRecord }
         case .signed, .submitting, .unknown:
             guard let signature = entry.signature, signature.count == entry.role.signatureSize,
                   TOSQuantumSigner.verify(role: entry.role, purpose: .selfPay, publicKey: entry.signingPublicKey,
@@ -257,6 +274,11 @@ public final class TOSQuantumOutbox {
                   let boc = entry.signedBOC, boc.count <= Self.maximumMessageBytes,
                   try TOSRPCOrdinaryBOC.decode(boc.base64EncodedString()).hash() == external(entry, signature: signature).hash()
                   else { throw Error.invalidRecord }
+        }
+        if let approval = entry.feeApproval {
+            guard [.submitting, .unknown].contains(entry.phase), let boc = entry.signedBOC,
+                  let intent = entry.paymentIntent else { throw Error.invalidRecord }
+            try approval.requireBound(message: boc, intent: intent)
         }
         return entry
     }

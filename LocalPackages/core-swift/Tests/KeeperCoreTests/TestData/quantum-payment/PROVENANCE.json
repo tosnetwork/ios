@@ -1,0 +1,57 @@
+{
+  "source": "tosnetwork/tos test/pq-native/data/self-pay-simulation-live",
+  "source_revision": "33723cf9982b7fcdb48f3477a899a515fe423808",
+  "scope": "Public VM16 basechain capture with public fixture signer; native simulation only, not phone signing or broadcast. See source manifest.json and README.md for original capture.",
+  "files": [
+    {
+      "path": "anchor.json",
+      "bytes": 242,
+      "sha256": "96e6476e3ecc269e5ac8b00bc3b7fd133de4776716bf7795eccd2b46767cde1a"
+    },
+    {
+      "path": "request.json",
+      "bytes": 354,
+      "sha256": "41964aa91f7e6af7eb6e97f8cb3957a7a4c0b4d9356fea8f24bf437f579aaad5"
+    },
+    {
+      "path": "clock.txt",
+      "bytes": 11,
+      "sha256": "f9a68e04be081d43506bfca947e747600831740f20605b6705c8f8603a904c58"
+    },
+    {
+      "path": "message.boc",
+      "bytes": 2774,
+      "sha256": "853a3e8124bd6b65f7461fad8f386208bdb6da2828a157c5e63f3bf56b41876a"
+    },
+    {
+      "path": "material/masterchain-info.tl",
+      "bytes": 184,
+      "sha256": "5e47f9c7fff4afa81d7e2e064c88675508820f283da5dff4322209d5fe844a09"
+    },
+    {
+      "path": "material/chain-0000.tl",
+      "bytes": 10928,
+      "sha256": "5e4f4acb7abca457f1fd99de93aeb972f3019a69665d225b0169924a7058b024"
+    },
+    {
+      "path": "material/account.tl",
+      "bytes": 5452,
+      "sha256": "31d9860a18217e5c1bcf0e8cf2ee9332c603fd29019e3a728f5cf322bcc72286"
+    },
+    {
+      "path": "material/exec-config.tl",
+      "bytes": 7468,
+      "sha256": "0eeb25ba0021e6c4c132668c131bf6ce46a8c1320c25baa2c538b038c4047cb0"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 1276,
+      "sha256": "3b771a78d818d89c13edd66beca907f32e80a4b9d5f7de82a3a8439e88cfcdaf"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1635,
+      "sha256": "593071b043b6b67f78f3c64c7771cf81ecd78dafbf677afe2164335764754b20"
+    }
+  ]
+}

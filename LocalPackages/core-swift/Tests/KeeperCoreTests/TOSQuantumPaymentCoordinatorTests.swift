@@ -1,0 +1,194 @@
+import XCTest
+import BigInt
+import TonSwift
+import CoreComponents
+@testable import KeeperCore
+
+final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
+    private final class Fixture {
+        let base: URL, outbox: TOSQuantumOutbox, assets: URL, id = UUID()
+        let profile: TOSQuantumNetworkProfile, identity: TOSQuantumSelfPayIdentity
+        var clock: Int64
+        var signs = 0, sends = [Data]()
+        var onSign: (() -> Void)?, onBroadcast: (() throws -> Void)?
+        init() throws {
+            let resources = try XCTUnwrap(Bundle.module.url(forResource: "quantum-payment", withExtension: nil))
+            assets = resources
+            func data(_ name: String) throws -> Data { try Data(contentsOf: resources.appendingPathComponent(name)) }
+            clock = try XCTUnwrap(Int64(String(decoding: data("clock.txt"), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
+            let accounts = try XCTUnwrap(Bundle.module.url(forResource: "quantum-self-pay-live", withExtension: nil))
+            let registry = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: accounts.appendingPathComponent("public-self-pay-accounts.json"))) as? [String: Any])
+            let records = try XCTUnwrap(registry["accounts"] as? [String: [String: Any]])
+            identity = try TOSQuantumSelfPayIdentity(boc: XCTUnwrap(Data(base64Encoded: XCTUnwrap(records["active"]?["identity_boc"] as? String))))
+            let anchor = try XCTUnwrap(JSONSerialization.jsonObject(with: data("anchor.json")) as? [String: Any])
+            profile = try TOSQuantumNetworkProfile(globalID: 1, rootHash: XCTUnwrap(anchor["root_hash"] as? String),
+                fileHash: XCTUnwrap(anchor["file_hash"] as? String))
+            base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            outbox = try TOSQuantumOutbox(baseDirectory: base.appendingPathComponent("outbox"))
+            try TOSQuantumCreationRecord(id: id, profile: profile, identity: identity).save(baseDirectory: base)
+            let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: profile.anchor(), baseDirectory: base)
+            let request = try JSONSerialization.data(withJSONObject: ["mode": "live", "max_age_seconds": 300, "config_params": [8, 19, 48]])
+            let material = try [(1, "masterchain-info.tl"), (2, "chain-0000.tl"), (4, "exec-config.tl")].map { kind, name in
+                TOSQuantumProofBridge.Material(kind: UInt32(kind), bytes: try data("material/" + name))
+            }
+            _ = try session.enroll(request: request, now: clock, material: material)
+        }
+        deinit { try? FileManager.default.removeItem(at: base) }
+        func query(_ query: Data, capacity: Int) throws -> Data {
+            let name: String
+            switch query.count {
+            case 4: name = "masterchain-info.tl"
+            case 168: name = "chain-0000.tl"
+            case 120: name = "account.tl"
+            case 88, 104: name = "exec-config.tl"
+            default: throw TOSPQError.invalidInput
+            }
+            let bytes = try Data(contentsOf: assets.appendingPathComponent("material/" + name))
+            XCTAssertLessThanOrEqual(bytes.count, capacity)
+            return bytes
+        }
+        func payment(amount: BigUInt = 10_000_000_000, comment: String? = nil) throws -> TOSQuantumPreparedPayment {
+            let reader = TOSQuantumAccountReader(baseDirectory: base, transport: { self.query }, now: { self.clock })
+            let observation = try reader.observeEnrolled(id: id, identity: identity, profile: profile, configIndices: [8, 19, 48])
+            let recipient = try Address.parse("0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0")
+            let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: amount, bounce: false, comment: comment)
+            return try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: clock, ttl: 120)
+        }
+        func coordinator() -> TOSQuantumPaymentCoordinator {
+            TOSQuantumPaymentCoordinator(outbox: outbox, baseDirectory: base, transport: { _ in self.query }, signer: { entry, id, context in
+                XCTAssertEqual(id, self.id); XCTAssertEqual(context.network, self.identity.wallet.initialAuthority.namespace)
+                XCTAssertEqual(try self.outbox.pending(identity: self.identity)?.phase, .signing)
+                self.signs += 1; self.onSign?()
+                // Public test fixture seed only; real coordinator uses protected custody.
+                return try TOSQuantumSigner.sign(role: entry.role, purpose: .selfPay, seed: Data(repeating: 0x11, count: 32),
+                    expectedPublicKey: entry.signingPublicKey, digest: entry.requestHash)
+            }, broadcaster: { bytes, _ in
+                XCTAssertFalse(Thread.isMainThread)
+                let stored = try XCTUnwrap(self.outbox.pending(identity: self.identity))
+                XCTAssertEqual(stored.phase, .submitting); XCTAssertNotNil(stored.feeApproval)
+                XCTAssertEqual(bytes, stored.signedBOC)
+                self.sends.append(bytes); try self.onBroadcast?()
+            }, now: { self.clock })
+        }
+    }
+
+    func testNativeQuoteUsesFullBalanceDeductionAndPersistsBeforeBroadcastAndRetry() async throws {
+        let f = try Fixture(), coordinator = f.coordinator(), payment = try f.payment()
+        let quote = try await coordinator.authorizeAndEstimate(payment)
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+        XCTAssertEqual(quote.observedBalance, 1_000_000_000_000_000)
+        // This Swift message uses a relaxed source/zero creation fields and an
+        // inline empty body; the earlier host fixture used explicit source/time.
+        XCTAssertEqual(quote.estimatedFee, 1_809_796)
+        XCTAssertGreaterThan(quote.estimatedFee, quote.transactionFees,
+            "total_fees alone undercounts this actual native execution")
+        XCTAssertEqual(quote.expiresAt, UInt32(f.clock + 30))
+        XCTAssertEqual(quote.estimatedDebit, payment.intent.amount + quote.estimatedFee)
+        XCTAssertEqual(quote.estimatedBalance, quote.observedBalance - quote.estimatedDebit)
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(stored.phase, .signed); XCTAssertNil(stored.feeApproval)
+        XCTAssertThrowsError(try f.outbox.beginSubmission(stored), "Payment bypassed quote confirmation")
+        enum RelayFailure: Error { case responseLost }
+        f.onBroadcast = { throw RelayFailure.responseLost }
+        do { try await coordinator.submit(quote); XCTFail("Lost response was reported as success") }
+        catch { XCTAssertTrue(error is RelayFailure) }
+        let unknown = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(unknown.phase, .unknown)
+        XCTAssertEqual(unknown.feeApproval?.estimatedFee, String(quote.estimatedFee))
+        f.onBroadcast = nil
+        try await coordinator.submit(quote)
+        XCTAssertEqual(f.sends.count, 2); XCTAssertEqual(f.sends[0], f.sends[1]); XCTAssertEqual(f.signs, 1)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .unknown)
+        XCTAssertThrowsError(try f.outbox.cancelUnsigned(stored))
+    }
+
+    func testExpiredQuoteNeverBroadcastsOrReleasesSignedAuthorization() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        f.clock += 31
+        do { try await coordinator.submit(quote); XCTFail("Stale quote submitted") }
+        catch { XCTAssertTrue(error is TOSPQError) }
+        XCTAssertTrue(f.sends.isEmpty); XCTAssertEqual(f.signs, 1)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+        let before = try XCTUnwrap(f.outbox.pending(identity: f.identity)?.signedBOC)
+        let refreshed = try await coordinator.refresh(quote)
+        XCTAssertEqual(refreshed.operationID, quote.operationID)
+        XCTAssertEqual(refreshed.expiresAt, UInt32(f.clock + 30))
+        try await coordinator.submit(refreshed)
+        XCTAssertEqual(f.signs, 1); XCTAssertEqual(f.sends, [before])
+    }
+
+    func testSuccessfulVMWithSkippedSendCannotProduceFeeConfirmation() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let payment = try f.payment(amount: 1_000_000_000_000_000)
+        do { _ = try await coordinator.authorizeAndEstimate(payment); XCTFail("Skipped output quoted as payment") }
+        catch { guard case TOSQuantumPaymentQuote.Error.notExecutable = error else { return XCTFail("Wrong refusal: \(error)") } }
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+    }
+
+    func testUncertainStorageRefusesTransportAfterQuote() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment(comment: "付款🌸"))
+        let orphan = f.base.appendingPathComponent("outbox/interrupted.pending")
+        try Data([1]).write(to: orphan)
+        do { try await coordinator.submit(quote); XCTFail("Uncertain write allowed broadcast") }
+        catch { guard case TOSQuantumOutbox.Error.storage = error else { return XCTFail("Wrong refusal: \(error)") } }
+        XCTAssertTrue(f.sends.isEmpty)
+        try FileManager.default.removeItem(at: orphan)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+    }
+
+    func testConcurrentConfirmationCannotSignTwiceAndCancellationKeepsSignedBytes() async throws {
+        let f = try Fixture(), coordinator = f.coordinator(), payment = try f.payment()
+        let entered = expectation(description: "Signer entered"), resume = DispatchSemaphore(value: 0)
+        f.onSign = { entered.fulfill(); _ = resume.wait(timeout: .now() + 20) }
+        let first = Task { try await coordinator.authorizeAndEstimate(payment) }
+        await fulfillment(of: [entered], timeout: 10)
+        do { _ = try await coordinator.authorizeAndEstimate(payment); XCTFail("Second signer admitted") }
+        catch { guard case TOSQuantumAccountReader.Error.busy = error else { resume.signal(); return XCTFail("Wrong refusal: \(error)") } }
+        first.cancel(); resume.signal()
+        do { _ = try await first.value; XCTFail("Cancelled preview returned") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+        let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(entry.phase, .signed); XCTAssertNotNil(entry.signedBOC)
+        XCTAssertThrowsError(try f.outbox.cancelUnsigned(entry))
+    }
+
+    func testCancellationDuringBroadcastRetainsUnknownAndConfirmedBytes() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        let entered = expectation(description: "Broadcast entered"), resume = DispatchSemaphore(value: 0)
+        enum RelayFailure: Error { case stopped }
+        f.onBroadcast = { entered.fulfill(); _ = resume.wait(timeout: .now() + 20); throw RelayFailure.stopped }
+        let sending = Task { try await coordinator.submit(quote) }
+        await fulfillment(of: [entered], timeout: 10)
+        sending.cancel(); resume.signal()
+        do { try await sending.value; XCTFail("Cancelled broadcast returned") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(entry.phase, .unknown); XCTAssertNotNil(entry.feeApproval)
+        XCTAssertEqual(entry.signedBOC, f.sends.first); XCTAssertEqual(f.signs, 1)
+    }
+
+    func testOldQuoteCannotConfirmAReplacementOperation() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        let directory = f.base.appendingPathComponent("outbox")
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: nil).first { $0.pathExtension == "json" })
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        let replacement = UUID()
+        object["id"] = replacement.uuidString
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).write(to: file, options: [.completeFileProtection])
+        let current = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertEqual(current.id, replacement); XCTAssertEqual(current.phase, .signed)
+        XCTAssertNotEqual(current.id, quote.operationID)
+        do { try await coordinator.submit(quote); XCTFail("Old quote confirmed replacement operation") }
+        catch { guard case TOSQuantumPaymentQuote.Error.binding = error else { return XCTFail("Wrong refusal: \(error)") } }
+        XCTAssertTrue(f.sends.isEmpty); XCTAssertEqual(f.signs, 1)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, .signed)
+    }
+}

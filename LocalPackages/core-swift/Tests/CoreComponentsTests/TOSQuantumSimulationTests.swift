@@ -39,6 +39,16 @@ final class TOSQuantumSimulationTests: XCTestCase {
         _ = try session.enroll(request: request, now: now, material: material)
         let checkpoint = base.appendingPathComponent("quantum-proof-checkpoints/" + id.uuidString + "/checkpoint.json")
         let result = try session.simulate(request: request, now: now, signedMessage: message, transport: relay)
+        try result.requireBinding(anchor: anchor, request: request, signedMessage: message, now: now, maximumAge: 30)
+        for altered in 0..<3 {
+            XCTAssertThrowsError(try result.requireBinding(anchor: altered == 0 ? anchor + Data([0]) : anchor,
+                request: altered == 1 ? request + Data([0]) : request,
+                signedMessage: altered == 2 ? message + Data([0]) : message, now: now, maximumAge: 30)) {
+                guard case TOSPQError.keyBinding = $0 else { return XCTFail("Wrong binding refusal: \($0)") }
+            }
+        }
+        XCTAssertThrowsError(try result.requireBinding(anchor: anchor, request: request, signedMessage: message,
+            now: now + 30, maximumAge: 30))
         let value = try XCTUnwrap(JSONSerialization.jsonObject(with: result.encoded) as? [String: Any])
         XCTAssertEqual(value["scope"] as? String, "local_estimate")
         XCTAssertEqual(value["status"] as? String, "executed")

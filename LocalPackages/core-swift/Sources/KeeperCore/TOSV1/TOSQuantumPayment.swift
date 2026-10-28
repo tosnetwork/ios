@@ -20,11 +20,15 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
     }
 
     public func actions() throws -> Cell {
-        let message = try comment.map {
-            try MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, textPayload: $0)
-        } ?? MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce)
+        let message = try internalMessage()
         return try Builder().store(uint: 0x0ec3c86d, bits: 32).store(uint: 3, bits: 8)
             .store(ref: Builder().endCell()).store(ref: Builder().store(message)).endCell()
+    }
+
+    internal func internalMessage() throws -> MessageRelaxed {
+        try comment.map {
+            try MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, textPayload: $0)
+        } ?? MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, body: Builder().endCell())
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -75,6 +79,14 @@ public struct TOSQuantumPreparedPayment {
     public let expiresAt: UInt32
     private let observation: TOSQuantumAccountReader.Observation
     private let network: TOSQuantumSelfPayNetwork
+    internal var walletID: UUID { observation.id }
+
+    internal func simulationRequest() throws -> Data {
+        // Account and configuration are authenticated at the simulator's latest
+        // target. An intervening read may already have advanced the checkpoint.
+        try JSONSerialization.data(withJSONObject: ["mode": "live", "account": identity.address.toRaw(),
+            "max_age_seconds": TOSQuantumAccountReader.maximumAge], options: [.sortedKeys])
+    }
 
     internal init(observation: TOSQuantumAccountReader.Observation, intent: TOSQuantumPaymentIntent,
                   now: Int64, ttl: UInt32) throws {

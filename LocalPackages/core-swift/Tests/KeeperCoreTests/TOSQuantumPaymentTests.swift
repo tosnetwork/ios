@@ -7,6 +7,14 @@ import CoreComponents
 final class TOSQuantumPaymentTests: XCTestCase {
     private let recipient = Address(workchain: 0, hash: Data(repeating: 0x42, count: 32))
 
+    func testNoCommentHasCanonicalHashableEmptyBody() throws {
+        let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: 1, bounce: false)
+        let body = try intent.internalMessage().body
+        XCTAssertEqual(body.bits.length, 0); XCTAssertTrue(body.refs.isEmpty)
+        XCTAssertEqual(body.hash().map { String(format: "%02x", $0) }.joined(),
+            "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7")
+    }
+
     func testIntentRoundTripKeepsDecimalPrecisionAndRejectsNoncanonicalInputs() throws {
         let amount = try XCTUnwrap(BigUInt("18446744073709551617"))
         let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: amount, bounce: false, comment: "付款 🌸")
