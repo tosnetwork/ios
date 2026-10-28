@@ -1,6 +1,5 @@
 import XCTest
 import Darwin
-import Darwin.membership
 import BigInt
 import TonSwift
 import CoreComponents
@@ -1027,123 +1026,81 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         let f = try Fixture(), coordinator = f.coordinator()
         let quote = try await coordinator.authorizeAndEstimate(f.payment())
         let directory = f.base.appendingPathComponent("outbox")
-        var originalDirectory = stat()
-        guard lstat(directory.path, &originalDirectory) == 0,
-              originalDirectory.st_mode & S_IFMT == S_IFDIR,
-              originalDirectory.st_uid == geteuid(), originalDirectory.st_mode & 0o7777 == 0o700 else {
-            throw TOSPQError.invalidInput
-        }
-        let mode = NSNumber(value: originalDirectory.st_mode & 0o7777)
-        func aclFailure(_ operation: String, _ code: Int32) -> NSError {
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard descriptor >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+        defer { close(descriptor) }
+        var original = stat()
+        guard fstat(descriptor, &original) == 0, original.st_mode & S_IFMT == S_IFDIR,
+              original.st_uid == geteuid(), original.st_mode & 0o7777 == 0o700,
+              original.st_flags & UInt32(UF_IMMUTABLE) == 0 else { throw TOSPQError.invalidInput }
+        func systemFailure(_ operation: String, _ code: Int32) -> NSError {
             NSError(domain: NSPOSIXErrorDomain, code: Int(code),
                     userInfo: [NSLocalizedDescriptionKey: operation + "; errno=\(code)"])
         }
-        func hasExtendedACLOnOriginalDirectory() throws -> Bool {
-            guard let security = filesec_init() else { throw aclFailure("filesec_init", errno) }
+        func securityState() throws -> (flags: UInt32, acl: Data?) {
+            guard let security = filesec_init() else { throw systemFailure("filesec_init", errno) }
             defer { filesec_free(security) }
             var current = stat()
-            guard lstatx_np(directory.path, &current, security) == 0 else { throw aclFailure("lstatx_np", errno) }
-            guard current.st_dev == originalDirectory.st_dev, current.st_ino == originalDirectory.st_ino,
-                  current.st_mode & S_IFMT == S_IFDIR, current.st_uid == originalDirectory.st_uid,
+            guard lstatx_np(directory.path, &current, security) == 0 else { throw systemFailure("lstatx_np", errno) }
+            guard current.st_dev == original.st_dev, current.st_ino == original.st_ino,
+                  current.st_mode & S_IFMT == S_IFDIR, current.st_uid == original.st_uid,
                   current.st_mode & 0o7777 == 0o700 else { throw TOSPQError.keyBinding }
             var present: Int32 = 0
             guard filesec_query_property(security, FILESEC_ACL, &present) == 0 else {
-                throw aclFailure("filesec_query_property(FILESEC_ACL)", errno)
+                throw systemFailure("filesec_query_property(FILESEC_ACL)", errno)
             }
-            return present != 0
-        }
-        errno = 0
-        let originalACL = acl_get_file(directory.path, ACL_TYPE_EXTENDED)
-        let originalACLErrno = errno // Capture before XCTest/Foundation/another syscall.
-        defer { if let originalACL { acl_free(UnsafeMutableRawPointer(originalACL)) } }
-        let originalHadACL = try hasExtendedACLOnOriginalDirectory()
-        if originalACL == nil {
-            guard originalACLErrno == ENOENT, !originalHadACL else {
-                throw aclFailure("acl_get_file returned nil without verified absent ACL", originalACLErrno)
+            if present == 0 { return (current.st_flags, nil) }
+            var captured: acl_t?
+            guard filesec_get_property(security, FILESEC_ACL, &captured) == 0, let captured else {
+                throw systemFailure("filesec_get_property(FILESEC_ACL)", errno)
             }
-        } else {
-            guard originalHadACL else { throw TOSPQError.keyBinding }
+            defer { acl_free(UnsafeMutableRawPointer(captured)) }
+            let size = acl_size(captured)
+            guard size > 0, size <= 64 * 1024 else { throw TOSPQError.invalidInput }
+            var bytes = Data(count: size)
+            let copied = bytes.withUnsafeMutableBytes { acl_copy_ext($0.baseAddress, captured, size) }
+            guard copied == size else { throw systemFailure("acl_copy_ext", errno) }
+            return (current.st_flags, bytes)
         }
-        func restoreOriginalACLAndMode() throws {
-            // Recheck path identity before restoring any security state.
-            _ = try hasExtendedACLOnOriginalDirectory()
-            if let originalACL {
-                guard acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL) == 0 else {
-                    throw aclFailure("Restore original ACL", errno)
-                }
-            } else {
-                guard let security = filesec_init() else { throw aclFailure("Restore filesec_init", errno) }
-                defer { filesec_free(security) }
-                // sys/fcntl.h defines _FILESEC_REMOVE_ACL as ((void *)1).
-                // Restore absence, rather than replacing it with an empty ACL.
-                let removeACL = UnsafeRawPointer(bitPattern: 1)!
-                guard filesec_set_property(security, FILESEC_ACL, removeACL) == 0 else {
-                    throw aclFailure("Set FILESEC_REMOVE_ACL", errno)
-                }
-                guard chmodx_np(directory.path, security) == 0 else { throw aclFailure("Remove test ACL", errno) }
-            }
-            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
-            guard try hasExtendedACLOnOriginalDirectory() == originalHadACL else { throw TOSPQError.keyBinding }
-            if !originalHadACL {
-                errno = 0
-                let restored = acl_get_file(directory.path, ACL_TYPE_EXTENDED)
-                let restoredErrno = errno
-                defer { if let restored { acl_free(UnsafeMutableRawPointer(restored)) } }
-                guard restored == nil, restoredErrno == ENOENT else {
-                    throw aclFailure("Original ACL absence was not restored", restoredErrno)
-                }
-            }
+        let originalACL = try securityState().acl
+        let probe = directory.appendingPathComponent("immutable-create-probe-" + UUID().uuidString)
+        func restoreOriginalSecurity() throws {
+            guard fchflags(descriptor, original.st_flags) == 0 else { throw systemFailure("Restore original flags", errno) }
+            guard fchmod(descriptor, original.st_mode & 0o7777) == 0 else { throw systemFailure("Restore original mode", errno) }
+            let restored = try securityState()
+            guard restored.flags == original.st_flags, restored.acl == originalACL else { throw TOSPQError.keyBinding }
+            // An unexpectedly successful probe must not survive a failed test.
+            if unlink(probe.path) != 0, errno != ENOENT { throw systemFailure("Remove unexpected probe", errno) }
         }
-        defer { XCTAssertNoThrow(try restoreOriginalACLAndMode(), "Restore exact original ACL presence and mode") }
-        var deniedACL: acl_t?
-        if let originalACL { deniedACL = acl_dup(originalACL) } else { deniedACL = acl_init(0) }
-        guard deniedACL != nil else { throw aclFailure("Create independent test ACL", errno) }
-        defer { if let deniedACL { acl_free(UnsafeMutableRawPointer(deniedACL)) } }
-        let originalState = XCTAttachment(string: "acl_get_file nil=\(originalACL == nil), errno=\(originalACLErrno), FILESEC_ACL present=\(originalHadACL); original inode/owner/mode0700 revalidated")
-        originalState.name = "original-directory-acl-state"; originalState.lifetime = .keepAlways; add(originalState)
-        var deniedEntry: acl_entry_t?
-        guard acl_create_entry_np(&deniedACL, &deniedEntry, 0) == 0, let deniedEntry else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        defer { XCTAssertNoThrow(try restoreOriginalSecurity(), "Restore exact flags, inode, owner, mode and ACL state") }
+        let immutableFlags = original.st_flags | UInt32(UF_IMMUTABLE)
+        func makeImmutable() throws {
+            guard fchflags(descriptor, immutableFlags) == 0 else { throw systemFailure("Set owner UF_IMMUTABLE", errno) }
+            let installed = try securityState()
+            guard installed.flags == immutableFlags, installed.acl == originalACL else { throw TOSPQError.keyBinding }
         }
-        var uid = UUID().uuid
-        let uuidResult = mbr_uid_to_uuid(geteuid(), &uid)
-        guard uuidResult == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(uuidResult)) }
-        var permissions: acl_permset_t?
-        guard acl_set_tag_type(deniedEntry, ACL_EXTENDED_DENY) == 0,
-              acl_set_qualifier(deniedEntry, &uid) == 0,
-              acl_get_permset(deniedEntry, &permissions) == 0, let permissions,
-              acl_clear_perms(permissions) == 0, acl_add_perm(permissions, ACL_ADD_FILE) == 0,
-              acl_set_permset(deniedEntry, permissions) == 0, let deniedACL else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
-        }
+        // Prove the owner can both set and clear this flag before starting a
+        // broadcast. No mode or ACL changes manufacture the system error.
+        try makeImmutable(); try restoreOriginalSecurity()
         let entered = expectation(description: "Durable broadcast entered"), resume = DispatchSemaphore(value: 0)
         enum RelayFailure: Error { case responseLost }
         f.onBroadcast = { entered.fulfill(); _ = resume.wait(timeout: .now() + 20); throw RelayFailure.responseLost }
         let sending = Task { try await coordinator.submit(quote) }
         await fulfillment(of: [entered], timeout: 10)
         do {
-            guard acl_set_file(directory.path, ACL_TYPE_EXTENDED, deniedACL) == 0 else {
-                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno),
-                              userInfo: [NSLocalizedDescriptionKey: "Simulator refused ADD_FILE-only ACL"])
-            }
-            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
-            XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
-            // Prove a real kernel denial while strict private-mode checks and
-            // existing lock/list/read operations still succeed. No mocked error.
-            let probe = directory.appendingPathComponent("acl-create-probe-" + UUID().uuidString)
+            try makeImmutable()
             errno = 0
-            let descriptor = open(probe.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+            let probeFD = open(probe.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
             let failure = errno
-            if descriptor >= 0 { close(descriptor); unlink(probe.path) }
-            guard descriptor == -1, failure == EACCES else {
-                XCTFail("ADD_FILE ACL probe must produce actual EACCES, got fd=\(descriptor), errno=\(failure)")
+            if probeFD >= 0 { close(probeFD) }
+            guard probeFD == -1, failure == EPERM else {
+                XCTFail("UF_IMMUTABLE must produce actual EPERM, got fd=\(probeFD), errno=\(failure)")
                 throw TOSPQError.invalidInput
             }
             _ = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             let retained = try XCTUnwrap(f.outbox.pending(identity: f.identity))
-            XCTAssertEqual(retained.phase, .submitting)
-            XCTAssertEqual(retained.signedBOC, f.sends.first)
-            let diagnostic = XCTAttachment(string: "ADD_FILE-only current-uid ACL; root mode=0700; actual O_CREAT|O_EXCL errno=EACCES; existing lock/list/read succeeded")
+            XCTAssertEqual(retained.phase, .submitting); XCTAssertEqual(retained.signedBOC, f.sends.first)
+            let diagnostic = XCTAttachment(string: "owner=\(original.st_uid); originalFlags=\(original.st_flags); installedFlags=\(immutableFlags); mode0700/same inode/ACL unchanged; actual O_CREAT|O_EXCL errno=EPERM; existing lock/list/read succeeded")
             diagnostic.name = "real-cancelled-write-permission-failure"; diagnostic.lifetime = .keepAlways; add(diagnostic)
         } catch {
             sending.cancel(); resume.signal(); _ = try? await sending.value
@@ -1156,7 +1113,9 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             XCTAssertEqual(failure.domain, NSCocoaErrorDomain, "Cancellation masked the actual durable-write error")
             XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
         }
-        try restoreOriginalACLAndMode()
+        try restoreOriginalSecurity()
+        let restoredDiagnostic = XCTAttachment(string: "Exact original st_flags restored; same dev/inode/owner/mode0700 and extended ACL bytes/absence verified")
+        restoredDiagnostic.name = "write-failure-fixture-restored"; restoredDiagnostic.lifetime = .keepAlways; add(restoredDiagnostic)
         XCTAssertEqual(f.sends.count, 1); XCTAssertEqual(f.signs, 1)
         let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
         XCTAssertEqual(entry.phase, .submitting); XCTAssertNotNil(entry.feeApproval)

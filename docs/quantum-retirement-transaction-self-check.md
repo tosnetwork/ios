@@ -172,3 +172,31 @@ Current test SHA-256: `af8107d60baa75adf5b729ca356181020bb08df67aae9c20cb94b1fe2
 This repair is uncompiled/unrun; source predicate checks do not establish ACL
 runtime support. Exact historical failures remain preserved. No product source,
 permission gate or skip behavior changed.
+
+
+## Directory user-immutable fixture (source only)
+
+The exact 94f041f run compiled and completed 63 methods: 61 passed, one failed,
+one physical-device skip. The original absent ACL was authenticated by the
+fixture (getter nil, errno 2, ACL property absent). Setting the deny ACL returned
+success, but actual O_CREAT succeeded (fd 7, errno 0), so EACCES/Cocoa513 was not
+proven. Its two issue records belong to one method. The restored ACL absence/
+mode checks did not report failure. Evidence remains in
+`ios-r03-b-absent-acl-first-1793229036861756000/first-result.json`.
+
+The replacement changes only this test fixture. It holds a noFollow directory FD,
+saves its device/inode/owner/mode and exact original st_flags, and captures extended
+ACL external bytes or verified absence through lstatx/filesec. It preflights owner
+UF_IMMUTABLE set/readback/clear, then starts the real durable broadcast. While that
+broadcast is held it sets the flag again, requires real O_CREAT|O_EXCL EPERM with
+0700/identity/ACL unchanged, and checks list/read/existing lock still work. It
+then cancels/releases the broadcast and requires the actual Foundation write
+error Cocoa 513 rather than CancellationError. Finally it restores exact original
+flags/mode, rechecks identity/ACL bytes or absence, cleans any unexpected probe,
+and verifies the retained submitting entry/BOC. A defer repeats restoration on
+all error paths; restoration errors themselves fail the test.
+
+Unsupported flag setting or a successful/non-EPERM creation probe fails explicitly;
+there is no skip, fabricated syscall error, chmod0500 fallback or product change.
+Runtime support is unproven until the next exact-head run. Current test SHA-256:
+`27435ab74b07e97f6e9b859042d10e3147934ebbd48c754c6d50e654b686253a`.
