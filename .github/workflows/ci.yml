@@ -14,8 +14,9 @@ jobs:
   build-and-test:
     runs-on: macos-15
     # Building the embedded proof verifier from source takes about half an
-    # hour on hosted runners, before packages and UI tests run.
-    timeout-minutes: 90
+    # hour on hosted runners, before packages and UI tests run; the full job
+    # now takes about 90 minutes, so leave headroom for slower runners.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
