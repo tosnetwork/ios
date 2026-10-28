@@ -145,18 +145,12 @@ public struct TOSQuantumPreparedPayment {
               entry.phase == .signed, now > 0, now <= Int64(UInt32.max) else {
             throw TOSPQError.keyBinding
         }
-        let original = try TOSRPCOrdinaryBOC.decode(entry.requestBOC.base64EncodedString())
-        try intent.requireBound(request: original, role: entry.role)
-        let s = try original.beginParse()
-        try s.skip(32 + 32 + 256)
-        let _: Address = try s.loadType()
-        try s.skip(256 + 8 + 64 + 64)
-        let deadline = UInt32(try s.loadUint(bits: 32))
+        let deadline = try TOSQuantumStoredRequest(entry: entry).deadline
         let time = max(UInt32(now), max(try observation.network.masterchainTime(),
             try observation.proof.provenAccountTime(expectedAddress: entry.identity.address.toRaw())))
         guard deadline > time else { throw Error.expired }
         try self.init(observation: observation, intent: intent, now: now, ttl: deadline - time)
-        guard request.digest == entry.requestHash, original.hash() == request.digest,
+        guard request.digest == entry.requestHash,
               requiresDeployment == entry.deploy else { throw TOSPQError.keyBinding }
     }
 

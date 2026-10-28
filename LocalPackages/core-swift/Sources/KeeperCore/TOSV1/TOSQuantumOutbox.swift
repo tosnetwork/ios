@@ -253,17 +253,8 @@ public final class TOSQuantumOutbox {
         guard entry.version == 1, entry.identity == identity, entry.profile.globalID == identity.wallet.initialAuthority.globalID,
               !entry.requestBOC.isEmpty, entry.requestBOC.count <= Self.maximumMessageBytes,
               entry.requestHash.count == 32, entry.signingPublicKey.count == entry.role.publicKeySize else { throw Error.invalidRecord }
-        let request = try TOSRPCOrdinaryBOC.decode(entry.requestBOC.base64EncodedString())
-        guard request.hash() == entry.requestHash else { throw Error.invalidRecord }
-        let s = try request.beginParse()
-        guard try s.loadUint(bits: 32) == 0x51535031,
-              try s.loadInt(bits: 32) == Int64(entry.profile.globalID),
-              try s.loadBytes(32) == identity.wallet.initialAuthority.namespace else { throw Error.invalidRecord }
-        let address: Address = try s.loadType()
-        guard address == identity.address else { throw Error.invalidRecord }
-        try s.skip(256)
-        guard try s.loadUint(bits: 8) == UInt64(entry.role.rawValue) else { throw Error.invalidRecord }
-        try entry.paymentIntent?.requireBound(request: request, role: entry.role)
+        do { _ = try TOSQuantumStoredRequest(entry: entry) }
+        catch { throw Error.invalidRecord }
         switch entry.phase {
         case .reserved, .signing:
             guard entry.signature == nil, entry.signedBOC == nil, entry.feeApproval == nil else { throw Error.invalidRecord }

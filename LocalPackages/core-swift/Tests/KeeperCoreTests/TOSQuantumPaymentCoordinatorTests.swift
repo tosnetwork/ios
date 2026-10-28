@@ -77,6 +77,43 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 return { _, _, _ in XCTFail("Proven genesis head must not query transactions"); throw TOSPQError.invalidInput }
             }, now: { self.clock })
         }
+        func expiries(corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumAuthorizationExpiryReader {
+            TOSQuantumAuthorizationExpiryReader(outbox: outbox, baseDirectory: base, accounts: { flag in
+                TOSQuantumAccountReader(baseDirectory: self.base, transport: {
+                    return { query, capacity in
+                        beforeProof?(flag)
+                        guard !flag.stopped() else { throw TOSPQError.invalidInput }
+                        var bytes = try self.query(query, capacity: capacity)
+                        if corruptProof && query.count == 120 { bytes[bytes.count / 2] ^= 1; self.corruptedProofs += 1 }
+                        return bytes
+                    }
+                }, now: { self.clock })
+            }, now: { self.clock })
+        }
+        func expiryEntry(delta: Int64 = -1, phase: TOSQuantumOutbox.Phase = .reserved) throws -> TOSQuantumOutbox.Entry {
+            let payment = try payment()
+            let observation = try TOSQuantumAccountReader(baseDirectory: base, transport: { self.query }, now: { self.clock })
+                .observeEnrolled(id: id, identity: identity, profile: profile, configIndices: [8, 19, 48])
+            let shard = try observation.proof.provenAccountTime(expectedAddress: identity.address.toRaw())
+            let deadline = UInt32(Int64(shard) + delta)
+            let state = try TOSQuantumSelfPayState.parse(identity.wallet.initialData)
+            let policy = try TOSRPCOrdinaryBOC.decode(observation.network.provenConfigParam(48).base64EncodedString())
+            let request = try TOSQuantumSelfPayRequest(wallet: identity.address, state: state, role: .primary,
+                validUntil: deadline, action: .execute(payment.intent.actions()), provenTime: deadline - 1, primaryPolicy: policy)
+            let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: false)
+            if phase != .reserved {
+                let signing = try outbox.beginSigning(entry)
+                if phase != .signing {
+                    try outbox.finishSigning(signing, signature: TOSQuantumSigner.sign(role: .primary, purpose: .selfPay,
+                        seed: Data(repeating: 0x11, count: 32), expectedPublicKey: entry.signingPublicKey, digest: entry.requestHash))
+                    if phase == .submitting || phase == .unknown {
+                        _ = try outbox.beginSubmission(entry)
+                        if phase == .unknown { try outbox.markUnknown(entry) }
+                    }
+                }
+            }
+            return try XCTUnwrap(outbox.pending(identity: identity))
+        }
         func coordinator() -> TOSQuantumPaymentCoordinator {
             TOSQuantumPaymentCoordinator(outbox: outbox, baseDirectory: base, transport: { _ in self.query }, signer: { entry, id, context in
                 XCTAssertEqual(id, self.id); XCTAssertEqual(context.network, self.identity.wallet.initialAuthority.namespace)
@@ -93,6 +130,212 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 self.sends.append(bytes); try self.onBroadcast?()
             }, now: { let value = self.clock; self.onNowRead?(); return value })
         }
+    }
+
+    private func changed(_ entry: TOSQuantumOutbox.Entry, _ change: (inout [String: Any]) throws -> Void) throws -> TOSQuantumOutbox.Entry {
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(entry)) as? [String: Any])
+        try change(&value)
+        return try JSONDecoder().decode(TOSQuantumOutbox.Entry.self, from: JSONSerialization.data(withJSONObject: value))
+    }
+
+    func testFreshExpiryCapabilityUsesStrictShardDeadlineAcrossEveryCanonicalPhase() async throws {
+        for phase in [TOSQuantumOutbox.Phase.reserved, .signing, .signed, .submitting, .unknown] {
+            for delta: Int64 in [-1, 0, 1] {
+                let f = try Fixture(), entry = try f.expiryEntry(delta: delta, phase: phase)
+                let deadline = try TOSQuantumStoredRequest(entry: entry).deadline
+                if delta < 0 {
+                    let capability = try await f.expiries().read(wallet: f.wallet())
+                    XCTAssertEqual(capability.operationID, entry.id); XCTAssertEqual(capability.deadline, deadline)
+                    XCTAssertGreaterThan(capability.provenShardTime, deadline)
+                    try capability.requireBound(to: entry, now: f.clock)
+                } else {
+                    do { _ = try await f.expiries().read(wallet: f.wallet()); XCTFail("Nonexpired shard time minted expiry") } catch { }
+                }
+                XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, entry.id)
+                XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.phase, phase)
+                XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, entry.signedBOC)
+                XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+            }
+        }
+    }
+
+    func testExpiryCapabilityBindsMissingBOCAndRefusesLaterSignatureAndStaleProof() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+        XCTAssertNil(entry.signature); XCTAssertNil(entry.signedBOC)
+        let capability = try await f.expiries().read(wallet: f.wallet())
+        try capability.requireBound(to: entry, now: f.clock)
+        try f.outbox.finishSigning(entry, signature: TOSQuantumSigner.sign(role: .primary, purpose: .selfPay,
+            seed: Data(repeating: 0x11, count: 32), expectedPublicKey: entry.signingPublicKey, digest: entry.requestHash))
+        let signed = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        XCTAssertNotNil(signed.signedBOC)
+        XCTAssertThrowsError(try capability.requireBound(to: signed, now: f.clock))
+        let refreshed = try await f.expiries().read(wallet: f.wallet())
+        try refreshed.requireBound(to: signed, now: f.clock)
+        f.clock += 301
+        XCTAssertThrowsError(try refreshed.requireBound(to: signed, now: f.clock))
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, signed.signedBOC)
+    }
+
+    func testExpiryAndReceiptBindingCoversCompleteAuthorizationAndProfile() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signed)
+        let capability = try await f.expiries().read(wallet: f.wallet())
+        let binding = try TOSQuantumAuthorizationBinding(entry)
+        let mutations: [(String, (inout [String: Any]) throws -> Void)] = [
+            ("operation", { $0["id"] = UUID().uuidString }),
+            ("birth identity", { value in
+                let wallet = try TOSQuantumSelfPayWallet(authority: entry.identity.wallet.initialAuthority, walletID: 1)
+                value["identity"] = try TOSQuantumSelfPayIdentity(wallet: wallet).toBOC().base64EncodedString()
+            }),
+            ("phase", { $0["phase"] = "unknown" }),
+            ("deploy", { $0["deploy"] = !entry.deploy }),
+            ("missing BOC", { $0.removeValue(forKey: "signedBOC") }),
+            ("BOC bytes", { $0["signedBOC"] = Data(repeating: 0, count: 16).base64EncodedString() }),
+            ("signature", { $0["signature"] = Data(repeating: 0, count: entry.role.signatureSize).base64EncodedString() }),
+            ("profile", { value in
+                var profile = try XCTUnwrap(value["profile"] as? [String: Any])
+                profile["rootHash"] = String(repeating: "24", count: 32); value["profile"] = profile
+            })
+        ]
+        for (name, mutation) in mutations {
+            let altered = try changed(entry, mutation)
+            XCTAssertThrowsError(try binding.requireSame(altered), name)
+            XCTAssertThrowsError(try capability.requireBound(to: altered, now: f.clock), name)
+        }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, entry.signedBOC)
+    }
+
+    func testLocalClockAndDamagedOrPendingProofCannotMintExpiry() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(delta: 1, phase: .unknown)
+        f.clock += 121
+        do { _ = try await f.expiries().read(wallet: f.wallet()); XCTFail("Local clock replaced proven shard expiry") } catch { }
+        let damaged = try Fixture(); _ = try damaged.expiryEntry()
+        do { _ = try await damaged.expiries(corruptProof: true).read(wallet: damaged.wallet()); XCTFail("Damaged proof minted expiry") } catch { }
+        XCTAssertEqual(damaged.corruptedProofs, 1)
+        let pending = f.base.appendingPathComponent("outbox/" + UUID().uuidString + ".pending")
+        try JSONEncoder().encode(entry).write(to: pending)
+        do { _ = try await f.expiries().read(wallet: f.wallet()); XCTFail("Uncertain write was bypassed") } catch { }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pending.path))
+        XCTAssertTrue(f.sends.isEmpty)
+    }
+
+    func testStrictStoredRequestRejectsTrailingPayloadAndUnknownKindBeforeExpiry() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry()
+        let parsed = try TOSQuantumStoredRequest(entry: entry)
+        let root = try TOSRPCOrdinaryBOC.decode(entry.requestBOC.base64EncodedString())
+        func request(kind: UInt8 = 0, payload: Cell, extraBit: Bool = false, extraRef: Bool = false,
+                     deadline: UInt32? = nil, nonce: UInt64? = nil) throws -> Cell {
+            let b = try Builder().store(uint: 0x51535031, bits: 32).store(int: f.profile.globalID, bits: 32)
+                .store(data: f.identity.wallet.initialAuthority.namespace).store(f.identity.address).store(data: parsed.authorityHash)
+                .store(uint: entry.role.rawValue, bits: 8).store(uint: parsed.epoch, bits: 64).store(uint: nonce ?? parsed.nonce, bits: 64)
+                .store(uint: deadline ?? parsed.deadline, bits: 32).store(uint: kind, bits: 8).store(ref: payload)
+            if extraBit { try b.store(bit: false) }; if extraRef { try b.store(ref: Builder().endCell()) }
+            return try b.endCell()
+        }
+        let actions = try root.refs[0].beginParse().loadRef()
+        let payloadTail = try Builder().store(uint: 0x45584543, bits: 32).store(bit: false).store(ref: actions).endCell()
+        let payloadRefs = try Builder().store(uint: 0x45584543, bits: 32).store(ref: actions).store(ref: Builder().endCell()).endCell()
+        let invalid = try [request(payload: root.refs[0], extraBit: true), request(payload: root.refs[0], extraRef: true),
+                           request(kind: 2, payload: root.refs[0]), request(payload: payloadTail), request(payload: payloadRefs),
+                           request(payload: root.refs[0], deadline: 0), request(payload: root.refs[0], nonce: UInt64.max)]
+        for cell in invalid {
+            let altered = try changed(entry) { value in
+                value["requestBOC"] = try cell.toBoc().base64EncodedString(); value["requestHash"] = cell.hash().base64EncodedString()
+            }
+            XCTAssertThrowsError(try TOSQuantumStoredRequest(entry: altered))
+            XCTAssertThrowsError(try TOSQuantumAuthorizationBinding(altered))
+            let name = f.identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json"
+            let canonical = f.base.appendingPathComponent("outbox/" + name)
+            try JSONEncoder().encode(altered).write(to: canonical)
+            XCTAssertThrowsError(try f.outbox.pending(identity: f.identity), "Canonical reads must use the strict parser")
+            try JSONEncoder().encode(entry).write(to: canonical)
+        }
+    }
+
+    func testStrictStoredRequestPreservesAllRescueActionsAndRejectsOriginalEpochSaturation() throws {
+        for index in 0..<4 {
+            let f = try Fixture(), payment = try f.payment()
+            let state = try TOSQuantumSelfPayState.parse(f.identity.wallet.initialData)
+            let observation = try TOSQuantumAccountReader(baseDirectory: f.base, transport: { f.query }, now: { f.clock })
+                .observeEnrolled(id: f.id, identity: f.identity, profile: f.profile, configIndices: [8, 19, 48])
+            let policy = try TOSRPCOrdinaryBOC.decode(observation.network.provenConfigParam(48).base64EncodedString())
+            let time = try observation.proof.provenAccountTime(expectedAddress: f.identity.address.toRaw())
+            let actions: [TOSQuantumSelfPayAction] = [.execute(try payment.intent.actions()), .configureRequired,
+                                                    .lockPrimary, .migrate(state.authority)]
+            let original = try TOSQuantumSelfPayRequest(wallet: f.identity.address, state: state, role: .rescue,
+                validUntil: time - 1, action: actions[index], provenTime: time - 2, primaryPolicy: policy)
+            let entry = try f.outbox.reserve(identity: f.identity, profile: f.profile, request: original, deploy: false)
+            let parsed = try TOSQuantumStoredRequest(entry: entry)
+            XCTAssertEqual(parsed.kind, [UInt8(0), 1, 3, 4][index])
+            if parsed.kind != 0 {
+                let saturated = try Builder().store(uint: 0x51535031, bits: 32).store(int: f.profile.globalID, bits: 32)
+                    .store(data: state.authority.namespace).store(f.identity.address).store(data: parsed.authorityHash)
+                    .store(uint: entry.role.rawValue, bits: 8).store(uint: UInt64.max, bits: 64).store(uint: parsed.nonce, bits: 64)
+                    .store(uint: parsed.deadline, bits: 32).store(uint: parsed.kind, bits: 8).store(ref: original.request.refs[0]).endCell()
+                let altered = try changed(entry) { value in
+                    value["requestBOC"] = try saturated.toBoc().base64EncodedString(); value["requestHash"] = saturated.hash().base64EncodedString()
+                }
+                XCTAssertThrowsError(try TOSQuantumStoredRequest(entry: altered))
+            }
+        }
+    }
+
+    func testExpiryRereadsPhaseAndSharesIdentityPermitWithReceiptReader() async throws {
+        let changedFixture = try Fixture(), reserved = try changedFixture.expiryEntry()
+        var phaseChanged = false
+        do {
+            _ = try await changedFixture.expiries(beforeProof: { _ in
+                if !phaseChanged { phaseChanged = true; _ = try? changedFixture.outbox.beginSigning(reserved) }
+            }).read(wallet: changedFixture.wallet())
+            XCTFail("A phase change while authenticating was accepted")
+        } catch { }
+        XCTAssertTrue(phaseChanged)
+        XCTAssertEqual(try changedFixture.outbox.pending(identity: changedFixture.identity)?.phase, .signing)
+        let f = try Fixture(); let entry = try f.expiryEntry(phase: .signed)
+        let entered = expectation(description: "Expiry proof query entered"), resume = DispatchSemaphore(value: 0)
+        var first = true
+        let task = Task {
+            try await f.expiries(beforeProof: { _ in
+                if first { first = false; entered.fulfill(); resume.wait() }
+            }).read(wallet: f.wallet())
+        }
+        await fulfillment(of: [entered], timeout: 10)
+        do { _ = try await f.outcomes().read(wallet: f.wallet()); XCTFail("Receipt and expiry workers overlapped one identity") }
+        catch { guard case TOSQuantumAccountReader.Error.busy = error else { resume.signal(); return XCTFail("Wrong refusal: \(error)") } }
+        task.cancel(); resume.signal()
+        do { _ = try await task.value; XCTFail("Cancelled expiry yielded a capability") } catch { }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, entry.signedBOC)
+        XCTAssertTrue(f.sends.isEmpty)
+    }
+
+    func testAuthorizationBindingIsStableAcrossIdentityBOCReencodingAndRejectsChangedOriginalBytes() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signed)
+        let binding = try TOSQuantumAuthorizationBinding(entry)
+        let capability = try await f.expiries().read(wallet: f.wallet())
+        let identityAlternate = try entry.identity.cell.toBoc(crc32: false)
+        XCTAssertEqual(try TOSQuantumSelfPayIdentity(boc: identityAlternate), entry.identity)
+        for _ in 0..<32 {
+            let redecoded = try changed(entry) { $0["identity"] = identityAlternate.base64EncodedString() }
+            try binding.requireSame(redecoded)
+            try capability.requireBound(to: redecoded, now: f.clock)
+            let disk = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+            try binding.requireSame(disk)
+        }
+        let request = try TOSRPCOrdinaryBOC.decode(entry.requestBOC.base64EncodedString())
+        let requestAlternate = try request.toBoc(crc32: false)
+        XCTAssertNotEqual(requestAlternate, entry.requestBOC)
+        XCTAssertEqual(try TOSRPCOrdinaryBOC.decode(requestAlternate.base64EncodedString()).hash(), entry.requestHash)
+        let otherRequestBytes = try changed(entry) { $0["requestBOC"] = requestAlternate.base64EncodedString() }
+        XCTAssertThrowsError(try binding.requireSame(otherRequestBytes))
+        XCTAssertThrowsError(try capability.requireBound(to: otherRequestBytes, now: f.clock))
+        let originalMessage = try XCTUnwrap(entry.signedBOC)
+        let external = try TOSRPCOrdinaryBOC.decode(originalMessage.base64EncodedString())
+        let externalAlternate = try external.toBoc(crc32: false)
+        XCTAssertNotEqual(externalAlternate, originalMessage)
+        XCTAssertEqual(try TOSRPCOrdinaryBOC.decode(externalAlternate.base64EncodedString()).hash(), external.hash())
+        let otherMessageBytes = try changed(entry) { $0["signedBOC"] = externalAlternate.base64EncodedString() }
+        XCTAssertThrowsError(try binding.requireSame(otherMessageBytes))
+        XCTAssertThrowsError(try capability.requireBound(to: otherMessageBytes, now: f.clock))
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, entry.signedBOC)
     }
 
     func testRestartRecoveryReestimatesOnlyTheOriginalSignedAuthorization() async throws {
