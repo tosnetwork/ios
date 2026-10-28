@@ -682,6 +682,49 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         }
     }
 
+    func testCancellationAfterDurableCompletionBeforeCallbackRecoversCompletedAndCannotTouchNewSlot() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .unknown, withPaymentIntent: true)
+        let entered = expectation(description: "Completed record and both directories are durable before callback")
+        let resume = DispatchSemaphore(value: 0)
+        var hit = false
+        let stopped = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: { point in
+            if point == .completedWorkspaceDirectorySync, !hit {
+                hit = true; entered.fulfill()
+                guard resume.wait(timeout: .now() + 20) == .success else { throw RetirementCrash.injected }
+            }
+        })
+        let service = try TOSQuantumRetirementCoordinator(outbox: stopped, baseDirectory: f.base,
+            expiry: f.expiries(store: stopped), outcomes: f.outcomes(store: stopped), now: { f.clock })
+        let review = try await service.review(wallet: f.wallet(), operationID: entry.id)
+        let completing = Task { try await service.complete(review) }
+        await fulfillment(of: [entered], timeout: 10)
+        completing.cancel(); resume.signal()
+        do { _ = try await completing.value; XCTFail("Cancelled completion callback returned success") }
+        catch { XCTAssertTrue(error is CancellationError, "The transaction must finish, then observe cancellation") }
+        XCTAssertTrue(hit)
+        let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        let restarted = try TOSQuantumRetirementCoordinator(outbox: reopened, baseDirectory: f.base,
+            expiry: f.expiries(store: reopened), outcomes: f.outcomes(store: reopened), now: { f.clock })
+        let state = try await restarted.inspect(wallet: f.wallet())
+        switch state {
+        case .none: break // Completed workspace already cleaned; consult bounded local history.
+        case .completed(let summary): XCTAssertEqual(summary.authorization.operationID, entry.id)
+        case .authorization: XCTFail("Cancelled callback resurrected the old canonical")
+        }
+        let history = try await restarted.localHistory(wallet: f.wallet())
+        XCTAssertEqual(history.count, 1); XCTAssertEqual(history.first?.publication, .releaseCompleted)
+        XCTAssertEqual(history.first?.authorization.operationID, entry.id)
+        XCTAssertEqual(history.first?.authorization.messageBytesHash,
+                       TOSQuantumRetirementCodec.hash(try XCTUnwrap(entry.signedBOC)))
+        XCTAssertNil(try reopened.pending(identity: f.identity))
+        let next = try f.expiryEntry(phase: .signed, withPaymentIntent: true)
+        let newBytes = try Data(contentsOf: canonicalFile(f))
+        do { _ = try await restarted.complete(review); XCTFail("Cancelled old review touched the next payment") } catch { }
+        XCTAssertEqual(try Data(contentsOf: canonicalFile(f)), newBytes)
+        XCTAssertEqual(try reopened.pending(identity: f.identity)?.id, next.id)
+        XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+    }
+
     func testSentAndIncludedMismatchLocalSummaryBranchesAreDataNotCapabilities() async throws {
         let f = try Fixture(), entry = try f.expiryEntry(phase: .signed, withPaymentIntent: true)
         let source = try retirementSource(f, store: f.outbox, operationID: entry.id)

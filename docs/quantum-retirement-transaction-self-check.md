@@ -100,7 +100,10 @@ only gates UI and cannot release a slot. UNKNOWN retry stays disabled.
 An opt-in continuation of the existing protected-App candidate test is written
 for pre-deadline refusal, fresh expiry/end confirmation, ended-page relaunch and
 history, followed by an explicitly entered second payment with a new passcode
-confirmation, new operation/BOC and sender receipt. It has not run. The narrow
-cancel-between-durable-completion-and-UI-callback window still needs a designated
-runtime control; normal relaunch coverage alone does not prove that window. The
+confirmation, new operation/BOC and sender receipt. It has not run. A designated core test now stops at completedWorkspaceDirectorySync, cancels the
+public complete Task, then releases the transaction. It expects cancellation only
+after durable completion, restarts inspection/history, and refuses the old review
+against a new signed slot with exact-byte preservation. This test is also unrun.
+The UI reload gate, this core cancellation control and actual device execution
+are separate evidence; ordinary relaunch does not alone prove the narrow window. The
 committed production Send gate is unchanged and closed.
