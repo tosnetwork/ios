@@ -14,6 +14,7 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
     private var tokenHeader: UIViewController?
     var scrollView: UIScrollView { table }
     var didPullToRefresh: (() -> Void)?
+    var didRequestPendingPayment: (() -> Void)?
     private let service = TOSQuantumHistoryService()
     private let dateFormatter: DateFormatter = {
         let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .short; return value
@@ -54,7 +55,10 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
             load(index: pageIndex + 1, continuation: nextCursor)
         }
         let buttons = UIStackView(arrangedSubviews: [newest, previous, older]); buttons.distribution = .fillEqually
-        let items: [UIView] = embedded ? [status, buttons] : [title, name, status, buttons]
+        let savedPayment = UIButton(type: .system)
+        configure(savedPayment, title: "Saved payment", id: "payment") { [weak self] in self?.didRequestPendingPayment?() }
+        savedPayment.isHidden = didRequestPendingPayment == nil
+        let items: [UIView] = embedded ? [status, savedPayment, buttons] : [title, name, status, savedPayment, buttons]
         items.forEach(heading.addArrangedSubview); heading.axis = .vertical; heading.spacing = 8
         heading.translatesAutoresizingMaskIntoConstraints = false
         table.translatesAutoresizingMaskIntoConstraints = false; table.dataSource = self; table.delegate = self

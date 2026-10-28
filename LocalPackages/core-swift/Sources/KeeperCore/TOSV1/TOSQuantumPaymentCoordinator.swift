@@ -77,6 +77,57 @@ public final class TOSQuantumPaymentCoordinator {
         return result
     }
 
+    private func context(_ wallet: Wallet) throws -> (UUID, TOSQuantumSelfPayIdentity) {
+        guard case .Quantum(let identity) = wallet.identity.kind, let id = UUID(uuidString: wallet.id),
+              wallet.identity.networkGlobalId == identity.wallet.initialAuthority.globalID else { throw Error.binding }
+        return (id, identity)
+    }
+    private func pending(id: UUID, identity: TOSQuantumSelfPayIdentity) throws -> TOSQuantumOutbox.Entry? {
+        let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: baseDirectory)
+        guard record.id == id, record.identity == identity else { throw Error.binding }
+        let entry = try outbox.pending(identity: identity)
+        guard entry == nil || entry?.profile == record.profile else { throw Error.binding }
+        return entry
+    }
+
+    /// Background journal inspection for the App. An I/O error is not an empty slot.
+    public func pending(wallet: Wallet) async throws -> TOSQuantumOutbox.Entry? {
+        let (id, identity) = try context(wallet)
+        return try await perform(id: id) { [self] _ in try pending(id: id, identity: identity) }
+    }
+    /// Only a reservation that never reached signing can be discarded by the user.
+    public func cancelUnsigned(wallet: Wallet, operationID: UUID) async throws {
+        let (id, identity) = try context(wallet)
+        try await perform(id: id) { [self] job in
+            guard let entry = try pending(id: id, identity: identity), entry.id == operationID else { throw Error.binding }
+            try job.check(); try outbox.cancelUnsigned(entry)
+        }
+    }
+    /// Explicit recovery estimate of the stored signature/BOC after restart.
+    /// Fresh state must reproduce the original request, including its deadline.
+    public func recoverAndEstimate(wallet: Wallet) async throws -> TOSQuantumPaymentQuote {
+        let (id, identity) = try context(wallet)
+        return try await perform(id: id) { [self] job in
+            guard let entry = try pending(id: id, identity: identity), entry.phase == .signed, let bytes = entry.signedBOC else { throw Error.missingEntry }
+            let relay = try transport({ job.isCancelled() })
+            let accounts = TOSQuantumAccountReader(baseDirectory: baseDirectory, transport: {
+                return { query, capacity in
+                    try job.check(); let data = try relay(query, capacity); try job.check(); return data
+                }
+            }, now: now)
+            let observation = try accounts.observeEnrolled(id: id, identity: identity, profile: entry.profile, configIndices: [8, 19, 48])
+            let payment = try TOSQuantumPreparedPayment(recovering: entry, observation: observation, now: now())
+            let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: entry.profile.anchor(), baseDirectory: baseDirectory)
+            let simulation = try session.simulate(request: payment.simulationRequest(), now: now(), signedMessage: bytes) { query, capacity in
+                try job.check(); let data = try relay(query, capacity); try job.check(); return data
+            }
+            let quote = try TOSQuantumPaymentQuote(payment: payment, entry: entry, simulation: simulation, now: now())
+            guard let current = try pending(id: id, identity: identity) else { throw Error.missingEntry }
+            try quote.requireSameEntry(current)
+            return quote
+        }
+    }
+
     /// Call only after the user confirms the visible intent for local signing.
     /// Nothing broadcasts here. Any uncertainty after signing keeps the slot.
     public func authorizeAndEstimate(_ payment: TOSQuantumPreparedPayment) async throws -> TOSQuantumPaymentQuote {

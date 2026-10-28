@@ -95,6 +95,63 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         }
     }
 
+    func testRestartRecoveryReestimatesOnlyTheOriginalSignedAuthorization() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let original = try await coordinator.authorizeAndEstimate(f.payment(comment: "Recover exact message"))
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        f.clock += 31
+        let restarted = f.coordinator()
+        let quote = try await restarted.recoverAndEstimate(wallet: f.wallet())
+        XCTAssertEqual(quote.operationID, original.operationID)
+        XCTAssertEqual(quote.intent, original.intent)
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.requestBOC, stored.requestBOC)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, stored.signedBOC)
+        try await restarted.submit(quote)
+        XCTAssertEqual(f.sends, [try XCTUnwrap(stored.signedBOC)])
+        XCTAssertEqual(f.signs, 1)
+    }
+
+    func testRestartRecoveryRefusesExpiredOriginalRequestAndKeepsItsSlot() async throws {
+        let f = try Fixture()
+        _ = try await f.coordinator().authorizeAndEstimate(f.payment())
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        f.clock += 121
+        do { _ = try await f.coordinator().recoverAndEstimate(wallet: f.wallet()); XCTFail("Expired request was replaced during recovery") }
+        catch { guard case TOSQuantumPreparedPayment.Error.expired = error else { return XCTFail("Wrong refusal: \(error)") } }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, stored.id)
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, stored.signedBOC)
+        XCTAssertEqual(f.signs, 1); XCTAssertTrue(f.sends.isEmpty)
+    }
+
+    func testRestartEstimateDoesNotReplayAnUnknownSubmission() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let quote = try await coordinator.authorizeAndEstimate(f.payment())
+        try await coordinator.submit(quote)
+        let stored = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        do { _ = try await coordinator.recoverAndEstimate(wallet: f.wallet()); XCTFail("Unknown submission was treated as an unbroadcast signature") }
+        catch { guard case TOSQuantumPaymentCoordinator.Error.missingEntry = error else { return XCTFail("Wrong refusal: \(error)") } }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, stored.signedBOC)
+        XCTAssertEqual(f.signs, 1); XCTAssertEqual(f.sends.count, 1)
+    }
+
+    func testAppJournalActionsOnlyDiscardUnsignedMatchingOperation() async throws {
+        let f = try Fixture(), coordinator = f.coordinator()
+        let emptyBefore = try await coordinator.pending(wallet: f.wallet())
+        XCTAssertNil(emptyBefore)
+        let reserved = try f.outbox.reserve(payment: f.payment(), now: f.clock)
+        let loaded = try await coordinator.pending(wallet: f.wallet())
+        XCTAssertEqual(loaded?.id, reserved.id)
+        do { try await coordinator.cancelUnsigned(wallet: f.wallet(), operationID: UUID()); XCTFail("Another operation cancelled") } catch { }
+        try await coordinator.cancelUnsigned(wallet: f.wallet(), operationID: reserved.id)
+        let emptyAfter = try await coordinator.pending(wallet: f.wallet())
+        XCTAssertNil(emptyAfter)
+        _ = try await coordinator.authorizeAndEstimate(f.payment())
+        let signed = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+        do { try await coordinator.cancelUnsigned(wallet: f.wallet(), operationID: signed.id); XCTFail("Signed authorization cancelled") } catch { }
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, signed.signedBOC)
+    }
+
     func testNativeQuoteUsesFullBalanceDeductionAndPersistsBeforeBroadcastAndRetry() async throws {
         let f = try Fixture(), coordinator = f.coordinator(), payment = try f.payment()
         let quote = try await coordinator.authorizeAndEstimate(payment)

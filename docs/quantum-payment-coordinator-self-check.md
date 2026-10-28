@@ -2,8 +2,9 @@
 
 This increment connects prepared Quantum intents, the protected production
 signer, the durable outbox and the native local simulation capability. The App
-Send route remains disabled until its confirmation and authenticated receipt
-flow are implemented and accepted. Passing these tests is not phone payment.
+Send gate remains disabled pending complete recovery and product acceptance.
+The App route is described in `quantum-app-payment-self-check.md`; passing the
+coordinator tests alone is not phone payment.
 
 ## Authorization, fee basis and call order
 

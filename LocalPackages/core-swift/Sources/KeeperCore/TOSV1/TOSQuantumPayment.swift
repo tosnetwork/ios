@@ -19,6 +19,25 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         self.comment = comment?.isEmpty == true ? nil : comment
     }
 
+    /// Exact TOS decimal input, without locale, exponent or floating-point conversion.
+    public static func parseAmount(_ decimal: String) throws -> BigUInt {
+        guard (1...47).contains(decimal.utf8.count) else { throw TOSPQError.invalidInput }
+        let parts = decimal.split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...2).contains(parts.count), let whole = parts.first, !whole.isEmpty,
+              whole.utf8.allSatisfy({ (48...57).contains($0) }),
+              whole == "0" || whole.first != "0" else { throw TOSPQError.invalidInput }
+        let fraction = parts.count == 2 ? String(parts[1]) : ""
+        guard (parts.count == 1 || !fraction.isEmpty), fraction.utf8.count <= 9,
+              fraction.utf8.allSatisfy({ (48...57).contains($0) }),
+              let integer = BigUInt(String(whole)),
+              let fractional = BigUInt(fraction + String(repeating: "0", count: 9 - fraction.utf8.count)) else {
+            throw TOSPQError.invalidInput
+        }
+        let value = integer * 1_000_000_000 + fractional
+        guard value > 0, value.bitWidth <= 120 else { throw TOSPQError.invalidInput }
+        return value
+    }
+
     public func actions() throws -> Cell {
         let message = try internalMessage()
         return try Builder().store(uint: 0x0ec3c86d, bits: 32).store(uint: 3, bits: 8)
@@ -115,6 +134,30 @@ public struct TOSQuantumPreparedPayment {
         self.observation = observation; self.network = network
         self.intent = intent; identity = observation.identity; profile = observation.profile
         observedBalance = observation.snapshot.balance; expiresAt = deadline
+    }
+
+    /// Rebuild only the same request from current authenticated state. A consumed,
+    /// expired or reconfigured authorization cannot become a replacement request.
+    internal init(recovering entry: TOSQuantumOutbox.Entry,
+                  observation: TOSQuantumAccountReader.Observation, now: Int64) throws {
+        guard entry.identity == observation.identity, entry.profile == observation.profile,
+              let intent = entry.paymentIntent, entry.signedBOC != nil,
+              entry.phase == .signed, now > 0, now <= Int64(UInt32.max) else {
+            throw TOSPQError.keyBinding
+        }
+        let original = try TOSRPCOrdinaryBOC.decode(entry.requestBOC.base64EncodedString())
+        try intent.requireBound(request: original, role: entry.role)
+        let s = try original.beginParse()
+        try s.skip(32 + 32 + 256)
+        let _: Address = try s.loadType()
+        try s.skip(256 + 8 + 64 + 64)
+        let deadline = UInt32(try s.loadUint(bits: 32))
+        let time = max(UInt32(now), max(try observation.network.masterchainTime(),
+            try observation.proof.provenAccountTime(expectedAddress: entry.identity.address.toRaw())))
+        guard deadline > time else { throw Error.expired }
+        try self.init(observation: observation, intent: intent, now: now, ttl: deadline - time)
+        guard request.digest == entry.requestHash, original.hash() == request.digest,
+              requiresDeployment == entry.deploy else { throw TOSPQError.keyBinding }
     }
 
     public func requireFresh(now: Int64) throws {

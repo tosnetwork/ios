@@ -216,6 +216,145 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     /// Uses a locally generated anchor supplied to Make, never an RPC-discovered trust root.
+    func testQuantumAppSignsDeploysAndVerifiesPaymentOnIsolatedChain() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard environment["TOS_QUANTUM_APP_PAYMENT_CANDIDATE"] == "1",
+              fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires an isolated chain and unpublished local availability candidate; protected custody must remain unchanged")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(request: request,
+                description: "isolated App payment fixture")) as? [String: String])
+        }
+        func paymentControl(_ action: String) throws -> [String: Any] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_payment/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(request: request,
+                description: "isolated public payment journal")) as? [String: Any])
+        }
+        func enabled(_ element: XCUIElement, timeout: TimeInterval = 60) -> Bool {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)
+            let result = XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+            if !result {
+                let diagnostic = XCTAttachment(string: app.debugDescription); diagnostic.lifetime = .keepAlways; add(diagnostic)
+                retainScreenshot(named: "Quantum payment action did not become available")
+            }
+            return result
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            for _ in 0..<6 { if button.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(button.waitForExistence(timeout: 10)); XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func openSavedPayment() {
+            let coin = app.collectionViews["wallet.balance.list"].cells.containing(.staticText, identifier: "TOS").firstMatch
+            XCTAssertTrue(coin.waitForExistence(timeout: 15)); coin.tap()
+            let saved = app.buttons["quantum.history.payment"]
+            XCTAssertTrue(saved.waitForExistence(timeout: 15)); saved.tap()
+            XCTAssertTrue(app.textFields["quantum.payment.recipient"].waitForExistence(timeout: 10))
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields {
+            let field = app.textFields[name]; XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); endpoint.tap()
+        endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        // Creates fresh App entropy and protected role records. No fixture mnemonic
+        // or host signature is imported into this wallet.
+        createNativeWalletToHome()
+        let original = try control("snapshot")
+        let funding = try control("fund")
+        XCTAssertEqual(funding["address"], original["address"])
+        print("PUBLIC_APP_PAYMENT_SENDER=" + (try XCTUnwrap(original["address"])))
+        print("PUBLIC_APP_PAYMENT_ID=" + (try XCTUnwrap(original["id"])))
+        openSavedPayment()
+        let recipient = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0"
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(enabled(recipientField))
+        recipientField.tap(); recipientField.typeText(recipient)
+        let amount = app.textFields["quantum.payment.amount"]
+        amount.tap(); amount.typeText("1.000000001")
+        let comment = app.textViews["quantum.payment.comment"]
+        comment.tap(); comment.typeText("App protected payment")
+        tapPayment("review")
+        let sign = app.buttons["quantum.payment.sign"]
+        XCTAssertTrue(enabled(sign), "The isolated local availability candidate must enable the actual product action")
+        let details = app.staticTexts["quantum.payment.details"]
+        XCTAssertTrue(details.label.contains(recipient))
+        XCTAssertTrue(details.label.contains("1.000000001 TOS"))
+        XCTAssertTrue(details.label.contains("Wallet deployment: Required"))
+        retainScreenshot(named: "Quantum actual App unsigned review")
+        tapPayment("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        let send = app.buttons["quantum.payment.send"]
+        XCTAssertTrue(enabled(send), "Protected Keychain signing and native estimation must complete without a replacement signer")
+        XCTAssertTrue(details.label.contains("Estimated fee:"))
+        XCTAssertTrue(details.label.contains("Estimated total debit:"))
+        retainScreenshot(named: "Quantum actual App signed fee confirmation")
+        let beforeSubmit = try paymentControl("pending")
+        XCTAssertEqual(beforeSubmit["phase"] as? String, "signed")
+        let originalBOC = try XCTUnwrap(beforeSubmit["signed_boc_sha256"] as? String)
+        let originalOperation = try XCTUnwrap(beforeSubmit["operation_id"] as? String)
+        _ = try paymentControl("accept-delay-error")
+        tapPayment("send")
+        var returned = false
+        let deadline = Date().addingTimeInterval(30)
+        repeat {
+            let relay = try paymentControl("status")
+            if (relay["events"] as? [[String: Any]])?.contains(where: { $0["upstream_returned"] as? Bool == true }) == true { returned = true; break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+        XCTAssertTrue(returned, "The proxy must actually forward the exact App message before backgrounding")
+        let submitted = try paymentControl("pending")
+        XCTAssertEqual(submitted["operation_id"] as? String, originalOperation)
+        XCTAssertEqual(submitted["signed_boc_sha256"] as? String, originalBOC)
+        XCTAssertEqual(submitted["phase"] as? String, "submitting")
+        XCTAssertEqual(submitted["fee_confirmed"] as? Bool, true)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        let verify = app.buttons["quantum.payment.verify"]
+        XCTAssertTrue(enabled(verify))
+        for _ in 0..<6 {
+            tapPayment("verify")
+            _ = enabled(verify)
+            if app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent") { break }
+        }
+        XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+        XCTAssertTrue(details.label.contains(recipient)); XCTAssertTrue(details.label.contains("1.000000001 TOS"))
+        XCTAssertTrue(details.label.contains("Transaction:"))
+        let receipt = XCTAttachment(string: details.label); receipt.name = "public-app-sender-receipt"; receipt.lifetime = .keepAlways; add(receipt)
+        retainScreenshot(named: "Quantum actual App authenticated sender result")
+        app.terminate(); app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"; app.launch()
+        assertNativeWalletHome(); openSavedPayment()
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+        XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+        XCTAssertFalse(app.buttons["quantum.payment.estimate"].exists, "Unknown submission must not be silently re-estimated as an unbroadcast signature")
+        tapPayment("verify")
+        _ = enabled(app.buttons["quantum.payment.verify"])
+        XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+        XCTAssertEqual(try control("snapshot"), original)
+        let retained = try paymentControl("pending")
+        XCTAssertEqual(retained["operation_id"] as? String, originalOperation)
+        XCTAssertEqual(retained["signed_boc_sha256"] as? String, originalBOC)
+        XCTAssertEqual(retained["fee_confirmed"] as? Bool, true)
+        _ = try paymentControl("normal")
+        retainScreenshot(named: "Quantum actual App payment retained after relaunch")
+    }
+
     func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {
         let environment = ProcessInfo.processInfo.environment
         let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"),
