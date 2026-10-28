@@ -107,3 +107,29 @@ against a new signed slot with exact-byte preservation. This test is also unrun.
 The UI reload gate, this core cancellation control and actual device execution
 are separate evidence; ordinary relaunch does not alone prove the narrow window. The
 committed production Send gate is unchanged and closed.
+
+
+## First exact run and fixture repair pending validation
+
+The exact 3e3c03e source first compiled and ran 63 selected methods: 60 passed,
+2 failed, 1 physical-device Data Protection skip. Five assertion failures belong
+to those two methods, not five failed tests. New B fault-matrix, signed/UNKNOWN,
+public Coordinator, readdir EIO and durable-completion cancellation methods
+passed. Actual receipt live tests and App/device B flow were not selected/run.
+Raw logs/xcresult summary are indexed in validation's
+`ios-r03-b-first-1793221994326654000/first-result.json`.
+
+Both failing old tests chmod the root to 0500; the new strict 0700 enumeration
+check now refuses before creating a pending file, and also refuses ordinary
+pending reads. Production checks/error preservation stay unchanged. The first
+fixture now checks both refusals, restores its original mode, and verifies the
+signed canonical bytes and phase. The cancellation fixture preserves its original
+ACL/mode, prepends only current-uid ADD_FILE denial, and requires actual kernel
+O_CREAT|O_EXCL EACCES while mode remains 0700 and existing lock/list/read work.
+Only then does it cancel/resume the broadcast and require real Foundation write
+failure (Cocoa 513), restore ACL/mode and check the retained submitting BOC.
+
+This test-only repair is uncompiled/unrun. SDK declarations alone do not establish
+Simulator ACL support. Unsupported ACL installation or a non-EACCES probe is a
+real failure to report; it is not skipped, mocked, or converted into a product
+permission change. Controls and final restored regression have not yet run.

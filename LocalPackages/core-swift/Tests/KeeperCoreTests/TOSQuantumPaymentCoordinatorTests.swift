@@ -1026,15 +1026,64 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         let f = try Fixture(), coordinator = f.coordinator()
         let quote = try await coordinator.authorizeAndEstimate(f.payment())
         let directory = f.base.appendingPathComponent("outbox")
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        let mode = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)
+        let originalACL = try XCTUnwrap(acl_get_file(directory.path, ACL_TYPE_EXTENDED),
+                                       "Cannot capture original directory ACL; record platform support failure")
+        defer {
+            XCTAssertEqual(acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL), 0, "Restore original ACL")
+            XCTAssertNoThrow(try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path), "Restore original mode")
+            acl_free(originalACL)
+        }
+        var deniedACL: acl_t? = try XCTUnwrap(acl_dup(originalACL))
+        defer { if let deniedACL { acl_free(deniedACL) } }
+        var deniedEntry: acl_entry_t?
+        guard acl_create_entry_np(&deniedACL, &deniedEntry, 0) == 0, let deniedEntry else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        var uid = UUID().uuid
+        let uuidResult = mbr_uid_to_uuid(geteuid(), &uid)
+        guard uuidResult == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(uuidResult)) }
+        var permissions: acl_permset_t?
+        guard acl_set_tag_type(deniedEntry, ACL_EXTENDED_DENY) == 0,
+              acl_set_qualifier(deniedEntry, &uid) == 0,
+              acl_get_permset(deniedEntry, &permissions) == 0, let permissions,
+              acl_clear_perms(permissions) == 0, acl_add_perm(permissions, ACL_ADD_FILE) == 0,
+              acl_set_permset(deniedEntry, permissions) == 0, let deniedACL else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
         let entered = expectation(description: "Durable broadcast entered"), resume = DispatchSemaphore(value: 0)
         enum RelayFailure: Error { case responseLost }
         f.onBroadcast = { entered.fulfill(); _ = resume.wait(timeout: .now() + 20); throw RelayFailure.responseLost }
         let sending = Task { try await coordinator.submit(quote) }
         await fulfillment(of: [entered], timeout: 10)
-        // Existing .lock can still be opened and the directory enumerated, but
-        // Data.write cannot create the next private .pending file.
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        do {
+            guard acl_set_file(directory.path, ACL_TYPE_EXTENDED, deniedACL) == 0 else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno),
+                              userInfo: [NSLocalizedDescriptionKey: "Simulator refused ADD_FILE-only ACL"])
+            }
+            let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+            XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+            // Prove a real kernel denial while strict private-mode checks and
+            // existing lock/list/read operations still succeed. No mocked error.
+            let probe = directory.appendingPathComponent("acl-create-probe-" + UUID().uuidString)
+            errno = 0
+            let descriptor = open(probe.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+            let failure = errno
+            if descriptor >= 0 { close(descriptor); unlink(probe.path) }
+            guard descriptor == -1, failure == EACCES else {
+                XCTFail("ADD_FILE ACL probe must produce actual EACCES, got fd=\(descriptor), errno=\(failure)")
+                throw TOSPQError.invalidInput
+            }
+            _ = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            let retained = try XCTUnwrap(f.outbox.pending(identity: f.identity))
+            XCTAssertEqual(retained.phase, .submitting)
+            XCTAssertEqual(retained.signedBOC, f.sends.first)
+            let diagnostic = XCTAttachment(string: "ADD_FILE-only current-uid ACL; root mode=0700; actual O_CREAT|O_EXCL errno=EACCES; existing lock/list/read succeeded")
+            diagnostic.name = "real-cancelled-write-permission-failure"; diagnostic.lifetime = .keepAlways; add(diagnostic)
+        } catch {
+            sending.cancel(); resume.signal(); _ = try? await sending.value
+            throw error
+        }
         sending.cancel(); resume.signal()
         do { try await sending.value; XCTFail("Uncertain storage returned success") }
         catch {
@@ -1042,6 +1091,8 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             XCTAssertEqual(failure.domain, NSCocoaErrorDomain, "Cancellation masked the actual durable-write error")
             XCTAssertEqual(failure.code, NSFileWriteNoPermissionError)
         }
+        XCTAssertEqual(acl_set_file(directory.path, ACL_TYPE_EXTENDED, originalACL), 0)
+        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
         XCTAssertEqual(f.sends.count, 1); XCTAssertEqual(f.signs, 1)
         let entry = try XCTUnwrap(f.outbox.pending(identity: f.identity))
         XCTAssertEqual(entry.phase, .submitting); XCTAssertNotNil(entry.feeApproval)

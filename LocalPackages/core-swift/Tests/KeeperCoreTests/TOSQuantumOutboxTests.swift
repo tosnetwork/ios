@@ -203,10 +203,18 @@ final class TOSQuantumOutboxTests: XCTestCase {
         let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: false)
         try outbox.beginSigning(entry)
         try outbox.finishSigning(entry, signature: signature)
+        let canonical = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: nil).first { $0.pathExtension == "json" })
+        let original = try Data(contentsOf: canonical)
+        let mode = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+        defer { try? FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path) }
         XCTAssertThrowsError(try outbox.beginSubmission(entry))
+        XCTAssertThrowsError(try outbox.pending(identity: identity), "A nonprivate directory must also refuse journal reads")
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
         XCTAssertEqual(try outbox.pending(identity: identity)?.phase, .signed)
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
     }
 
     func testSignerRunsOnlyAfterDurableReservationAndCannotRunTwice() throws {
