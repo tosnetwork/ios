@@ -1,5 +1,6 @@
 import XCTest
 import Darwin
+import Darwin.membership
 import BigInt
 import TonSwift
 import CoreComponents

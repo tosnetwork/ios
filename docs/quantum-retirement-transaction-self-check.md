@@ -133,3 +133,10 @@ This test-only repair is uncompiled/unrun. SDK declarations alone do not establi
 Simulator ACL support. Unsupported ACL installation or a non-EACCES probe is a
 real failure to report; it is not skipped, mocked, or converted into a product
 permission change. Controls and final restored regression have not yet run.
+
+
+The ACL fixture explicitly imports `Darwin.membership` for the SDK's explicit
+membership module and its `mbr_uid_to_uuid` declaration. No ACL logic or product
+source changed in this import repair. The test file SHA-256 is
+`8864060866818ce0efdeca7b44a7b48ca6882604cfde0c1ef4c79455b4277a1f`. This repair remains uncompiled/unrun pending review and the next
+exclusive iOS build lease.
