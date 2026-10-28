@@ -63,8 +63,8 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 metaData: WalletMetaData(label: "Public fixture", tintColor: .defaultColor, icon: .icon(.wallet)),
                 setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
         }
-        func outcomes(corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumPaymentOutcomeReader {
-            TOSQuantumPaymentOutcomeReader(outbox: outbox, baseDirectory: base, accounts: { flag in
+        func outcomes(store: TOSQuantumOutbox? = nil, corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumPaymentOutcomeReader {
+            TOSQuantumPaymentOutcomeReader(outbox: store ?? outbox, baseDirectory: base, accounts: { flag in
                 TOSQuantumAccountReader(baseDirectory: self.base, transport: {
                     return { query, capacity in
                         beforeProof?(flag)
@@ -91,7 +91,7 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 }, now: { self.clock })
             }, now: { self.clock })
         }
-        func expiryEntry(delta: Int64 = -1, phase: TOSQuantumOutbox.Phase = .reserved) throws -> TOSQuantumOutbox.Entry {
+        func expiryEntry(delta: Int64 = -1, phase: TOSQuantumOutbox.Phase = .reserved, withPaymentIntent: Bool = false) throws -> TOSQuantumOutbox.Entry {
             let payment = try payment()
             let observation = try TOSQuantumAccountReader(baseDirectory: base, transport: { self.query }, now: { self.clock })
                 .observeEnrolled(id: id, identity: identity, profile: profile, configIndices: [8, 19, 48])
@@ -101,15 +101,26 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             let policy = try TOSRPCOrdinaryBOC.decode(observation.network.provenConfigParam(48).base64EncodedString())
             let request = try TOSQuantumSelfPayRequest(wallet: identity.address, state: state, role: .primary,
                 validUntil: deadline, action: .execute(payment.intent.actions()), provenTime: deadline - 1, primaryPolicy: policy)
-            let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: false)
+            let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: false,
+                                           paymentIntent: withPaymentIntent ? payment.intent : nil)
             if phase != .reserved {
                 let signing = try outbox.beginSigning(entry)
                 if phase != .signing {
                     try outbox.finishSigning(signing, signature: TOSQuantumSigner.sign(role: .primary, purpose: .selfPay,
                         seed: Data(repeating: 0x11, count: 32), expectedPublicKey: entry.signingPublicKey, digest: entry.requestHash))
                     if phase == .submitting || phase == .unknown {
-                        _ = try outbox.beginSubmission(entry)
-                        if phase == .unknown { try outbox.markUnknown(entry) }
+                        if withPaymentIntent {
+                            // Captured-state fixture, not a product broadcast bypass:
+                            // expiry is already past, so no valid fee quote can exist.
+                            let signed = try XCTUnwrap(outbox.pending(identity: identity))
+                            var value = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(signed)) as? [String: Any])
+                            value["phase"] = phase.rawValue
+                            let name = identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json"
+                            try JSONSerialization.data(withJSONObject: value).write(to: base.appendingPathComponent("outbox/" + name))
+                        } else {
+                            _ = try outbox.beginSubmission(entry)
+                            if phase == .unknown { try outbox.markUnknown(entry) }
+                        }
                     }
                 }
             }
@@ -349,6 +360,35 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         fixture.base.appendingPathComponent("outbox/" + fixture.identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json")
     }
     private enum RetirementCrash: Swift.Error { case injected }
+
+    func testDirectoryReadErrorAfterPartialReadIsNotEOFAndNeverReachesSigner() throws {
+        let f = try Fixture(), entry = try f.expiryEntry()
+        let canonical = canonicalFile(f), original = try Data(contentsOf: canonical)
+        let pending = f.base.appendingPathComponent("outbox/" + UUID().uuidString + ".pending")
+        let uncertain = Data("unknown unfinished authorization".utf8)
+        try uncertain.write(to: pending); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pending.path)
+        var injected = false, partialCount = 0, signerCalls = 0
+        let failing = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), directoryReadFailure: { folder, count in
+            if folder.lastPathComponent == "outbox", count >= 1, !injected {
+                injected = true; partialCount = count; return EIO
+            }
+            return nil
+        })
+        do {
+            try failing.signReserved(entry) { _ in signerCalls += 1; return Data() }
+            XCTFail("A partial readdir error authorized signing")
+        } catch {
+            let failure = error as NSError
+            XCTAssertEqual(failure.domain, NSPOSIXErrorDomain)
+            XCTAssertEqual(failure.code, Int(EIO), "Must reach the readdir(nil, errno) rejection, not a pre-call throw")
+        }
+        XCTAssertTrue(injected); XCTAssertGreaterThanOrEqual(partialCount, 1)
+        XCTAssertEqual(signerCalls, 0)
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        XCTAssertEqual(try Data(contentsOf: pending), uncertain)
+        let diagnostic = XCTAttachment(string: "readdir returned nil with injected errno=EIO after \(partialCount) real names; canonical/pending bytes unchanged; signer calls=0")
+        diagnostic.name = "retirement-readdir-error-path"; diagnostic.lifetime = .keepAlways; add(diagnostic)
+    }
 
     func testRetirementEveryPublicationDeletionAndCleanupWindowRestartsSafely() async throws {
         let excluded: Set<TOSQuantumOutbox.RetirementFaultPoint> = [.stageRepairBeforeFreshCheck, .stageDiagnosticSync,
@@ -602,6 +642,65 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         try Data("partial".utf8).write(to: random); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: random.path)
         XCTAssertThrowsError(try f.outbox.pruneRetirementHistory(maximum: 1))
         XCTAssertTrue(FileManager.default.fileExists(atPath: activeRecord.path)); XCTAssertTrue(FileManager.default.fileExists(atPath: random.path))
+    }
+
+    func testPublicRetirementCoordinatorPreservesSignedAndUnknownPaymentBOCAcrossSnapshotRestart() async throws {
+        for phase in [TOSQuantumOutbox.Phase.signed, .unknown] {
+            let f = try Fixture(), entry = try f.expiryEntry(phase: phase, withPaymentIntent: true)
+            let boc = try XCTUnwrap(entry.signedBOC), signature = try XCTUnwrap(entry.signature)
+            let crashing = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+                if $0 == .canonicalUnlink { throw RetirementCrash.injected }
+            })
+            let first = try TOSQuantumRetirementCoordinator(outbox: crashing, baseDirectory: f.base,
+                expiry: f.expiries(store: crashing), outcomes: f.outcomes(store: crashing), now: { f.clock })
+            do { _ = try await first.review(wallet: f.wallet(), operationID: UUID()); XCTFail("Different operation reviewed") } catch { }
+            let review = try await first.review(wallet: f.wallet(), operationID: entry.id)
+            XCTAssertEqual(review.entry.paymentIntent, entry.paymentIntent)
+            XCTAssertEqual(review.entry.signature, signature); XCTAssertEqual(review.entry.signedBOC, boc)
+            XCTAssertEqual(review.outcome, .expiredUnverified)
+            do { _ = try await first.complete(review); XCTFail("Canonical unlink interruption absent") } catch { }
+            XCTAssertFalse(FileManager.default.fileExists(atPath: canonicalFile(f).path))
+            let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+            let service = try TOSQuantumRetirementCoordinator(outbox: reopened, baseDirectory: f.base,
+                expiry: f.expiries(store: reopened), outcomes: f.outcomes(store: reopened), now: { f.clock })
+            let state = try await service.inspect(wallet: f.wallet())
+            guard case .authorization(let retained, let recovering) = state else { return XCTFail("Full snapshot source lost") }
+            XCTAssertTrue(recovering); XCTAssertEqual(retained.phase, phase); XCTAssertEqual(retained.signedBOC, boc)
+            let recoveredReview = try await service.review(wallet: f.wallet(), operationID: entry.id)
+            let completed = try await service.complete(recoveredReview)
+            XCTAssertEqual(completed.outcome, .expiredUnverified); XCTAssertNil(completed.transaction)
+            XCTAssertEqual(completed.authorization.messageBytesHash, TOSQuantumRetirementCodec.hash(boc))
+            XCTAssertEqual(completed.authorization.intent?.amount, String(try XCTUnwrap(entry.paymentIntent).amount))
+            let history = try await service.localHistory(wallet: f.wallet())
+            XCTAssertEqual(history.count, 1); XCTAssertEqual(history.first?.publication, .releaseCompleted)
+            XCTAssertNil(try reopened.pending(identity: f.identity))
+            do { _ = try await service.review(wallet: f.wallet(), operationID: entry.id); XCTFail("Completed local history recreated a review capability") } catch { }
+            let next = try f.expiryEntry(phase: .signed, withPaymentIntent: true)
+            do { _ = try await service.complete(recoveredReview); XCTFail("Old review touched a new operation") } catch { }
+            XCTAssertEqual(try reopened.pending(identity: f.identity)?.id, next.id)
+            XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+        }
+    }
+
+    func testSentAndIncludedMismatchLocalSummaryBranchesAreDataNotCapabilities() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signed, withPaymentIntent: true)
+        let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+        let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+        let completed = try f.outbox.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock })
+        for outcome in [TOSQuantumRetirementSummary.Outcome.senderSent, .includedWithoutExactTransfer] {
+            var value = try XCTUnwrap(JSONSerialization.jsonObject(with: TOSQuantumRetirementCodec.encode(completed)) as? [String: Any])
+            value["outcome"] = outcome.rawValue
+            value["transaction"] = ["hash":Data(repeating: 0x42, count: 32).base64EncodedString(), "logicalTime":"1", "timestamp":expiry.provenShardTime]
+            let local = try JSONDecoder().decode(TOSQuantumRetirementSummary.self, from: JSONSerialization.data(withJSONObject: value))
+            try local.validate(); XCTAssertEqual(local.completed().outcome, outcome)
+            XCTAssertEqual(local.authorization.messageBytesHash, TOSQuantumRetirementCodec.hash(try XCTUnwrap(entry.signedBOC)))
+            // This only exercises public local-record format. It deliberately
+            // does not construct Receipt/Expiry/Review or authorize an unlink.
+            let next = try f.expiryEntry()
+            XCTAssertThrowsError(try f.outbox.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }))
+            XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, next.id)
+            try f.outbox.cancelUnsigned(next)
+        }
     }
 
     func testRestartRecoveryReestimatesOnlyTheOriginalSignedAuthorization() async throws {

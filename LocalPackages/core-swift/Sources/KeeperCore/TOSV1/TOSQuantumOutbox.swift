@@ -31,6 +31,7 @@ public final class TOSQuantumOutbox {
     private static let maximumMessageBytes = 1024 * 1024
     private let directory: URL
     private var retirementFault: ((RetirementFaultPoint) throws -> Void)?
+    private var directoryReadFailure: ((URL, Int) -> Int32?)?
 
     public init(baseDirectory: URL? = nil) throws {
         directory = try baseDirectory ?? FileManager.default.url(for: .applicationSupportDirectory,
@@ -341,6 +342,11 @@ extension TOSQuantumOutbox {
     internal convenience init(baseDirectory: URL, retirementFault: @escaping (RetirementFaultPoint) throws -> Void) throws {
         try self.init(baseDirectory: baseDirectory); self.retirementFault = retirementFault
     }
+    /// Internal syscall-result seam: nil+errno still passes through the actual
+    /// readdir error branch, rather than throwing before the safety check.
+    internal convenience init(baseDirectory: URL, directoryReadFailure: @escaping (URL, Int) -> Int32?) throws {
+        try self.init(baseDirectory: baseDirectory); self.directoryReadFailure = directoryReadFailure
+    }
     /// Not Codable and not publicly constructible. It carries the exact bytes
     /// read/validated from one FD; later proof work must revalidate this source.
     internal struct RetirementSource {
@@ -377,7 +383,19 @@ extension TOSQuantumOutbox {
               let handle = opendir(folder.path) else { throw Error.storage }
         defer { closedir(handle) }
         var result = [String]()
-        while let item = readdir(handle) {
+        while true {
+            let item: UnsafeMutablePointer<dirent>?
+            if let failure = directoryReadFailure?(folder, result.count) {
+                errno = failure; item = nil
+            } else {
+                errno = 0
+                item = readdir(handle)
+            }
+            guard let item else {
+                let failure = errno
+                guard failure == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(failure)) }
+                break
+            }
             let length = Int(item.pointee.d_namlen) + 1
             let name = withUnsafePointer(to: &item.pointee.d_name) {
                 $0.withMemoryRebound(to: CChar.self, capacity: length) { String(cString: $0) }

@@ -61,3 +61,26 @@ These use the existing captured public native proofs with their recorded clock;
 future actual runs must retain exact source hashes, commands, failures, designated
 counterfactual controls and restored regressions. They are not yet results, real
 power-loss evidence, hardware Data Protection evidence or a completed R03 claim.
+
+## Review repair in progress
+
+Review confirmed a P2 in the first checkpoint: readdir EOF and errno failure were
+not distinguished, so a partial listing could omit a pending file. The repair
+clears errno immediately before each actual readdir and rejects nil+nonzero errno
+without returning partial names. Its specified FI returns nil/EIO after at least
+one real name, exercises that production error branch, and asserts original
+canonical/pending bytes and zero signer calls. The test is written but unrun; it
+is injected syscall-error evidence, not a physical disk failure claim. Coverage additions are now written, still uncompiled/unrun:
+
+- Signed and UNKNOWN payment entries retain exact original signature/request/BOC
+  across canonical-unlink interruption and public Coordinator inspect -> review ->
+  complete. Different operation IDs and a stale review against a new slot refuse.
+- Public local SENT/mismatch record formats are covered only as untrusted data;
+  these tests deliberately cannot construct a private receipt or authorize unlink.
+- A separate opt-in live test obtains actual native receipts for a normal public
+  fixture payment and a deliberately unaffordable/skipped output, waits for true
+  proven shard expiry, then calls public review -> complete. It uses public fixture
+  custody, not App custody. It has not run and is not receipt-branch evidence yet.
+
+The original signing-only matrix was never full B acceptance. Actual receipt
+branches and App end/history/lifecycle behavior remain acceptance gaps until run.

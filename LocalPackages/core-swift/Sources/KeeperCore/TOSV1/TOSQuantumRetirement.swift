@@ -140,7 +140,7 @@ public struct TOSQuantumRetirementSummary: Codable, Equatable {
         try authorization.validate(); try expiry.validate(address: authorization.address, deadline: authorization.deadline)
         try repair?.validate(operation: authorization.operationID)
         if let transaction {
-            guard transaction.hash.count == 32, UInt64(transaction.logicalTime).map(String.init) == transaction.logicalTime,
+            guard authorization.intent != nil, authorization.messagePresent, transaction.hash.count == 32, UInt64(transaction.logicalTime).map(String.init) == transaction.logicalTime,
                   transaction.logicalTime != "0", transaction.timestamp <= expiry.provenShardTime else { throw TOSQuantumOutbox.Error.invalidRecord }
         }
     }
