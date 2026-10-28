@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 import BigInt
 import TonSwift
 import CoreComponents
@@ -77,8 +78,8 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
                 return { _, _, _ in XCTFail("Proven genesis head must not query transactions"); throw TOSPQError.invalidInput }
             }, now: { self.clock })
         }
-        func expiries(corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumAuthorizationExpiryReader {
-            TOSQuantumAuthorizationExpiryReader(outbox: outbox, baseDirectory: base, accounts: { flag in
+        func expiries(store: TOSQuantumOutbox? = nil, corruptProof: Bool = false, beforeProof: ((TOSQuantumHistoryReader.StopFlag) -> Void)? = nil) -> TOSQuantumAuthorizationExpiryReader {
+            TOSQuantumAuthorizationExpiryReader(outbox: store ?? outbox, baseDirectory: base, accounts: { flag in
                 TOSQuantumAccountReader(baseDirectory: self.base, transport: {
                     return { query, capacity in
                         beforeProof?(flag)
@@ -336,6 +337,271 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         XCTAssertThrowsError(try binding.requireSame(otherMessageBytes))
         XCTAssertThrowsError(try capability.requireBound(to: otherMessageBytes, now: f.clock))
         XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.signedBOC, entry.signedBOC)
+    }
+
+    private func retirementSource(_ fixture: Fixture, store: TOSQuantumOutbox, operationID: UUID) throws -> TOSQuantumOutbox.RetirementSource {
+        guard case .authorization(let source, _) = try store.inspectRetirement(identity: fixture.identity, profile: fixture.profile, operationID: operationID) else {
+            throw TOSQuantumOutbox.Error.invalidTransition
+        }
+        return source
+    }
+    private func canonicalFile(_ fixture: Fixture) -> URL {
+        fixture.base.appendingPathComponent("outbox/" + fixture.identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json")
+    }
+    private enum RetirementCrash: Swift.Error { case injected }
+
+    func testRetirementEveryPublicationDeletionAndCleanupWindowRestartsSafely() async throws {
+        let excluded: Set<TOSQuantumOutbox.RetirementFaultPoint> = [.stageRepairBeforeFreshCheck, .stageDiagnosticSync,
+            .stageRepairSnapshotWrite, .historyPruneUnlink, .historyPruneDirectorySync]
+        for point in TOSQuantumOutbox.RetirementFaultPoint.allCases where !excluded.contains(point) {
+            let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+            let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+            let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+            var hit = false
+            let crashing = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: { observed in
+                if observed == point && !hit { hit = true; throw RetirementCrash.injected }
+            })
+            do { _ = try crashing.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Fault not propagated: \(point)") }
+            catch { guard case RetirementCrash.injected = error else { return XCTFail("Wrong fault at \(point): \(error)") } }
+            XCTAssertTrue(hit, "Unreached fault is not evidence: \(point)")
+            let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+            switch try reopened.inspectRetirement(identity: f.identity, profile: f.profile, operationID: entry.id) {
+            case .authorization(let retained, _):
+                XCTAssertEqual(retained.entry.id, entry.id)
+                XCTAssertEqual(retained.entry.requestBOC, entry.requestBOC)
+                XCTAssertNil(retained.entry.signedBOC)
+                XCTAssertThrowsError(try reopened.pending(identity: f.identity), "Unresolved retirement must block ordinary APIs")
+                let refreshed = try await f.expiries(store: reopened).read(wallet: f.wallet(), source: retained)
+                let summary = try reopened.finishRetirement(retained, expiry: refreshed, receipt: nil, now: { f.clock })
+                XCTAssertEqual(summary.publication, .releaseCompleted); XCTAssertEqual(summary.outcome, .expiredUnverified)
+            case .completed(let local):
+                XCTAssertEqual(local.authorization.operationID, entry.id)
+                XCTAssertEqual(local.publication, .releaseCompleted)
+            case .none:
+                XCTAssertTrue(try reopened.retirementHistory(identity: f.identity, profile: f.profile).contains {
+                    $0.authorization.operationID == entry.id && $0.publication == .releaseCompleted
+                }, "No source is valid only after durable completed cleanup: \(point)")
+            }
+            XCTAssertNil(try reopened.pending(identity: f.identity)); XCTAssertFalse(FileManager.default.fileExists(atPath: canonicalFile(f).path))
+            for name in ["retirement-stage", "retirement-workspace", "retirement-descriptor.json", "retirement-descriptor.next"] {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: f.base.appendingPathComponent("outbox/" + name).path), "Cleanup debt at \(point)")
+            }
+            XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+        }
+    }
+
+    func testRetirementCompletedVisibilityMustResyncBeforeDeletingOnlySnapshot() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+        let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+        let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+        let first = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+            if $0 == .completedRename { throw RetirementCrash.injected }
+        })
+        do { _ = try first.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Rename crash absent") } catch { }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: canonicalFile(f).path))
+        let snapshot = f.base.appendingPathComponent("outbox/retirement-workspace/entry.json")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: snapshot.path))
+        var resyncReached = false
+        let retry = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+            if $0 == .cleanupHistoryDirectorySync { resyncReached = true; throw RetirementCrash.injected }
+        })
+        XCTAssertThrowsError(try retry.pending(identity: f.identity))
+        XCTAssertTrue(resyncReached); XCTAssertTrue(FileManager.default.fileExists(atPath: snapshot.path))
+        let final = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        XCTAssertNil(try final.pending(identity: f.identity))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: snapshot.path))
+        XCTAssertEqual(try final.retirementHistory(identity: f.identity, profile: f.profile).first?.publication, .releaseCompleted)
+    }
+
+    func testRetirementResumeRefsyncsEntryAndDecisionBeforePublishingOrUnlinking() async throws {
+        for failedWrite in [TOSQuantumOutbox.RetirementFaultPoint.snapshotWrite, .decisionWrite, .decisionFileSync] {
+            let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+            let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+            let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+            let first = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+                if $0 == failedWrite { throw RetirementCrash.injected }
+            })
+            do { _ = try first.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Publication crash absent") } catch { }
+            var resyncReached = false
+            let retry = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+                if $0 == .materialDecisionFileSync { resyncReached = true; throw RetirementCrash.injected }
+            })
+            let retained = try retirementSource(f, store: retry, operationID: entry.id)
+            let refreshed = try await f.expiries(store: retry).read(wallet: f.wallet(), source: retained)
+            do { _ = try retry.finishRetirement(retained, expiry: refreshed, receipt: nil, now: { f.clock }); XCTFail("Resume did not resync material") } catch { }
+            XCTAssertTrue(resyncReached)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: canonicalFile(f).path), "Material sync failure must precede canonical unlink")
+            XCTAssertFalse(try retry.retirementHistory(identity: f.identity, profile: f.profile).contains { $0.publication == .releaseCompleted })
+        }
+    }
+
+    func testRetirementCanonicalMissingUsesFullSnapshotAndFreshNativeProof() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+        let raw = try Data(contentsOf: canonicalFile(f)), source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+        let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+        let first = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+            if $0 == .canonicalUnlink { throw RetirementCrash.injected }
+        })
+        do { _ = try first.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Unlink crash absent") } catch { }
+        let snapshot = f.base.appendingPathComponent("outbox/retirement-workspace/entry.json")
+        XCTAssertEqual(try Data(contentsOf: snapshot), raw, "Snapshot must preserve actual same-FD canonical bytes")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: canonicalFile(f).path))
+        let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        let retained = try retirementSource(f, store: reopened, operationID: entry.id)
+        do { _ = try await f.expiries(store: reopened, corruptProof: true).read(wallet: f.wallet(), source: retained); XCTFail("Summary substituted fresh proof") } catch { }
+        XCTAssertEqual(f.corruptedProofs, 1); XCTAssertTrue(FileManager.default.fileExists(atPath: snapshot.path))
+        let fresh = try await f.expiries(store: reopened).read(wallet: f.wallet(), source: retained)
+        let completed = try reopened.finishRetirement(retained, expiry: fresh, receipt: nil, now: { f.clock })
+        XCTAssertEqual(completed.outcome, .expiredUnverified); XCTAssertNil(completed.transaction)
+        XCTAssertNil(try reopened.pending(identity: f.identity)); XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+    }
+
+    func testRetirementRechecksFreshnessAfterDurablePendingAndOldOpCannotDeleteNewSlot() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry()
+        let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+        let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+        let delayed = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+            if $0 == .pendingWorkspaceDirectorySync { f.clock += 301 }
+        })
+        do { _ = try delayed.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Stale consume allowed canonical unlink") } catch { }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: canonicalFile(f).path))
+        f.clock -= 301
+        let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        let retained = try retirementSource(f, store: reopened, operationID: entry.id)
+        let fresh = try await f.expiries(store: reopened).read(wallet: f.wallet(), source: retained)
+        _ = try reopened.finishRetirement(retained, expiry: fresh, receipt: nil, now: { f.clock })
+        let next = try f.expiryEntry()
+        XCTAssertNotEqual(next.id, entry.id)
+        XCTAssertThrowsError(try reopened.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }))
+        XCTAssertEqual(try reopened.pending(identity: f.identity)?.id, next.id)
+    }
+
+    func testKnownPartialRetirementStageRepairRequiresFreshCapAndSameCurrentOperation() async throws {
+        for scenario in ["valid", "stale", "different-operation", "ambiguous-decision", "random-pending"] {
+            let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+            let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+            let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+            let partial = Data("partial snapshot".utf8)
+            let snapshot = f.base.appendingPathComponent("outbox/retirement-stage/entry.json")
+            let first = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+                if $0 == .snapshotWrite { try partial.write(to: snapshot); throw RetirementCrash.injected }
+            })
+            do { _ = try first.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Partial stage crash absent") } catch { }
+            XCTAssertEqual(try Data(contentsOf: snapshot), partial)
+            let originalCanonical = try Data(contentsOf: canonicalFile(f))
+            let other = try changed(entry) { $0["id"] = UUID().uuidString }
+            var boundaryReached = false, diagnosticCaptured = false
+            let retry = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: { point in
+                if point == .stageRepairBeforeFreshCheck {
+                    boundaryReached = true
+                    if scenario == "stale" { f.clock += 301 }
+                    if scenario == "different-operation" { try JSONEncoder().encode(other).write(to: self.canonicalFile(f)) }
+                }
+                if point == .stageDiagnosticSync {
+                    let diagnostic = try JSONSerialization.jsonObject(with: Data(contentsOf: f.base.appendingPathComponent("outbox/retirement-repair.json"))) as? [String: Any]
+                    XCTAssertEqual(diagnostic?["partialBytes"] as? Int, partial.count)
+                    XCTAssertEqual(diagnostic?["partialHash"] as? String, TOSQuantumRetirementCodec.hash(partial).base64EncodedString())
+                    diagnosticCaptured = true
+                }
+            })
+            if scenario == "ambiguous-decision" {
+                let file = f.base.appendingPathComponent("outbox/retirement-stage/decision.json")
+                try Data("{}".utf8).write(to: file); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
+            var random: URL?
+            if scenario == "random-pending" {
+                let file = f.base.appendingPathComponent("outbox/" + UUID().uuidString + ".pending")
+                try partial.write(to: file); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path); random = file
+            }
+            if scenario == "valid" {
+                let retained = try retirementSource(f, store: retry, operationID: entry.id)
+                let fresh = try await f.expiries(store: retry).read(wallet: f.wallet(), source: retained)
+                let done = try retry.finishRetirement(retained, expiry: fresh, receipt: nil, now: { f.clock })
+                XCTAssertEqual(done.outcome, .expiredUnverified); XCTAssertTrue(boundaryReached); XCTAssertTrue(diagnosticCaptured)
+                XCTAssertEqual(done.repair?.partialBytes, partial.count)
+                XCTAssertEqual(done.repair?.partialHash, TOSQuantumRetirementCodec.hash(partial))
+                XCTAssertNil(try retry.pending(identity: f.identity))
+            } else {
+                do { _ = try retry.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Unsafe stage repair: \(scenario)") } catch { }
+                XCTAssertEqual(try Data(contentsOf: snapshot), partial, "Denied repair must retain partial evidence")
+                if scenario == "different-operation" {
+                    let actual = try JSONDecoder().decode(TOSQuantumOutbox.Entry.self, from: Data(contentsOf: canonicalFile(f)))
+                    XCTAssertEqual(actual.id, other.id)
+                } else { XCTAssertEqual(try Data(contentsOf: canonicalFile(f)), originalCanonical) }
+                if let random { XCTAssertEqual(try Data(contentsOf: random), partial) }
+            }
+            XCTAssertEqual(f.signs, 0); XCTAssertTrue(f.sends.isEmpty)
+        }
+    }
+
+    func testRetirementRejectsSymlinkHardlinkAndNonprivateStageWithoutChangingCanonical() async throws {
+        for scenario in ["symlink", "hardlink", "directory-mode"] {
+            let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+            let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+            let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+            let first = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"), retirementFault: {
+                if $0 == .workspaceDirectorySync { throw RetirementCrash.injected }
+            })
+            do { _ = try first.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }); XCTFail("Workspace crash absent") } catch { }
+            let workspace = f.base.appendingPathComponent("outbox/retirement-workspace")
+            let snapshot = workspace.appendingPathComponent("entry.json")
+            let raw = try Data(contentsOf: canonicalFile(f))
+            if scenario == "symlink" {
+                try FileManager.default.removeItem(at: snapshot)
+                try FileManager.default.createSymbolicLink(at: snapshot, withDestinationURL: canonicalFile(f))
+            } else if scenario == "hardlink" {
+                try FileManager.default.removeItem(at: snapshot)
+                XCTAssertEqual(link(canonicalFile(f).path, snapshot.path), 0)
+            } else { try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: workspace.path) }
+            let retry = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+            XCTAssertThrowsError(try retry.inspectRetirement(identity: f.identity, profile: f.profile))
+            XCTAssertThrowsError(try retry.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock }))
+            XCTAssertEqual(try Data(contentsOf: canonicalFile(f)), raw)
+            if scenario == "directory-mode" {
+                let attributes = try FileManager.default.attributesOfItem(atPath: workspace.path)
+                XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o755, "Existing rejected path must not be chmod'ed")
+            }
+        }
+    }
+
+    func testRetirementHistoryHasBoundedReclamationAndNeverPrunesActiveOrPendingReferences() async throws {
+        let f = try Fixture(), entry = try f.expiryEntry(phase: .signing)
+        let source = try retirementSource(f, store: f.outbox, operationID: entry.id)
+        let expiry = try await f.expiries().read(wallet: f.wallet(), source: source)
+        let first = try f.outbox.finishRetirement(source, expiry: expiry, receipt: nil, now: { f.clock })
+        let folder = f.base.appendingPathComponent("outbox/retirement-history")
+        for _ in 0..<63 {
+            var value = try XCTUnwrap(JSONSerialization.jsonObject(with: TOSQuantumRetirementCodec.encode(first)) as? [String: Any])
+            let id = UUID(); var auth = try XCTUnwrap(value["authorization"] as? [String: Any]); auth["operationID"] = id.uuidString
+            value["authorization"] = auth
+            let record = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+            let file = folder.appendingPathComponent(id.uuidString.lowercased() + ".json")
+            try record.write(to: file); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
+        XCTAssertEqual(try f.outbox.retirementHistory(identity: f.identity, profile: f.profile).count, 64)
+        let next = try f.expiryEntry(phase: .signing)
+        let nextSource = try retirementSource(f, store: f.outbox, operationID: next.id)
+        let fresh = try await f.expiries().read(wallet: f.wallet(), source: nextSource)
+        _ = try f.outbox.finishRetirement(nextSource, expiry: fresh, receipt: nil, now: { f.clock })
+        let rows = try f.outbox.retirementHistory(identity: f.identity, profile: f.profile)
+        XCTAssertEqual(rows.count, 64, "Completed unreferenced reclamation must avoid a permanent 64-operation ceiling")
+        XCTAssertTrue(rows.contains { $0.authorization.operationID == next.id })
+        let active = try f.expiryEntry()
+        // Ordinary local JSON is not proof authority. A deliberately forged local
+        // record referencing the active ID must still be excluded from pruning.
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: TOSQuantumRetirementCodec.encode(first)) as? [String: Any])
+        var auth = try XCTUnwrap(value["authorization"] as? [String: Any]); auth["operationID"] = active.id.uuidString; value["authorization"] = auth
+        _ = try f.outbox.pruneRetirementHistory(maximum: 1)
+        let activeRecord = folder.appendingPathComponent(active.id.uuidString.lowercased() + ".json")
+        try JSONSerialization.data(withJSONObject: value).write(to: activeRecord)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: activeRecord.path)
+        _ = try f.outbox.pruneRetirementHistory(maximum: 64)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: activeRecord.path))
+        XCTAssertEqual(try f.outbox.pending(identity: f.identity)?.id, active.id)
+        let random = f.base.appendingPathComponent("outbox/" + UUID().uuidString + ".pending")
+        try Data("partial".utf8).write(to: random); try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: random.path)
+        XCTAssertThrowsError(try f.outbox.pruneRetirementHistory(maximum: 1))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: activeRecord.path)); XCTAssertTrue(FileManager.default.fileExists(atPath: random.path))
     }
 
     func testRestartRecoveryReestimatesOnlyTheOriginalSignedAuthorization() async throws {

@@ -61,6 +61,7 @@ internal struct TOSQuantumStoredRequest {
 /// with no persisted signature is different from a later signed authorization.
 internal struct TOSQuantumAuthorizationBinding: Equatable {
     private let digest: Data
+    internal var fingerprint: Data { digest }
     private struct OptionalBytes: Encodable {
         let present: Bool
         let bytes: Data?
@@ -150,6 +151,7 @@ internal final class TOSQuantumAuthorizationReadPermits {
 /// original-profile shard proof. It is separate from a payment receipt and does
 /// not itself delete, archive or release an authorization.
 public final class TOSQuantumExpiredAuthorization {
+    public enum Error: Swift.Error { case notExpired(deadline: UInt32, provenShardTime: UInt32) }
     public let operationID: UUID
     public let deadline: UInt32
     public let provenShardTime: UInt32
@@ -162,9 +164,16 @@ public final class TOSQuantumExpiredAuthorization {
         let request = try TOSQuantumStoredRequest(entry: entry)
         try observation.requireFresh(now: now)
         let time = try observation.proof.provenAccountTime(expectedAddress: entry.identity.address.toRaw())
-        guard time > request.deadline else { throw TOSPQError.invalidInput }
+        guard time > request.deadline else { throw Error.notExpired(deadline: request.deadline, provenShardTime: time) }
         binding = try TOSQuantumAuthorizationBinding(entry); self.observation = observation
         operationID = entry.id; deadline = request.deadline; provenShardTime = time
+    }
+    internal func retirementProvenance(entry: TOSQuantumOutbox.Entry, now: Int64) throws -> TOSQuantumRetirementSummary.Provenance {
+        try requireBound(to: entry, now: now)
+        return TOSQuantumRetirementSummary.Provenance(observedAt: now, provenShardTime: provenShardTime,
+            masterchainTime: try observation.proof.masterchainTime(),
+            targetRequest: try observation.proof.requestAtCheckpoint(account: entry.identity.address.toRaw(),
+                maximumAge: TOSQuantumAccountReader.maximumAge))
     }
     /// A future durable-retirement consumer must call this under the outbox lock
     /// against the reread original entry. Local time can reject a stale proof;
@@ -200,6 +209,12 @@ public final class TOSQuantumAuthorizationExpiryReader {
         self.outbox = outbox; self.baseDirectory = baseDirectory; self.accounts = accounts; self.now = now
     }
     public func read(wallet: Wallet) async throws -> TOSQuantumExpiredAuthorization {
+        try await read(wallet: wallet, retirementSource: nil)
+    }
+    internal func read(wallet: Wallet, source: TOSQuantumOutbox.RetirementSource) async throws -> TOSQuantumExpiredAuthorization {
+        try await read(wallet: wallet, retirementSource: source)
+    }
+    private func read(wallet: Wallet, retirementSource: TOSQuantumOutbox.RetirementSource?) async throws -> TOSQuantumExpiredAuthorization {
         guard case .Quantum(let identity) = wallet.identity.kind, let id = UUID(uuidString: wallet.id),
               wallet.identity.networkGlobalId == identity.wallet.initialAuthority.globalID else { throw TOSPQError.keyBinding }
         try Task.checkCancellation()
@@ -212,11 +227,23 @@ public final class TOSQuantumAuthorizationExpiryReader {
                     do {
                         guard !flag.stopped() else { throw TOSPQError.invalidInput }
                         let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: baseDirectory)
-                        guard record.id == id, record.identity == identity,
-                              let entry = try outbox.pending(identity: identity), entry.profile == record.profile else { throw TOSPQError.keyBinding }
+                        guard record.id == id, record.identity == identity else { throw TOSPQError.keyBinding }
+                        let entry: TOSQuantumOutbox.Entry
+                        if let source = retirementSource { entry = try outbox.validateRetirementSource(source) }
+                        else {
+                            guard let stored = try outbox.pending(identity: identity) else { throw TOSPQError.keyBinding }
+                            entry = stored
+                        }
+                        guard entry.identity == identity, entry.profile == record.profile else { throw TOSPQError.keyBinding }
                         let observation = try accounts(flag).observeEnrolled(id: id, identity: identity, profile: record.profile)
                         let capability = try TOSQuantumExpiredAuthorization(entry: entry, observation: observation, now: now())
-                        guard let current = try outbox.pending(identity: identity), !flag.stopped() else { throw TOSPQError.keyBinding }
+                        let current: TOSQuantumOutbox.Entry
+                        if let source = retirementSource { current = try outbox.validateRetirementSource(source) }
+                        else {
+                            guard let stored = try outbox.pending(identity: identity) else { throw TOSPQError.keyBinding }
+                            current = stored
+                        }
+                        guard !flag.stopped() else { throw TOSPQError.keyBinding }
                         try capability.requireBound(to: current, now: now())
                         continuation.resume(returning: capability)
                     } catch { continuation.resume(throwing: error) }

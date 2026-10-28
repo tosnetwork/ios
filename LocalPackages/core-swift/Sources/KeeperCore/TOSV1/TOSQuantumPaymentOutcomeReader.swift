@@ -102,6 +102,12 @@ public final class TOSQuantumPaymentOutcomeReader {
     /// required. Every page gets a fresh account observation; a continuation uses
     /// its original authenticated predecessor hash only for historical evidence.
     public func read(wallet: Wallet, cursor: Cursor? = nil, limit: Int = 20) async throws -> Page {
+        try await read(wallet: wallet, cursor: cursor, limit: limit, retirementSource: nil)
+    }
+    internal func read(wallet: Wallet, source: TOSQuantumOutbox.RetirementSource, cursor: Cursor? = nil, limit: Int = 20) async throws -> Page {
+        try await read(wallet: wallet, cursor: cursor, limit: limit, retirementSource: source)
+    }
+    private func read(wallet: Wallet, cursor: Cursor?, limit: Int, retirementSource: TOSQuantumOutbox.RetirementSource?) async throws -> Page {
         guard case .Quantum(let identity) = wallet.identity.kind, let id = UUID(uuidString: wallet.id),
               wallet.identity.networkGlobalId == identity.wallet.initialAuthority.globalID,
               (1...20).contains(limit) else { throw TOSPQError.invalidInput }
@@ -117,8 +123,13 @@ public final class TOSQuantumPaymentOutcomeReader {
                         guard !flag.stopped() else { throw Error.stopped }
                         let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: baseDirectory)
                         guard record.id == id, record.identity == identity else { throw Error.binding }
-                        guard let entry = try outbox.pending(identity: identity), entry.paymentIntent != nil,
-                              let bytes = entry.signedBOC,
+                        let entry: TOSQuantumOutbox.Entry
+                        if let source = retirementSource { entry = try outbox.validateRetirementSource(source) }
+                        else {
+                            guard let stored = try outbox.pending(identity: identity) else { throw Error.missingSignedPayment }
+                            entry = stored
+                        }
+                        guard entry.identity == identity, entry.paymentIntent != nil, let bytes = entry.signedBOC,
                               [.signed, .submitting, .unknown].contains(entry.phase) else { throw Error.missingSignedPayment }
                         guard entry.profile == record.profile else { throw Error.binding }
                         if let cursor {
@@ -142,9 +153,13 @@ public final class TOSQuantumPaymentOutcomeReader {
                         let transaction = values.transactions.first { $0.inbound?.hash == externalHash }
                         let receipt = try transaction.map { try Receipt(entry: entry, transaction: $0) }
                         try observation.requireFresh(now: now())
-                        guard let current = try outbox.pending(identity: identity), try Self.sameAuthorization(current, entry) else {
-                            throw Error.binding
+                        let current: TOSQuantumOutbox.Entry
+                        if let source = retirementSource { current = try outbox.validateRetirementSource(source) }
+                        else {
+                            guard let stored = try outbox.pending(identity: identity) else { throw Error.binding }
+                            current = stored
                         }
+                        guard try Self.sameAuthorization(current, entry) else { throw Error.binding }
                         guard !flag.stopped() else { throw Error.stopped }
                         let next = receipt == nil && values.hasMore ? Cursor(walletID: id, entry: entry,
                             shardTime: historicalTime, logicalTime: values.nextTime, hash: values.nextHash,
