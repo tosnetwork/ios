@@ -44,7 +44,7 @@ internal final class TOSQuantumAccountReader {
     private let baseDirectory: URL?
     private let transport: () throws -> TOSQuantumProofBridge.Transport
     private let now: () -> Int64
-    private static let maximumAge: Int64 = 300
+    internal static let maximumAge: Int64 = 300
 
     convenience init() {
         self.init(transport: {
@@ -97,7 +97,7 @@ internal final class TOSQuantumAccountReader {
         try observeEnrolled(id: id, identity: identity, profile: profile).snapshot
     }
 
-    private func observeEnrolled(id: UUID, identity: TOSQuantumSelfPayIdentity,
+    internal func observeEnrolled(id: UUID, identity: TOSQuantumSelfPayIdentity,
                                 profile: TOSQuantumNetworkProfile, configIndices: [Int] = [19]) throws -> Observation {
         let allowed = Set([8, 18, 19, 20, 21, 24, 25, 48])
         guard !configIndices.isEmpty, configIndices.count <= allowed.count, configIndices.contains(19),

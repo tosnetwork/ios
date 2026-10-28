@@ -143,6 +143,89 @@ final class TOSQuantumAccountReaderTests: XCTestCase {
         XCTAssertThrowsError(try value.proof.provenTransactionHead(expectedAddress: "0:" + String(repeating: "0", count: 64)))
     }
 
+    func testPrimaryPaymentPreparesFromAuthenticatedAccountAndJournalsMatchingIntent() async throws {
+        let f = try Fixture(); try f.enroll(); let t = try f.transcript(account: true)
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { t.query }, now: { f.now })
+        let service = TOSQuantumPaymentService(reader: reader, now: { f.now })
+        let recipient = Address(workchain: 0, hash: Data(repeating: 0x42, count: 32))
+        let intent = try TOSQuantumPaymentIntent(recipient: recipient, amount: 1_000_000_000, bounce: false, comment: "付款🌸")
+        let payment = try await service.prepare(wallet: f.wallet(), intent: intent, ttl: 60)
+        XCTAssertEqual(t.calls, 5); XCTAssertFalse(payment.requiresDeployment)
+        XCTAssertEqual(payment.identity, f.identity); XCTAssertEqual(payment.profile, f.profile)
+        XCTAssertEqual(payment.observedBalance, 1_000_000_000_000_000)
+        XCTAssertEqual(payment.expiresAt, UInt32(f.now) + 60); XCTAssertEqual(payment.request.role, .primary)
+        try intent.requireBound(request: payment.request.request, role: .primary)
+        let outbox = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        let entry = try outbox.reserve(payment: payment, now: f.now)
+        XCTAssertEqual(entry.paymentIntent, intent)
+        XCTAssertEqual(try outbox.pending(identity: f.identity)?.paymentIntent, intent)
+        XCTAssertEqual(try outbox.pending(identity: f.identity)?.requestHash, payment.request.digest)
+        try outbox.cancelUnsigned(entry)
+        for other in [
+            try TOSQuantumPaymentIntent(recipient: recipient, amount: intent.amount + 1, bounce: false, comment: intent.comment),
+            try TOSQuantumPaymentIntent(recipient: recipient, amount: intent.amount, bounce: true, comment: intent.comment),
+            try TOSQuantumPaymentIntent(recipient: recipient, amount: intent.amount, bounce: false, comment: "different"),
+            try TOSQuantumPaymentIntent(recipient: f.identity.address, amount: intent.amount, bounce: false, comment: intent.comment)
+        ] {
+            XCTAssertThrowsError(try outbox.reserve(identity: payment.identity, profile: payment.profile,
+                request: payment.request, deploy: false, paymentIntent: other)) { error in
+                guard case TOSPQError.keyBinding = error else { return XCTFail("Wrong intent refusal: \(error)") }
+            }
+            XCTAssertNil(try outbox.pending(identity: f.identity))
+        }
+    }
+
+    func testExpiredPaymentCannotReserveWhileItsAccountProofIsStillYoung() async throws {
+        let f = try Fixture(); try f.enroll(); let t = try f.transcript(account: true)
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { t.query }, now: { f.now })
+        let intent = try TOSQuantumPaymentIntent(recipient: f.identity.address, amount: 1, bounce: false)
+        let payment = try await TOSQuantumPaymentService(reader: reader, now: { f.now })
+            .prepare(wallet: f.wallet(), intent: intent, ttl: 60)
+        XCTAssertNoThrow(try payment.requireFresh(now: f.now + 59))
+        let outbox = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        XCTAssertThrowsError(try outbox.reserve(payment: payment, now: f.now + 60)) { error in
+            guard case TOSQuantumPreparedPayment.Error.expired = error else { return XCTFail("Wrong expiry refusal: \(error)") }
+        }
+        XCTAssertNil(try outbox.pending(identity: f.identity))
+        XCTAssertThrowsError(try payment.requireFresh(now: f.now + 301))
+    }
+
+    func testPaymentRefusesMismatchedWalletNetworkBeforeOpeningRelay() async throws {
+        let f = try Fixture(); try f.enroll(); let t = try f.transcript(account: true)
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { t.query }, now: { f.now })
+        let original = f.wallet()
+        let wrong = Wallet(id: original.id,
+            identity: WalletIdentity(network: .mainnet, kind: .Quantum(f.identity), networkGlobalId: 2),
+            metaData: original.metaData, setupSettings: original.setupSettings, batterySettings: original.batterySettings)
+        let intent = try TOSQuantumPaymentIntent(recipient: f.identity.address, amount: 1, bounce: false)
+        do {
+            _ = try await TOSQuantumPaymentService(reader: reader, now: { f.now }).prepare(wallet: wrong, intent: intent)
+            XCTFail("Prepared a payment for inconsistent UI network identity")
+        } catch TOSPQError.keyBinding {}
+        XCTAssertEqual(t.calls, 0)
+    }
+
+    func testPrefundedPaymentRetainsBirthDeploymentAndAbsentAccountRequiresFunding() throws {
+        for role in ["prefunded", "absent"] {
+            let f = try Fixture(role); try f.enroll(); let t = try f.transcript(account: true)
+            let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { t.query }, now: { f.now })
+            let observation = try reader.observeEnrolled(id: f.id, identity: f.identity, profile: f.profile,
+                                                        configIndices: [8, 19, 48])
+            let intent = try TOSQuantumPaymentIntent(recipient: f.identity.address, amount: 1_000_000_000, bounce: false)
+            if role == "prefunded" {
+                let payment = try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: f.now, ttl: 60)
+                XCTAssertTrue(payment.requiresDeployment); XCTAssertEqual(payment.identity, f.identity)
+                XCTAssertEqual(payment.request.wallet, f.identity.address)
+                XCTAssertEqual(payment.request.signingPublicKey, f.identity.wallet.initialAuthority.primaryKey)
+            } else {
+                XCTAssertThrowsError(try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: f.now, ttl: 60)) { error in
+                    guard case TOSQuantumPreparedPayment.Error.insufficientValue = error else { return XCTFail("Wrong funding refusal: \(error)") }
+                }
+            }
+            XCTAssertEqual(t.calls, 5)
+        }
+    }
+
     func testDuplicateOrUnboundedConfigurationRequestsDoNotOpenRelay() async throws {
         let f = try Fixture()
         var opened = false

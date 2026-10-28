@@ -18,6 +18,7 @@ public final class TOSQuantumOutbox {
         public let requestBOC: Data
         public let requestHash: Data
         public let signingPublicKey: Data
+        public let paymentIntent: TOSQuantumPaymentIntent?
         public let deploy: Bool
         public fileprivate(set) var phase: Phase
         public fileprivate(set) var signature: Data?
@@ -54,9 +55,11 @@ public final class TOSQuantumOutbox {
     /// One slot per birth identity, shared by PRIMARY/RESCUE and all local wallet IDs.
     /// A different trusted anchor cannot open another slot for the same wallet.
     public func reserve(identity: TOSQuantumSelfPayIdentity, profile: TOSQuantumNetworkProfile,
-                        request: TOSQuantumSelfPayRequest, deploy: Bool) throws -> Entry {
+                        request: TOSQuantumSelfPayRequest, deploy: Bool,
+                        paymentIntent: TOSQuantumPaymentIntent? = nil) throws -> Entry {
         try identity.requireNetwork(globalID: request.globalID, namespace: request.namespace)
         guard request.wallet == identity.address, profile.globalID == request.globalID else { throw Error.invalidRecord }
+        try paymentIntent?.requireBound(request: request.request, role: request.role)
         let boc = try request.request.toBoc()
         guard boc.count <= Self.maximumMessageBytes else { throw Error.capacity }
         guard try TOSRPCOrdinaryBOC.decode(boc.base64EncodedString()).hash() == request.digest else {
@@ -68,7 +71,7 @@ public final class TOSQuantumOutbox {
             guard files.filter({ $0.pathExtension == "json" }).count < 64 else { throw Error.capacity }
             let entry = Entry(version: 1, id: UUID(), identity: identity, profile: profile, role: request.role,
                 requestBOC: boc, requestHash: request.digest, signingPublicKey: request.signingPublicKey,
-                deploy: deploy, phase: .reserved)
+                paymentIntent: paymentIntent, deploy: deploy, phase: .reserved)
             // Budget without relying on placeholder cell sharing or JSON slash
             // escaping. The actual signature can share fewer cells than zeros.
             var largest = entry
@@ -87,6 +90,16 @@ public final class TOSQuantumOutbox {
 
     public func pending(identity: TOSQuantumSelfPayIdentity) throws -> Entry? {
         try locked { try read(identity) }
+    }
+
+    /// Used after the dedicated confirmation flow has validated fees. Preparation
+    /// alone is not fee approval; this method only rechecks proof/deadline and
+    /// persists the exact visible intent together with its authorization payload.
+    public func reserve(payment: TOSQuantumPreparedPayment,
+                        now: Int64 = Int64(Date().timeIntervalSince1970)) throws -> Entry {
+        try payment.requireFresh(now: now)
+        return try reserve(identity: payment.identity, profile: payment.profile, request: payment.request,
+            deploy: payment.requiresDeployment, paymentIntent: payment.intent)
     }
 
     /// Must complete durably before protected key access. A crash in the signer
@@ -233,6 +246,7 @@ public final class TOSQuantumOutbox {
         guard address == identity.address else { throw Error.invalidRecord }
         try s.skip(256)
         guard try s.loadUint(bits: 8) == UInt64(entry.role.rawValue) else { throw Error.invalidRecord }
+        try entry.paymentIntent?.requireBound(request: request, role: entry.role)
         switch entry.phase {
         case .reserved, .signing:
             guard entry.signature == nil, entry.signedBOC == nil else { throw Error.invalidRecord }
