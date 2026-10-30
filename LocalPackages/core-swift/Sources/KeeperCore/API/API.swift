@@ -7,6 +7,7 @@ import TonSwift
 public extension Notification.Name {
     static let tosRPCUnavailable = Notification.Name("tos.rpc.unavailable")
     static let tosRPCAvailable = Notification.Name("tos.rpc.available")
+    static let tosRPCConfigurationChanged = Notification.Name("tos.rpc.configuration.changed")
 }
 
 public enum TOSRPCConnectivity {
@@ -159,7 +160,7 @@ struct TOSRPCClient {
 
     private func callOnce(method: String, params: [String: Any], wrapArray: Bool = false) async throws -> [String: Any] {
         let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let endpoint = URL(string: basePath + "/jsonRPC") else {
+        guard let endpoint = TOSRPCSettings.jsonRPCEndpoint(for: basePath) else {
             throw Error.invalidEndpoint
         }
 
@@ -370,16 +371,16 @@ extension API {
 
     func getAccountJettonsBalances(address: Address, currencies: [Currency]) async throws -> [JettonBalance] {
         let response = try await tosRPCCall(
-            method: "getAccountJettons",
+            method: "getAccountTokens",
             params: ["address": address.toRaw(), "limit": 1_000]
         )
-        guard let entries = response["jettons"] as? [[String: Any]] else {
+        guard let entries = response["tokens"] as? [[String: Any]] else {
             throw TOSRPCClient.Error.invalidResponse
         }
         var balances = [JettonBalance]()
         for entry in entries {
-            guard let walletRaw = entry["jetton_wallet"] as? String,
-                  let masterRaw = entry["jetton_master"] as? String,
+            guard let walletRaw = entry["token_wallet"] as? String,
+                  let masterRaw = entry["token_master"] as? String,
                   let walletAddress = try? Address.parse(walletRaw),
                   let masterAddress = try? Address.parse(masterRaw)
             else { continue }

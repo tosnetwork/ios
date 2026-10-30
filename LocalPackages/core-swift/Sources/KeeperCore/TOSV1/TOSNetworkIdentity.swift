@@ -8,6 +8,7 @@ public enum TOSNetworkIdentityError: Swift.Error, LocalizedError {
     case wrongNetwork(expected: Int32, actual: Int32)
     case unsupportedSigner
     case unsupportedVMVersion(actual: UInt32)
+    case unsupportedQuantumVMVersion(actual: UInt32)
 
     public var errorDescription: String? {
         switch self {
@@ -19,6 +20,8 @@ public enum TOSNetworkIdentityError: Swift.Error, LocalizedError {
             return "This wallet belongs to TOS network \(expected), but the selected node uses network \(actual)."
         case .unsupportedSigner:
             return "This signer does not support the TOS wallet signing format."
+        case let .unsupportedQuantumVMVersion(actual):
+            return "This TOS node uses VM version \(actual). Quantum wallets require version 16 or newer."
         case let .unsupportedVMVersion(actual):
             return "This TOS node uses VM version \(actual). TOS wallets require version 6 or newer."
         }
@@ -102,7 +105,14 @@ extension TOSRPCClient {
     }
 
     func verifyNetworkIdentity(wallet: Wallet) async throws {
-        guard try wallet.contractVersion == .tosV5R1 else { return }
+        let quantum = wallet.kind == .quantum
+        if quantum {
+            // This checks endpoint routing for display/background RPC only.
+            // Quantum signing additionally requires authenticated state/CP48.
+            _ = try wallet.quantumWallet
+        } else {
+            guard try wallet.contractVersion == .tosV5R1 else { return }
+        }
         guard let expected = wallet.identity.networkGlobalId else {
             throw TOSNetworkIdentityError.missingIdentity
         }
@@ -110,7 +120,14 @@ extension TOSRPCClient {
         guard actual == expected else {
             throw TOSNetworkIdentityError.wrongNetwork(expected: expected, actual: actual)
         }
-        try await requireWalletVMVersion()
+        if quantum {
+            let version = try TOSNetworkIdentity.decodeVMVersion(
+                await call(method: "getConfigParam", params: ["param": 8])
+            )
+            guard version >= 16 else { throw TOSNetworkIdentityError.unsupportedQuantumVMVersion(actual: version) }
+        } else {
+            try await requireWalletVMVersion()
+        }
     }
 }
 

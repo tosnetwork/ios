@@ -1,5 +1,6 @@
 import CoreComponents
 import Foundation
+import BigInt
 import TonSwift
 import TonTransport
 
@@ -11,6 +12,9 @@ public struct ActiveWalletModel: Identifiable {
     public let balance: Balance
     public let nfts: [NFT]
     public let isAdded: Bool
+    public let assetDiscoveryComplete: Bool
+    public let hasIndexedAssets: Bool
+    public let accountStateKnown: Bool
 
     public init(
         id: String,
@@ -19,7 +23,10 @@ public struct ActiveWalletModel: Identifiable {
         isActive: Bool,
         balance: Balance,
         nfts: [NFT],
-        isAdded: Bool = false
+        isAdded: Bool = false,
+        assetDiscoveryComplete: Bool = true,
+        hasIndexedAssets: Bool = false,
+        accountStateKnown: Bool = true
     ) {
         self.id = id
         self.revision = revision
@@ -28,6 +35,9 @@ public struct ActiveWalletModel: Identifiable {
         self.balance = balance
         self.nfts = nfts
         self.isAdded = isAdded
+        self.assetDiscoveryComplete = assetDiscoveryComplete
+        self.hasIndexedAssets = hasIndexedAssets
+        self.accountStateKnown = accountStateKnown
     }
 }
 
@@ -69,34 +79,18 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
         network: Network,
         currency: Currency
     ) async throws -> ActiveWalletModel {
-        async let accountTask = self.apiProvider.api(network).getAccountInfo(accountId: address.toRaw())
-        async let jettonsBalanceTask = try await self.apiProvider.api(network).getAccountJettonsBalances(
-            address: address,
-            currencies: [currency]
-        )
-        async let nftsTask = self.apiProvider.api(network).getAccountNftItems(
-            address: address,
-            collectionAddress: nil,
-            limit: nil,
-            offset: nil,
-            isIndirectOwnership: true
-        )
-
+        let client = await apiProvider.api(network).boundTOSRPCClient()
+        async let accountTask = client.call(method: "getAddressInformation", params: ["address": address.toRaw()])
+        async let hintsTask = client.recoveryAssets(address: address.toRaw())
         let account = try await accountTask
-        let jettonsBalance = (try? await jettonsBalanceTask) ?? []
-        let nfts = (try? await nftsTask) ?? []
-        let tonBalance = TonBalance(amount: account.balance)
-        let balance = Balance(tonBalance: tonBalance, jettonsBalance: jettonsBalance)
-        let isActive = account.status == "active" || !balance.isEmpty
-
-        return ActiveWalletModel(
-            id: id,
-            revision: revision,
-            address: address,
-            isActive: isActive,
-            balance: balance,
-            nfts: nfts
-        )
+        let hints = try? await hintsTask
+        try Task.checkCancellation()
+        let state = try TOSRecoveryAccount.parse(account)
+        let balance = Balance(tonBalance: TonBalance(amount: state.amount), jettonsBalance: [])
+        return ActiveWalletModel(id: id, revision: revision, address: address,
+            isActive: state.deployed || !balance.isEmpty || hints?.hasAssets == true,
+            balance: balance, nfts: [], assetDiscoveryComplete: hints?.complete == true,
+            hasIndexedAssets: hints?.hasAssets == true)
     }
 
     func loadActiveWallets(
@@ -123,32 +117,24 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
                             currency: currency
                         )
                     } catch {
+                        if Task.isCancelled { throw CancellationError() }
                         return ActiveWalletModel(
                             id: address.toRaw(),
                             revision: revision,
                             address: address,
-                            isActive: revision == .currentVersion,
+                            isActive: false,
                             balance: Balance(
                                 tonBalance: TonBalance(amount: 0),
                                 jettonsBalance: []
                             ),
-                            nfts: []
+                            nfts: [], assetDiscoveryComplete: false, accountStateKnown: false
                         )
                     }
                 }
             }
 
             var resultModels = [ActiveWalletModel]()
-            for try await result in taskGroup {
-                guard result.revision != WalletContractVersion.currentVersion else {
-                    resultModels.append(result)
-                    continue
-                }
-                guard result.isActive else {
-                    continue
-                }
-                resultModels.append(result)
-            }
+            for try await result in taskGroup { resultModels.append(result) }
             return resultModels
         }
     }
@@ -170,6 +156,7 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
                             currency: currency
                         )
                     } catch {
+                        if Task.isCancelled { throw CancellationError() }
                         return ActiveWalletModel(
                             id: account.id,
                             revision: account.revision,
@@ -179,7 +166,7 @@ final class ActiveWalletsServiceImplementation: ActiveWalletsService {
                                 tonBalance: TonBalance(amount: 0),
                                 jettonsBalance: []
                             ),
-                            nfts: []
+                            nfts: [], assetDiscoveryComplete: false, accountStateKnown: false
                         )
                     }
                 }

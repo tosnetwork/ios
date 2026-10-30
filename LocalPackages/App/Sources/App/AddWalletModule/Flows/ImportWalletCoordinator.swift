@@ -13,6 +13,9 @@ final class ImportWalletCoordinator: RouterCoordinator<NavigationControllerRoute
     var didImportWallets: (() -> Void)?
 
     private var mnemonicFormat: WalletMnemonicFormat?
+    private var importsQuantumWallet = false
+    private var quantumRecoveryProfile: TOSQuantumNetworkProfile?
+    private weak var recoveryPhraseInputViewController: TKInputRecoveryPhraseViewController?
     private let network: Network
     private let analyticsProvider: AnalyticsProvider
     private let walletsUpdateAssembly: WalletsUpdateAssembly
@@ -52,6 +55,7 @@ private extension ImportWalletCoordinator {
             validator: AddWalletInputRecoveryPhraseValidator(),
             suggestsProvider: AddWalletInputRecoveryPhraseSuggestsProvider()
         )
+        recoveryPhraseInputViewController = inputRecoveryPhrase.viewController
 
         inputRecoveryPhrase.output.didInputRecoveryPhrase = { [weak self] phrase, completion in
             guard let self = self else { return }
@@ -80,7 +84,19 @@ private extension ImportWalletCoordinator {
         let formats = WalletMnemonicFormat.validFormats(words: phrase)
         if formats == [.tos] {
             mnemonicFormat = .tos
-            detectActiveWallets(phrase: phrase, completion: completion)
+            let alert = UIAlertController(title: "Restore TOS Wallet", message: "Choose which wallet identity to restore from this TOS phrase.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Quantum Wallet", style: .default) { [weak self] _ in
+                guard let self else { completion(); return }
+                self.confirmQuantumRecoveryNetwork(phrase: phrase, completion: completion)
+            })
+            alert.addAction(UIAlertAction(title: "Classic TOS Wallets", style: .default) { [weak self] _ in
+                guard let self else { completion(); return }
+                self.importsQuantumWallet = false
+                completion()
+                self.detectActiveWallets(phrase: phrase, completion: {})
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completion() })
+            router.rootViewController.present(alert, animated: true)
             return
         }
         let alert = UIAlertController(
@@ -89,17 +105,104 @@ private extension ImportWalletCoordinator {
             preferredStyle: .alert
         )
         if formats.contains(.tos) {
-            alert.addAction(UIAlertAction(title: "Restore TOS Wallet", style: .default) { [weak self] _ in
+            alert.addAction(UIAlertAction(title: "Restore Quantum Wallet", style: .default) { [weak self] _ in
+                self?.confirmQuantumRecoveryNetwork(phrase: phrase, completion: completion)
+            })
+            alert.addAction(UIAlertAction(title: "Restore Classic TOS Wallets", style: .default) { [weak self] _ in
                 self?.mnemonicFormat = .tos
+                self?.importsQuantumWallet = false
                 self?.detectActiveWallets(phrase: phrase, completion: completion)
             })
         }
         alert.addAction(UIAlertAction(title: "Restore Legacy Wallet", style: .default) { [weak self] _ in
             self?.mnemonicFormat = .legacyTON
+            self?.importsQuantumWallet = false
             self?.detectActiveWallets(phrase: phrase, completion: completion)
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completion() })
         router.rootViewController.present(alert, animated: true)
+    }
+
+    func confirmQuantumRecoveryNetwork(phrase: [String], completion: @escaping () -> Void) {
+        let profile: TOSQuantumNetworkProfile
+        do { profile = try TOSQuantumNetworkProfile.effective() }
+        catch {
+            completion()
+            let alert = UIAlertController(title: "Trusted Network Unavailable", message: error.localizedDescription, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "Configure Network", style: .default) { [weak self] _ in
+                guard let self else { return }
+                TOSRPCNodeEditor.present(from: self.router.rootViewController) { [weak self] in
+                    self?.confirmQuantumRecoveryNetwork(phrase: phrase, completion: {})
+                }
+            })
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            router.rootViewController.present(alert, animated: true)
+            return
+        }
+
+        let message = "This phrase will be restored on the network below. It must match the profile shown when you backed up the wallet. If these values differ, cancel and configure the matching trusted profile first.\n\nGlobal ID: \(profile.globalID)\nZerostate root hash: \(profile.rootHash)\nZerostate file hash: \(profile.fileHash)"
+        let alert = UIAlertController(title: "Confirm Recovery Network", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Use This Network", style: .default) { [weak self] _ in
+            guard let self else { completion(); return }
+            self.preflightQuantumRecovery(phrase: phrase, profile: profile, completion: completion)
+        })
+        alert.addAction(UIAlertAction(title: "Change Trusted Network", style: .default) { [weak self] _ in
+            guard let self else { completion(); return }
+            TOSRPCNodeEditor.present(from: self.router.rootViewController) { [weak self] in
+                self?.confirmQuantumRecoveryNetwork(phrase: phrase, completion: {})
+            }
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completion() })
+        router.rootViewController.present(alert, animated: true)
+    }
+
+    func preflightQuantumRecovery(phrase: [String], profile: TOSQuantumNetworkProfile, completion: @escaping () -> Void) {
+        recoveryPhraseInputViewController?.clearRecoveryPhraseInput()
+        let progress = UIAlertController(title: "Verifying Trusted Network",
+            message: "Checking a fresh proof against this profile before continuing wallet recovery.",
+            preferredStyle: .alert)
+        router.rootViewController.present(progress, animated: true)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.walletsUpdateAssembly.walletAddController().preflightQuantumNetwork(profile: profile)
+                await MainActor.run {
+                    progress.dismiss(animated: false) {
+                        self.mnemonicFormat = .tos
+                        self.importsQuantumWallet = true
+                        self.quantumRecoveryProfile = profile
+                        completion()
+                        self.handleDidChooseRevisions(phrase: phrase, revisions: [])
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    progress.dismiss(animated: false) {
+                        completion()
+                        self.presentQuantumRecoveryPreflightFailure(error, phrase: phrase, profile: profile)
+                    }
+                }
+            }
+        }
+    }
+
+    func presentQuantumRecoveryPreflightFailure(_ error: Error, phrase: [String], profile: TOSQuantumNetworkProfile) {
+        let failure = UIAlertController(title: "TOS Node Unavailable",
+            message: error.localizedDescription,
+            preferredStyle: .alert)
+        failure.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+            self?.preflightQuantumRecovery(phrase: phrase, profile: profile, completion: {})
+        })
+        failure.addAction(UIAlertAction(title: "Configure TOS Node", style: .default) { [weak self] _ in
+            guard let root = self?.router.rootViewController else { return }
+            TOSRPCNodeEditor.present(from: root) { [weak self] in
+                // The editor can change the trust anchor as well as the RPC URL.
+                // Read and confirm the saved profile before retrying recovery.
+                self?.confirmQuantumRecoveryNetwork(phrase: phrase, completion: {})
+            }
+        })
+        failure.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        router.rootViewController.present(failure, animated: true)
     }
 
     func detectActiveWallets(phrase: [String], completion: @escaping () -> Void) {
@@ -124,49 +227,19 @@ private extension ImportWalletCoordinator {
     }
 
     func handleActiveWallets(phrase: [String], activeWalletModels: [ActiveWalletModel]) {
-        if activeWalletModels.count == 1 {
-            handleDidChooseRevisions(phrase: phrase, revisions: [activeWalletModels[0].revision])
-        } else {
-            openChooseWalletToAdd(phrase: phrase, activeWalletModels: activeWalletModels)
-        }
-    }
-
-    func openChooseWalletToAdd(phrase: [String], activeWalletModels: [ActiveWalletModel]) {
-        let module = ChooseWalletToAddAssembly.module(
-            activeWalletModels: activeWalletModels,
-            configuration: ChooseWalletToAddConfiguration(
-                showRevision: true,
-                selectLastRevision: true
-            ),
-            amountFormatter: walletsUpdateAssembly.formattersAssembly.amountFormatter,
-            network: network
-        )
-
-        module.output.didSelectWallets = { [weak self] wallets in
-            let revisions = wallets.map { $0.revision }
-            self?.handleDidChooseRevisions(phrase: phrase, revisions: revisions)
-        }
-
-        module.view.setupBackButton()
-
-        router.push(
-            viewController: module.view,
-            animated: true,
-            onPopClosures: {},
-            completion: nil
-        )
+        handleDidChooseRevisions(phrase: phrase, revisions: activeWalletModels.map { $0.revision })
     }
 
     func handleDidChooseRevisions(phrase: [String], revisions: [WalletContractVersion]) {
         let hasMnemonics = walletsUpdateAssembly.secureAssembly.mnemonicsRepository().hasMnemonics()
-        let hasRegularWallet = { [walletsUpdateAssembly] in
+        let hasRegisteredWallet = { [walletsUpdateAssembly] in
             do {
-                return try walletsUpdateAssembly.repositoriesAssembly.keeperInfoRepository().getKeeperInfo().wallets.contains(where: { $0.kind == .regular })
+                return try !walletsUpdateAssembly.repositoriesAssembly.keeperInfoRepository().getKeeperInfo().wallets.isEmpty
             } catch {
                 return false
             }
         }()
-        if hasMnemonics, hasRegularWallet {
+        if hasMnemonics, hasRegisteredWallet {
             openConfirmPasscode(phrase: phrase, revisions: revisions)
         } else {
             openCreatePasscode(phrase: phrase, revisions: revisions)
@@ -274,6 +347,22 @@ private extension ImportWalletCoordinator {
             tintColor: model.tintColor,
             icon: model.icon
         )
+        if mnemonicFormat == .tos, importsQuantumWallet {
+            guard let profile = quantumRecoveryProfile else {
+                throw NSError(
+                    domain: "TOSQuantumRecovery",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The confirmed recovery network is unavailable. Re-enter the phrase and confirm the network."]
+                )
+            }
+            try await addController.importQuantumWallet(
+                metaData: metaData,
+                passcode: passcode,
+                mnemonicWords: phrase,
+                profile: profile
+            )
+            return
+        }
         try await addController.importWallets(
             phrase: phrase,
             revisions: revisions,

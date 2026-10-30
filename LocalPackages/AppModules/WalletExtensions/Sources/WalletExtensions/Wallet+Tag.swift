@@ -4,23 +4,13 @@ import TKUIKit
 import UIKit
 
 public extension WalletContractVersion {
-    var tag: String? {
-        switch self {
-        case .v5Beta:
-            "W5 BETA"
-        case .v5R1:
-            "W5"
-        case .tosV5R1:
-            "TOS W5"
-        default: nil
-        }
-    }
+    var tag: String? { nil }
 }
 
 public extension Wallet {
     var kindTag: String? {
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             switch network {
             case .testnet: return "TESTNET"
             case .tetra: return "TETRA"
@@ -50,7 +40,7 @@ public extension Wallet {
         let foregroundColor: UIColor
 
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             if network == .mainnet {
                 backgroundColor = .Background.contentTint
                 foregroundColor = .Text.primary
@@ -88,7 +78,7 @@ public extension Wallet {
     func balanceKindTagConfiguration() -> TKTagView.Configuration? {
         let color: UIColor? = {
             switch kind {
-            case .regular:
+            case .regular, .quantum:
                 network == .mainnet ? nil : .Accent.orange
             case .lockup:
                 nil
@@ -118,7 +108,7 @@ public extension Wallet {
         let backgroundColor: UIColor
 
         switch kind {
-        case .regular:
+        case .regular, .quantum:
             if network == .mainnet {
                 return nil
             }

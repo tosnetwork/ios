@@ -14,8 +14,9 @@ jobs:
   build-and-test:
     runs-on: macos-15
     # Building the embedded proof verifier from source takes about half an
-    # hour on hosted runners, before packages and UI tests run.
-    timeout-minutes: 90
+    # hour on hosted runners, before packages and UI tests run; the full job
+    # now takes about 90 minutes, so leave headroom for slower runners.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +37,12 @@ jobs:
       - name: Build app
         run: make compile
 
+      - name: Archive release and reject UI test hooks
+        run: make archive_v1_release
+
+      - name: Verify Quantum self-pay native signing domains
+        run: python3 scripts/test_quantum_self_pay_native.py --output build/quantum-self-pay-native
+
       - name: Test app packages
         run: make test_all TEST_DESTINATION="$TEST_DESTINATION"
 
@@ -46,6 +53,50 @@ jobs:
           TEST_DESTINATION="$TEST_DESTINATION"
           TOS_UI_RPC_URL=http://127.0.0.1:1
 
+      - name: Validate trusted Quantum network configuration
+        run: >-
+          make test_project_scheme SCHEME=TOSWalletUITests
+          TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testQuantumNetworkConfigurationValidatesAndPersistsBeforeCreation
+          TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+          TOS_UI_RPC_URL=http://127.0.0.1:1
+
+      - name: Recover classic accounts without contract version choices
+        shell: bash
+        run: |
+          make test_classic_recovery_fixture
+          python3 -u scripts/tests/classic_recovery_fixture.py > build/classic-recovery-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true; wait "$fixture_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in {1..20}; do
+            kill -0 "$fixture_pid" || exit 1
+            if grep -q PUBLIC_CLASSIC_FIXTURE_READY build/classic-recovery-fixture.log; then ready=1; break; fi
+            sleep 1
+          done
+          if test "$ready" -ne 1; then
+            cat build/classic-recovery-fixture.log
+            ps -p "$fixture_pid" -o pid=,etime=,comm= || true
+            exit 1
+          fi
+          make test_project_scheme SCHEME=TOSWalletUITests \
+            TEST_ONLY=TOSWalletUITests/TOSWalletUITests/testClassicRecoveryAutomaticallyRetainsSixAccountsWithoutVersionMenu \
+            TEST_DESTINATION="$TEST_DESTINATION" TOS_UI_RPC_URL=http://127.0.0.1:18648
+
+      - name: Verify Quantum Keychain cleanup and atomic vault storage in the app host
+        shell: bash
+        run: |
+          make test_project_scheme SCHEME=WalletCoreHosted TEST_ACTION=build-for-testing \
+            TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests \
+            TEST_HOST="$PWD/build/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app/TOS Wallet" \
+            TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+          runfiles=(build/DerivedData/Build/Products/WalletCoreHosted_*.xctestrun)
+          test "${#runfiles[@]}" -eq 1
+          corrected="build/DerivedData/Build/Products/QuantumCustody-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.xctestrun"
+          python3 scripts/fix_hosted_xctestrun.py "${runfiles[0]}" "$corrected"
+          make test_project_scheme SCHEME=WalletCoreHosted TEST_RUN_FILE="$corrected" \
+            TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests \
+            TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
+
       - name: Retain build and test evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,4 +105,6 @@ jobs:
           path: |
             build/*-raw.log
             build/TestResults/*.xcresult
+            build/quantum-self-pay-native/report.json
+            build/classic-recovery-fixture.log
           if-no-files-found: ignore

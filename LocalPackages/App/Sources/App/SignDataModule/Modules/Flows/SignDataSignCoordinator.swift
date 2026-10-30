@@ -92,7 +92,7 @@ private extension SignDataSignCoordinator {
         switch wallet.identity.kind {
         case .Regular:
             handleRegularSign()
-        case .SignerDevice(_, _), .Signer(_, _), .Watchonly, .Ledger(_, _, _), .Keystone(_, _, _, _), .Lockup:
+        case .SignerDevice(_, _), .Signer(_, _), .Watchonly, .Ledger(_, _, _), .Keystone(_, _, _, _), .Lockup, .Quantum:
             didFail?(.incorrectWalletKind)
         }
     }

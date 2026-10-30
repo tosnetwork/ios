@@ -149,6 +149,11 @@ final class WalletBalanceBalanceModel {
         stakingPools: [StackingPoolInfo],
         isSecureMode: Bool
     ) -> BalanceListItems {
+        if wallet.kind == .quantum, case .current? = balanceState {
+            // Continue with the current authenticated observation below.
+        } else if wallet.kind == .quantum {
+            return BalanceListItems(wallet: wallet, items: [], canManage: false, isSecure: isSecureMode)
+        }
         guard let balance = balanceState?.balance else {
             return BalanceListItems(wallet: wallet, items: [], canManage: false, isSecure: isSecureMode)
         }

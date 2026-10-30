@@ -18,7 +18,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        #if DEBUG
         resetStateForUITestsIfRequested()
+        #endif
         Log.configure()
 
         UNUserNotificationCenter.current().delegate = self
@@ -47,6 +49,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 private extension AppDelegate {
+    #if DEBUG
     func resetStateForUITestsIfRequested() {
         guard ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] == "1" else { return }
 
@@ -62,6 +65,11 @@ private extension AppDelegate {
                 try? fileManager.removeItem(at: item)
             }
         }
+        if let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            for name in ["quantum-creation", "quantum-proof-checkpoints"] {
+                try? fileManager.removeItem(at: support.appendingPathComponent(name, isDirectory: true))
+            }
+        }
         for itemClass in [
             kSecClassGenericPassword,
             kSecClassInternetPassword,
@@ -72,6 +80,7 @@ private extension AppDelegate {
             SecItemDelete([kSecClass: itemClass] as CFDictionary)
         }
     }
+    #endif
 }
 
 extension AppDelegate: UNUserNotificationCenterDelegate {

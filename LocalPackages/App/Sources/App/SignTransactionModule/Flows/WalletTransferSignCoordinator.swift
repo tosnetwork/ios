@@ -224,7 +224,8 @@ private extension WalletTransferSignCoordinator {
                     self.didCancel?()
                 }
             }
-        case .Lockup, .Watchonly:
+        // Quantum uses its own authenticated state and signing flow.
+        case .Quantum, .Lockup, .Watchonly:
             didFail?(.incorrectWalletKind)
         }
     }

@@ -63,7 +63,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TOSCustodyHostedTests",
-            dependencies: ["CoreComponents"],
+            dependencies: ["CoreComponents", "KeeperCore"],
             swiftSettings: [.treatAllWarnings(as: .error)]
         ),
         .testTarget(
@@ -73,7 +73,7 @@ let package = Package(
                 .product(name: "TKKeychain", package: "TKKeychain"),
             ],
 
-            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-proof-PROVENANCE.json")],
+            resources: [.copy("TestData/tos-pq-backup-vectors.json"), .copy("TestData/quantum-proof"), .copy("TestData/quantum-self-pay-simulation"), .copy("TestData/quantum-proof-PROVENANCE.json")],
             swiftSettings: [
                 .treatAllWarnings(as: .error),
             ]
@@ -111,7 +111,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
+            resources: [.copy("TestData/quantum-payment"), .copy("TestData/quantum-transactions"), .copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

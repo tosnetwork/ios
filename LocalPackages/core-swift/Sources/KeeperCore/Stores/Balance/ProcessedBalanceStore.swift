@@ -113,11 +113,11 @@ public final class ProcessedBalanceStore: Store<ProcessedBalanceStore.Event, Pro
             state[wallet] = calculateState(
                 wallet: wallet,
                 balanceState: walletBalanceState,
-                tonRates: tonRate,
-                usdtRates: usdtRate,
+                tonRates: wallet.kind == .quantum ? Rates.Rate(currency: .TON, rate: 1, diff24h: nil) : tonRate,
+                usdtRates: wallet.kind == .quantum ? nil : usdtRate,
                 jettonRates: rates.jettonRates,
                 stakingPools: stakingPools,
-                currency: currency
+                currency: wallet.kind == .quantum ? .TON : currency
             )
         }
         return state
@@ -205,7 +205,7 @@ public final class ProcessedBalanceStore: Store<ProcessedBalanceStore.Event, Pro
             }
         }
 
-        if let walletAddress = try? wallet.address,
+        if wallet.kind != .quantum, let walletAddress = try? wallet.address,
            let item = makeTonUSDTIfNeeded(
                jettonsBalance: jettonsBalance,
                walletAddress: walletAddress,
@@ -246,7 +246,7 @@ public final class ProcessedBalanceStore: Store<ProcessedBalanceStore.Event, Pro
         items.append(.ethena(ethenaItem))
 
         let processedBalance = ProcessedBalance(
-            items: items,
+            items: wallet.kind == .quantum ? [.ton(tonItem)] : items,
             tonItem: tonItem,
             tronUSDTItem: tronUSDTItem,
             jettonItems: jettonItems,
@@ -290,7 +290,7 @@ public final class ProcessedBalanceStore: Store<ProcessedBalanceStore.Event, Pro
         return ProcessedBalanceTonItem(
             id: TonInfo.symbol,
             title: TonInfo.symbol,
-            amount: UInt64(tonBalance.amount),
+            amount: tonBalance.amount,
             fractionalDigits: TonInfo.fractionDigits,
             currency: currency,
             converted: converted,

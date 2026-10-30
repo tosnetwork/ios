@@ -31,6 +31,10 @@ public extension TKUINavigationBar {
             )
         )
 
+        button.isAccessibilityElement = true
+        button.accessibilityLabel = "Dismiss"
+        button.accessibilityTraits = .button
+
         button.addTapAction(action)
 
         button.tapAreaInsets = UIEdgeInsets(

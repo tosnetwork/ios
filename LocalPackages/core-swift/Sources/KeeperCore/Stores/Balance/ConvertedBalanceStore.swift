@@ -45,16 +45,16 @@ public final class ConvertedBalanceStore: Store<ConvertedBalanceStore.Event, Con
         for wallet in wallets {
             let walletState = recalculateBalance(
                 wallet: wallet,
-                tonRate: tonRates,
-                usdtRate: usdtRates,
-                currency: currency
+                tonRate: wallet.kind == .quantum ? Rates.Rate(currency: .TON, rate: 1, diff24h: nil) : tonRates,
+                usdtRate: wallet.kind == .quantum ? nil : usdtRates,
+                currency: wallet.kind == .quantum ? .TON : currency
             )
             if walletState != nil {
                 state[wallet] = recalculateBalance(
                     wallet: wallet,
-                    tonRate: tonRates,
-                    usdtRate: usdtRates,
-                    currency: currency
+                    tonRate: wallet.kind == .quantum ? Rates.Rate(currency: .TON, rate: 1, diff24h: nil) : tonRates,
+                    usdtRate: wallet.kind == .quantum ? nil : usdtRates,
+                    currency: wallet.kind == .quantum ? .TON : currency
                 )
             }
         }
@@ -105,7 +105,7 @@ public final class ConvertedBalanceStore: Store<ConvertedBalanceStore.Event, Con
             calculateJettonBalance($0, currency: currency)
         }
 
-        if let walletAddress = try? wallet.address,
+        if wallet.kind != .quantum, let walletAddress = try? wallet.address,
            let item = makeTonUSDTIfNeeded(
                jettonsBalance: balance.balance.jettonsBalance,
                walletAddress: walletAddress,

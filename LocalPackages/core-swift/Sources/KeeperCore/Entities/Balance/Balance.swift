@@ -26,10 +26,44 @@ public extension Balance {
 }
 
 public struct TonBalance: Codable, Equatable {
-    public let amount: Int64
+    public let amount: BigUInt
 
-    public init(amount: Int64) {
+    public init(amount: BigUInt) {
         self.amount = amount
+    }
+
+    private enum CodingKeys: CodingKey { case amount }
+    public init(from decoder: Decoder) throws {
+        amount = try decoder.container(keyedBy: CodingKeys.self).decode(NativeBalanceAmount.self, forKey: .amount).value
+    }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(NativeBalanceAmount(value: amount), forKey: .amount)
+    }
+}
+
+/// Decimal strings preserve the full unsigned coin range; old numeric caches
+/// remain readable without passing through floating-point JSON values.
+internal struct NativeBalanceAmount: Codable {
+    let value: BigUInt
+    init(value: BigUInt) { self.value = value }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let string = try? container.decode(String.self) {
+            guard !string.isEmpty, string.utf8.count <= 37,
+                  string == "0" || string.first != "0",
+                  string.utf8.allSatisfy({ (48...57).contains($0) }),
+                  let amount = BigUInt(string), amount < BigUInt(1) << 120 else {
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid unsigned native balance")
+            }
+            value = amount
+        } else {
+            value = BigUInt(try container.decode(UInt64.self))
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(String(value))
     }
 }
 

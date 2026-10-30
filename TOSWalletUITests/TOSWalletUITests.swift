@@ -183,6 +183,744 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
     }
 
+    func testQuantumNetworkConfigurationValidatesAndPersistsBeforeCreation() {
+        func openProfile() {
+            let configure = app.buttons["onboarding.configureNode"]
+            XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+            let quantum = app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch
+            XCTAssertTrue(quantum.waitForExistence(timeout: 5)); quantum.tap()
+            XCTAssertTrue(app.alerts["Trusted Quantum Network"].waitForExistence(timeout: 5))
+        }
+        openProfile()
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        XCTAssertTrue(app.alerts["Invalid Network Configuration"].waitForExistence(timeout: 5))
+        app.alerts["Invalid Network Configuration"].buttons["OK"].tap()
+        openProfile()
+        // Public synthetic hashes exercise local provisioning only; no chain is
+        // contacted and no verified network capability is fabricated here.
+        let root = String(repeating: "42", count: 32), file = String(repeating: "24", count: 32)
+        for (name, value) in [("Network ID", "-1"), ("Genesis root hash", root), ("Genesis file hash", file)] {
+            let field = app.textFields[name]
+            XCTAssertTrue(field.exists); field.tap(); field.typeText(value)
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        openProfile()
+        XCTAssertEqual(app.textFields["Network ID"].value as? String, "-1")
+        XCTAssertEqual(app.textFields["Genesis root hash"].value as? String, root)
+        XCTAssertEqual(app.textFields["Genesis file hash"].value as? String, file)
+        retainScreenshot(named: "Quantum network configuration")
+        app.alerts["Trusted Quantum Network"].buttons["Cancel"].tap()
+    }
+
+    /// Uses a locally generated anchor supplied to Make, never an RPC-discovered trust root.
+    func testQuantumAppSignsDeploysAndVerifiesPaymentOnIsolatedChain() throws {
+        try quantumAppPaymentJourney()
+    }
+
+    func testQuantumFullColdRecoveryPaymentJourney() throws {
+        let restored = try quantumColdRecoveryJourney()
+        let dismiss = app.buttons["Dismiss"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5)); dismiss.tap()
+        assertNativeWalletHome()
+        try quantumAppPaymentJourney(restoredIdentity: XCTUnwrap(restored["identity_cell_hash"] as? String),
+            recipient: "0:9a21d887e406a578e80aab023d334e197bac02afefc48ed7c83ad8ce092736bf")
+    }
+
+    private func quantumAppPaymentJourney(restoredIdentity: String? = nil,
+        recipient: String = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0") throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard environment["TOS_QUANTUM_APP_PAYMENT_CANDIDATE"] == "1",
+              fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires an isolated chain and unpublished local availability candidate; protected custody must remain unchanged")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(request: request,
+                description: "isolated App payment fixture")) as? [String: String])
+        }
+        func paymentControl(_ action: String) throws -> [String: Any] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_payment/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(request: request,
+                description: "isolated public payment journal")) as? [String: Any])
+        }
+        func enabled(_ element: XCUIElement, timeout: TimeInterval = 60) -> Bool {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)
+            let result = XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+            if !result {
+                let diagnostic = XCTAttachment(string: app.debugDescription); diagnostic.lifetime = .keepAlways; add(diagnostic)
+                retainScreenshot(named: "Quantum payment action did not become available")
+            }
+            return result
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            for _ in 0..<6 { if button.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(button.waitForExistence(timeout: 10)); XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func openSavedPayment() {
+            let coin = app.collectionViews["wallet.balance.list"].cells.containing(.staticText, identifier: "TOS").firstMatch
+            XCTAssertTrue(coin.waitForExistence(timeout: 15)); coin.tap()
+            let saved = app.buttons["quantum.history.payment"]
+            XCTAssertTrue(saved.waitForExistence(timeout: 15)); saved.tap()
+            XCTAssertTrue(app.textFields["quantum.payment.recipient"].waitForExistence(timeout: 10))
+        }
+        if restoredIdentity == nil {
+            try configureLiveQuantumTestNetwork()
+            createQuantumWalletWithConfirmedBackupToHome()
+        }
+        let original = try control("snapshot")
+        if let restoredIdentity { XCTAssertEqual(original["identity_cell_hash"], restoredIdentity) }
+        let recipientBefore = try rpcBalance(address: recipient)
+        let funding = try control("fund")
+        XCTAssertEqual(funding["address"], original["address"])
+        print("PUBLIC_APP_PAYMENT_SENDER=" + (try XCTUnwrap(original["address"])))
+        print("PUBLIC_APP_PAYMENT_ID=" + (try XCTUnwrap(original["id"])))
+        if restoredIdentity != nil {
+            let list = app.collectionViews["wallet.balance.list"]
+            let tenTOS = app.staticTexts.matching(NSPredicate(format: "label MATCHES[c] %@", "10([.,]0+)?\\s*TOS")).firstMatch
+            for _ in 0..<5 { pullToRefresh(list); if tenTOS.waitForExistence(timeout: 8) { break } }
+            XCTAssertTrue(tenTOS.exists)
+            XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Verified ")).firstMatch.exists)
+            app.buttons["History"].tap()
+            let table = app.tables["quantum.history.records"]
+            XCTAssertTrue(table.waitForExistence(timeout: 10))
+            let row = table.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "quantum.history.record.")).firstMatch
+            for _ in 0..<5 {
+                if row.waitForExistence(timeout: 8) { break }
+                let refresh = app.buttons["quantum.history.newest"]
+                if waitForEnabled(refresh, expected: true) { refresh.tap() }
+            }
+            XCTAssertTrue(row.staticTexts["Incoming transfer"].exists)
+            XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "10 TOS")).firstMatch.exists)
+            XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Included")).firstMatch.exists)
+            app.buttons["Wallet"].tap()
+        }
+        openSavedPayment()
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(enabled(recipientField))
+        recipientField.tap(); recipientField.typeText(recipient)
+        let amount = app.textFields["quantum.payment.amount"]
+        amount.tap(); amount.typeText("1.000000001")
+        let comment = app.textViews["quantum.payment.comment"]
+        comment.tap(); comment.typeText("App protected payment")
+        tapPayment("review")
+        let sign = app.buttons["quantum.payment.sign"]
+        XCTAssertTrue(enabled(sign), "The isolated local availability candidate must enable the actual product action")
+        let details = app.staticTexts["quantum.payment.details"]
+        XCTAssertTrue(details.label.contains(recipient))
+        XCTAssertTrue(details.label.contains("1.000000001 TOS"))
+        XCTAssertTrue(details.label.contains("Wallet deployment: Required"))
+        retainScreenshot(named: "Quantum actual App unsigned review")
+        tapPayment("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        let send = app.buttons["quantum.payment.send"]
+        XCTAssertTrue(enabled(send), "Protected Keychain signing and native estimation must complete without a replacement signer")
+        XCTAssertTrue(details.label.contains("Estimated fee:"))
+        XCTAssertTrue(details.label.contains("Estimated total debit:"))
+        retainScreenshot(named: "Quantum actual App signed fee confirmation")
+        let beforeSubmit = try paymentControl("pending")
+        XCTAssertEqual(beforeSubmit["phase"] as? String, "signed")
+        let originalBOC = try XCTUnwrap(beforeSubmit["signed_boc_sha256"] as? String)
+        let originalOperation = try XCTUnwrap(beforeSubmit["operation_id"] as? String)
+        _ = try paymentControl("accept-delay-error")
+        tapPayment("send")
+        var returned = false
+        let deadline = Date().addingTimeInterval(30)
+        repeat {
+            let relay = try paymentControl("status")
+            if (relay["events"] as? [[String: Any]])?.contains(where: { $0["upstream_returned"] as? Bool == true }) == true { returned = true; break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        } while Date() < deadline
+        XCTAssertTrue(returned, "The proxy must actually forward the exact App message before backgrounding")
+        let submitted = try paymentControl("pending")
+        XCTAssertEqual(submitted["operation_id"] as? String, originalOperation)
+        XCTAssertEqual(submitted["signed_boc_sha256"] as? String, originalBOC)
+        XCTAssertEqual(submitted["phase"] as? String, "submitting")
+        XCTAssertEqual(submitted["fee_confirmed"] as? Bool, true)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        let verify = app.buttons["quantum.payment.verify"]
+        XCTAssertTrue(enabled(verify))
+        for _ in 0..<6 {
+            tapPayment("verify")
+            _ = enabled(verify)
+            if app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent") { break }
+        }
+        XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+        XCTAssertTrue(details.label.contains(recipient)); XCTAssertTrue(details.label.contains("1.000000001 TOS"))
+        XCTAssertTrue(details.label.contains("Transaction:"))
+        let receipt = XCTAttachment(string: details.label); receipt.name = "public-app-sender-receipt"; receipt.lifetime = .keepAlways; add(receipt)
+        retainScreenshot(named: "Quantum actual App authenticated sender result")
+        XCTAssertTrue(waitForBalance(address: recipient, timeout: 30) { $0 > recipientBefore })
+        let recipientPaid = try rpcBalance(address: recipient)
+        XCTAssertLessThanOrEqual(recipientPaid - recipientBefore, 1_000_000_001)
+        app.terminate(); app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"; app.launch()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 2) { enterPasscode("1234") }
+        assertNativeWalletHome(); openSavedPayment()
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+        XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+        XCTAssertFalse(app.buttons["quantum.payment.estimate"].exists, "Unknown submission must not be silently re-estimated as an unbroadcast signature")
+        tapPayment("verify")
+        _ = enabled(app.buttons["quantum.payment.verify"])
+        XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+        XCTAssertEqual(try control("snapshot"), original)
+        let retained = try paymentControl("pending")
+        XCTAssertEqual(retained["operation_id"] as? String, originalOperation)
+        XCTAssertEqual(retained["signed_boc_sha256"] as? String, originalBOC)
+        XCTAssertEqual(retained["fee_confirmed"] as? Bool, true)
+        _ = try paymentControl("normal")
+        XCTAssertEqual(try rpcBalance(address: recipient), recipientPaid)
+        XCTAssertEqual(try control("snapshot"), original)
+        let submissions = try paymentControl("status")
+        XCTAssertEqual((submissions["events"] as? [[String: Any]])?.count, 1)
+        let evidence = XCTAttachment(string: "recipient=\(recipient) before=\(recipientBefore) paid=\(recipientPaid) operation=\(originalOperation) boc_sha256=\(originalBOC)")
+        evidence.name = "public-full-journey-payment-and-recipient"; evidence.lifetime = .keepAlways; add(evidence)
+        retainScreenshot(named: "Quantum actual App payment retained after relaunch")
+        if environment["TOS_QUANTUM_RETIREMENT_LIVE"] == "1" {
+            // This is a separate B acceptance extension. It is not part of the
+            // previously recorded first-payment result and must run on a fresh
+            // isolated candidate with the original protected custody unchanged.
+            tapPayment("end")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.end"]))
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Authorization is not expired"),
+                          "Must actually test the original-deadline guard before expiry")
+            XCTAssertFalse(app.buttons["quantum.payment.confirmEnd"].exists)
+            XCTAssertEqual(try paymentControl("pending")["signed_boc_sha256"] as? String, originalBOC)
+            let expiryWait = Date().addingTimeInterval(160)
+            while !app.buttons["quantum.payment.confirmEnd"].exists && Date() < expiryWait {
+                RunLoop.current.run(until: Date().addingTimeInterval(1))
+                tapPayment("end")
+                let settled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                    let confirmation = self.app.buttons["quantum.payment.confirmEnd"]
+                    let retry = self.app.buttons["quantum.payment.end"]
+                    return (confirmation.exists && confirmation.isEnabled) || (retry.exists && retry.isEnabled)
+                }, object: app)
+                XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 60), .completed)
+            }
+            XCTAssertTrue(app.buttons["quantum.payment.confirmEnd"].exists)
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            XCTAssertTrue(details.label.contains("Original authorization deadline:"))
+            retainScreenshot(named: "Quantum expired original authorization review")
+            tapPayment("confirmEnd")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+            XCTAssertFalse(recipientField.isEnabled)
+            app.terminate(); app.launch(); assertNativeWalletHome(); openSavedPayment()
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+            XCTAssertEqual(recipientField.value as? String, "Full recipient address")
+            XCTAssertFalse(recipientField.isEnabled)
+            XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+            XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+            retainScreenshot(named: "Quantum ended authorization remains gated after relaunch")
+            tapPayment("history")
+            XCTAssertTrue(app.alerts["Local authorization records"].waitForExistence(timeout: 5))
+            app.alerts["Local authorization records"].buttons["Close"].tap()
+            tapPayment("startAnother")
+            XCTAssertTrue(enabled(recipientField))
+            recipientField.tap(); recipientField.typeText(recipient)
+            amount.tap(); amount.typeText("0.200000002")
+            comment.tap(); comment.typeText("App second explicit payment")
+            tapPayment("review"); XCTAssertTrue(enabled(sign))
+            XCTAssertTrue(details.label.contains("Wallet deployment: Already deployed"))
+            tapPayment("sign")
+            XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10)); enterPasscode("1234")
+            XCTAssertTrue(enabled(send))
+            let second = try paymentControl("pending")
+            XCTAssertNotEqual(second["operation_id"] as? String, originalOperation)
+            XCTAssertNotEqual(second["signed_boc_sha256"] as? String, originalBOC)
+            tapPayment("send"); XCTAssertTrue(enabled(verify))
+            for _ in 0..<8 {
+                tapPayment("verify"); XCTAssertTrue(enabled(verify))
+                if app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent") { break }
+            }
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            XCTAssertTrue(details.label.contains("0.200000002 TOS"))
+            let secondReceipt = XCTAttachment(string: details.label)
+            secondReceipt.name = "public-app-second-sender-receipt"; secondReceipt.lifetime = .keepAlways; add(secondReceipt)
+            XCTAssertEqual(try control("snapshot"), original)
+            retainScreenshot(named: "Quantum explicit second protected payment verified")
+        }
+    }
+
+    func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        let originalAddress = address.label
+        print("PUBLIC_QUANTUM_CREATED_ADDRESS=" + originalAddress)
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        // New installations leave the optional app lock disabled. This checks
+        // public wallet identity persistence; protected custody is tested in the host.
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[originalAddress].waitForExistence(timeout: 10))
+        retainScreenshot(named: "Quantum address retained after relaunch")
+    }
+
+    func testExistingQuantumWalletSurvivesRejectedAndCancelledRecovery() throws {
+        let pastePermission = addUIInterruptionMonitor(withDescription: "Allow public recovery test clipboard") { alert in
+            for title in ["Allow Paste", "ペーストを許可"] {
+                if alert.buttons[title].exists { alert.buttons[title].tap(); return true }
+            }
+            return false
+        }
+        defer { removeUIInterruptionMonitor(pastePermission) }
+        func snapshot() throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/snapshot")))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with:
+                synchronousData(request: request, description: "public enrollment preservation")) as? [String: String])
+        }
+        func restart(phrase: String? = nil) {
+            app.terminate()
+            app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+            app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
+            app.launch()
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 2) { enterPasscode("1234") }
+            assertNativeWalletHome()
+        }
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        let originalAddress = address.label
+        let original = try snapshot()
+        let validPublicPhrase = "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall"
+        let attempts = [Array(repeating: "abandon", count: 23).joined(separator: " "),
+            (["notaword"] + Array(repeating: "abandon", count: 23)).joined(separator: " "),
+            Array(repeating: "abandon", count: 24).joined(separator: " "), validPublicPhrase]
+        for (index, phrase) in attempts.enumerated() {
+            restart(phrase: phrase)
+            app.buttons["wallet.switch"].tap()
+            let addWallet = app.staticTexts["Add Wallet"]
+            XCTAssertTrue(addWallet.waitForExistence(timeout: 10)); addWallet.tap()
+            let existingWallet = app.cells.containing(.staticText, identifier: "Existing Wallet").firstMatch
+            XCTAssertTrue(existingWallet.waitForExistence(timeout: 10))
+            existingWallet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            let paste = app.descendants(matching: .any)["mnemonic.paste"]
+            XCTAssertTrue(paste.waitForExistence(timeout: 10))
+            UIPasteboard.general.string = phrase
+            paste.tap()
+            let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            for title in ["Allow Paste", "ペーストを許可"] {
+                if system.buttons[title].exists { system.buttons[title].tap() }
+            }
+            for (wordIndex, word) in phrase.split(separator: " ").enumerated() {
+                XCTAssertEqual(app.textFields["mnemonic.input.\(wordIndex)"].value as? String, String(word))
+            }
+            app.descendants(matching: .any)["mnemonic.continue"].tap()
+            if index == attempts.count - 1 {
+                let format = app.alerts["Recovery Phrase Format"]
+                XCTAssertTrue(format.waitForExistence(timeout: 10))
+                format.buttons["Restore Quantum Wallet"].tap()
+                let network = app.alerts["Confirm Recovery Network"]
+                XCTAssertTrue(network.waitForExistence(timeout: 10))
+                network.buttons["Cancel"].tap()
+            }
+            XCTAssertTrue(app.textFields["mnemonic.input.0"].exists)
+            XCTAssertFalse(app.staticTexts["Customize your Wallet"].exists)
+            XCTAssertEqual(try snapshot(), original)
+            restart()
+            XCTAssertEqual(try snapshot(), original)
+            app.descendants(matching: .any)["Receive"].tap()
+            XCTAssertTrue(app.staticTexts[originalAddress].waitForExistence(timeout: 10))
+        }
+        retainScreenshot(named: "Existing Quantum address survives rejected imports and restart")
+    }
+
+    func testExistingQuantumRecoveryRejectsWrongNetworkAndReconfirmsCorrectedProfile() throws {
+        let pastePermission = addUIInterruptionMonitor(withDescription: "Allow public recovery test clipboard") { alert in
+            for title in ["Allow Paste", "ペーストを許可"] {
+                if alert.buttons[title].exists { alert.buttons[title].tap(); return true }
+            }
+            return false
+        }
+        defer { removeUIInterruptionMonitor(pastePermission) }
+        func snapshot() throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/snapshot")))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with:
+                synchronousData(request: request, description: "public enrollment preservation")) as? [String: String])
+        }
+        func restart(phrase: String? = nil) {
+            app.terminate()
+            app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+            app.launchEnvironment["TOS_UI_TEST_PASTEBOARD"] = phrase
+            app.launch()
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 2) { enterPasscode("1234") }
+            assertNativeWalletHome()
+        }
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        let originalAddress = address.label
+        let original = try snapshot()
+        let validPublicPhrase = "coffee glad rail dry pink piano allow announce system shrug term return vague crater silly state quick glow wrestle wink tail derive device recall"
+        let attempts = [validPublicPhrase]
+        for (index, phrase) in attempts.enumerated() {
+            restart(phrase: phrase)
+            app.buttons["wallet.switch"].tap()
+            let addWallet = app.staticTexts["Add Wallet"]
+            XCTAssertTrue(addWallet.waitForExistence(timeout: 10)); addWallet.tap()
+            let existingWallet = app.cells.containing(.staticText, identifier: "Existing Wallet").firstMatch
+            XCTAssertTrue(existingWallet.waitForExistence(timeout: 10))
+            existingWallet.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            let paste = app.descendants(matching: .any)["mnemonic.paste"]
+            XCTAssertTrue(paste.waitForExistence(timeout: 10))
+            UIPasteboard.general.string = phrase
+            paste.tap()
+            let system = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+            for title in ["Allow Paste", "ペーストを許可"] {
+                if system.buttons[title].exists { system.buttons[title].tap() }
+            }
+            for (wordIndex, word) in phrase.split(separator: " ").enumerated() {
+                XCTAssertEqual(app.textFields["mnemonic.input.\(wordIndex)"].value as? String, String(word))
+            }
+            app.descendants(matching: .any)["mnemonic.continue"].tap()
+            if index == attempts.count - 1 {
+                let format = app.alerts["Recovery Phrase Format"]
+                XCTAssertTrue(format.waitForExistence(timeout: 10))
+                format.buttons["Restore Quantum Wallet"].tap()
+                let network = app.alerts["Confirm Recovery Network"]
+                XCTAssertTrue(network.waitForExistence(timeout: 10))
+                func editRoot(_ value: String) {
+                    let rpc = app.alerts["RPC Node"]
+                    XCTAssertTrue(rpc.waitForExistence(timeout: 10))
+                    rpc.buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+                    let editor = app.alerts["Trusted Quantum Network"]
+                    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+                    let field = editor.textFields["Genesis root hash"]
+                    replaceNetworkField(in: field, with: value)
+                    XCTAssertEqual(field.value as? String, value)
+                    editor.buttons["Save"].tap()
+                }
+                let wrongRoot = String(repeating: "77", count: 32)
+                network.buttons["Change Trusted Network"].tap()
+                editRoot(wrongRoot)
+                XCTAssertTrue(network.waitForExistence(timeout: 10))
+                XCTAssertTrue(network.staticTexts.allElementsBoundByIndex.map(\.label).joined().contains(wrongRoot))
+                network.buttons["Use This Network"].tap()
+                let failure = app.alerts["TOS Node Unavailable"]
+                XCTAssertTrue(failure.waitForExistence(timeout: 30))
+                XCTAssertFalse(app.staticTexts["Customize your Wallet"].exists)
+                XCTAssertEqual(try snapshot(), original)
+                failure.buttons["Configure TOS Node"].tap()
+                let correctRoot = try XCTUnwrap(ProcessInfo.processInfo.environment["TOS_QUANTUM_ROOT_HASH"])
+                editRoot(correctRoot)
+                XCTAssertTrue(network.waitForExistence(timeout: 15), "Corrected profile must be presented for explicit confirmation")
+                let corrected = network.staticTexts.allElementsBoundByIndex.map(\.label).joined()
+                XCTAssertTrue(corrected.contains(correctRoot)); XCTAssertFalse(corrected.contains(wrongRoot))
+                XCTAssertEqual(try snapshot(), original)
+                network.buttons["Cancel"].tap()
+            }
+            XCTAssertTrue(app.textFields["mnemonic.input.0"].exists)
+            XCTAssertFalse(app.staticTexts["Customize your Wallet"].exists)
+            XCTAssertEqual(try snapshot(), original)
+            restart()
+            XCTAssertEqual(try snapshot(), original)
+            app.descendants(matching: .any)["Receive"].tap()
+            XCTAssertTrue(app.staticTexts[originalAddress].waitForExistence(timeout: 10))
+        }
+        retainScreenshot(named: "Existing Quantum address survives wrong network and corrected profile cancellation")
+    }
+
+    func testQuantumColdRecoveryRestoresAddressAndPublicKeysOnLiveNetwork() throws {
+        _ = try quantumColdRecoveryJourney()
+    }
+
+    private func quantumColdRecoveryJourney() throws -> [String: Any] {
+        guard let endpoint = ProcessInfo.processInfo.environment["TOS_QUANTUM_COLD_RECOVERY_CONTROL"],
+              let url = URL(string: endpoint), url.scheme == "http", url.host == "127.0.0.1" else {
+            throw XCTSkip("Requires the disposable simulator cold-recovery controller")
+        }
+        func control(_ action: String) throws -> [String: Any] {
+            var request = URLRequest(url: url.appendingPathComponent(action))
+            request.httpMethod = "POST"
+            request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 90
+            let result = try XCTUnwrap(JSONSerialization.jsonObject(with:
+                synchronousData(request: request, description: "cold recovery " + action, timeout: 90)) as? [String: Any])
+            XCTAssertNil(result["error"], "Cold recovery controller rejected the stage")
+            return result
+        }
+        try configureLiveQuantumTestNetwork()
+        let phrase = createQuantumWalletWithConfirmedBackupToHome()
+        XCTAssertEqual(phrase.split(separator: " ").count, 24)
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        let originalAddress = address.label
+        let original = try control("snapshot")
+        app.terminate()
+        XCTAssertEqual(try control("reinstall")["reinstalled"] as? Bool, true)
+        // The actual bundle has been uninstalled/reinstalled. The test reset
+        // also clears simulator keychain remnants; only the runner keeps the
+        // backup phrase in memory. No phrase is sent to the control server.
+        launchRecoveryPhraseImport(phrase: phrase, configureQuantumNetwork: true)
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let format = app.alerts["Recovery Phrase Format"]
+        if format.waitForExistence(timeout: 1) {
+            format.buttons["Restore Quantum Wallet"].tap()
+        } else {
+            let identity = app.alerts["Restore TOS Wallet"]
+            XCTAssertTrue(identity.waitForExistence(timeout: 10))
+            identity.buttons["Quantum Wallet"].tap()
+        }
+        let network = app.alerts["Confirm Recovery Network"]
+        XCTAssertTrue(network.waitForExistence(timeout: 10))
+        let confirmation = network.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " ")
+        for key in ["TOS_QUANTUM_GLOBAL_ID", "TOS_QUANTUM_ROOT_HASH", "TOS_QUANTUM_FILE_HASH"] {
+            XCTAssertTrue(confirmation.contains(try XCTUnwrap(ProcessInfo.processInfo.environment[key])))
+        }
+        network.buttons["Use This Network"].tap()
+        completeImportedWalletToHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[originalAddress].waitForExistence(timeout: 10))
+        let restored = try control("verify")
+        for key in ["identity_cell_hash", "profile_sha256", "app_tree_sha256"] {
+            let expected = try XCTUnwrap(original[key] as? String)
+            XCTAssertEqual(restored[key] as? String, expected)
+        }
+        retainScreenshot(named: "Quantum cold recovery restored original receive address")
+        return restored
+    }
+
+    func testQuantumCreationResumesAfterDurableRegistrationFailureAndRelaunch() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires the disposable native chain and local enrollment-fault fixture")
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields {
+            let field = app.textFields[name]; XCTAssertTrue(field.waitForExistence(timeout: 5))
+            field.tap(); field.typeText(try XCTUnwrap(environment[key]))
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5)); endpoint.tap()
+        endpoint.typeText(try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        openCreatePasscode(); enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5)); enterPasscode("1234")
+        let later = app.descendants(matching: .any)["Later"]
+        XCTAssertTrue(later.waitForExistence(timeout: 5)); later.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 5))
+        _ = try quantumCreationControl("arm")
+        app.buttons["wallet.customize.continue"].tap()
+        let failure = app.alerts["Wallet creation failed"]
+        XCTAssertTrue(failure.waitForExistence(timeout: 30))
+        let failureText = failure.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+        XCTAssertTrue(failureText.contains("FileSystemVault") && failureText.contains("KeeperInfo"),
+                      "The injected registration I/O failure must be reached, rather than a network or custody setup error")
+        let first = try quantumCreationControl("snapshot")
+        failure.buttons["Cancel"].tap()
+        app.buttons["wallet.customize.continue"].tap()
+        XCTAssertTrue(failure.waitForExistence(timeout: 30))
+        let retryFailure = failure.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | ")
+        XCTAssertTrue(retryFailure.contains("FileSystemVault") && retryFailure.contains("KeeperInfo"))
+        XCTAssertEqual(try quantumCreationControl("snapshot"), first, "Warm retry must retain the original enrollment UUID")
+        let released = try quantumCreationControl("release")
+        XCTAssertEqual(released, first)
+        _ = try quantumCreationControl("damage")
+        failure.buttons["Manage unfinished wallets"].tap()
+        let inventory = app.alerts["Resume wallet creation"]
+        XCTAssertTrue(inventory.waitForExistence(timeout: 10))
+        inventory.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unavailable record ")).firstMatch.tap()
+        let damaged = app.alerts["Unfinished wallet"]
+        XCTAssertTrue(damaged.waitForExistence(timeout: 5)); damaged.buttons["Remove damaged public record"].tap()
+        XCTAssertTrue(inventory.waitForExistence(timeout: 10))
+        XCTAssertFalse(inventory.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unavailable record ")).firstMatch.exists)
+        app.terminate()
+        let original = try quantumCreationControl("snapshot")
+        XCTAssertEqual(original, first)
+        XCTAssertEqual(original["published"], "false")
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"; app.launch()
+        let create = app.buttons["Create New Wallet"]
+        XCTAssertTrue(create.waitForExistence(timeout: 15)); create.tap()
+        XCTAssertTrue(app.buttons["1"].waitForExistence(timeout: 5)); enterPasscode("1234")
+        let recovery = app.alerts["Resume wallet creation"]
+        XCTAssertTrue(recovery.waitForExistence(timeout: 10))
+        recovery.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Resume ")).firstMatch.tap()
+        let confirmation = app.alerts["Unfinished wallet"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 5)); confirmation.buttons["Resume wallet"].tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        app.buttons["wallet.customize.continue"].tap()
+        assertNativeWalletHome()
+        let completed = try quantumCreationControl("snapshot")
+        XCTAssertEqual(completed["published"], "true")
+        for key in ["id", "profile_sha256", "identity_sha256"] { XCTAssertEqual(completed[key], original[key]) }
+        app.descendants(matching: .any)["Receive"].tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[A-Za-z0-9_-]{48}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10)); let retained = address.label
+        app.terminate(); app.launch(); assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[retained].waitForExistence(timeout: 10))
+        print("PUBLIC_QUANTUM_RESUMED_ID=" + (original["id"] ?? "missing"))
+        retainScreenshot(named: "Resumed Quantum address after registration failure")
+    }
+
+    func testQuantumProductHistoryUsesNativeTransactionsAndRejectsCorruption() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires a disposable native chain and local balance relay fixture")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let bytes = try synchronousData(request: request, description: "local Quantum balance fixture")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+        }
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        _ = try control("fund")
+        app.buttons["History"].tap()
+        let table = app.tables["quantum.history.records"]
+        XCTAssertTrue(table.waitForExistence(timeout: 10))
+        let refresh = app.buttons["quantum.history.newest"]
+        let row = table.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "quantum.history.record.")).firstMatch
+        for _ in 0..<5 {
+            if row.waitForExistence(timeout: 8) { break }
+            if waitForEnabled(refresh, expected: true) { refresh.tap() }
+        }
+        XCTAssertTrue(row.exists, "A real incoming transfer must appear through the product History route")
+        XCTAssertTrue(row.staticTexts["Incoming transfer"].exists)
+        XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "10 TOS")).firstMatch.exists)
+        XCTAssertTrue(row.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Included")).firstMatch.exists)
+        let originalID = row.identifier
+        row.tap()
+        let detail = app.tables["quantum.history.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        XCTAssertTrue(detail.staticTexts["Transaction hash"].exists)
+        XCTAssertTrue(detail.staticTexts["Logical time"].exists)
+        XCTAssertFalse(detail.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "999999999")).firstMatch.exists)
+        retainScreenshot(named: "Quantum authenticated incoming transaction detail")
+        app.buttons["quantum.history.detail.done"].tap()
+        _ = try control("history-corrupt")
+        defer { _ = try? control("history-normal") }
+        XCTAssertTrue(waitForEnabled(refresh, expected: true)); refresh.tap()
+        XCTAssertTrue(app.staticTexts["Unable to verify history. Refresh to try again."].waitForExistence(timeout: 30))
+        XCTAssertFalse(row.exists, "Failed native verification must remove previously rendered rows")
+        _ = try control("history-normal")
+        refresh.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        XCTAssertEqual(row.identifier, originalID)
+        // A tab change cancels pending work and must allow a subsequent read.
+        app.buttons["Wallet"].tap(); app.buttons["History"].tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 30))
+        let status = try control("status")
+        XCTAssertGreaterThan(Int(status["transactions"] ?? "0") ?? 0, 0)
+        XCTAssertEqual(status["legacy_history"], "0", "Quantum history must not use unverified event summaries")
+        retainScreenshot(named: "Quantum history recovered after raw transaction corruption")
+        app.buttons["Wallet"].tap()
+        let nativeCoin = app.collectionViews["wallet.balance.list"].cells.containing(.staticText, identifier: "TOS").firstMatch
+        XCTAssertTrue(nativeCoin.waitForExistence(timeout: 10)); nativeCoin.tap()
+        XCTAssertTrue(app.tables["quantum.history.records"].waitForExistence(timeout: 10))
+        let embeddedRow = app.tables["quantum.history.records"].cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "quantum.history.record.")).firstMatch
+        XCTAssertTrue(embeddedRow.waitForExistence(timeout: 30))
+        XCTAssertEqual(embeddedRow.identifier, originalID)
+        retainScreenshot(named: "Quantum coin details share authenticated history")
+    }
+
+    func testQuantumProofBalanceReceivesFundingAndRefusesPoisonedRelay() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires a disposable native chain and local balance relay fixture")
+        }
+        func control(_ action: String) throws -> [String: String] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let bytes = try synchronousData(request: request, description: "local Quantum balance fixture")
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+        }
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let verified = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Verified ")).firstMatch
+        for _ in 0..<3 {
+            if verified.waitForExistence(timeout: 5) { break }
+            pullToRefresh(list)
+        }
+        XCTAssertTrue(verified.waitForExistence(timeout: 30))
+        let original = try control("snapshot")
+        let funding = try control("fund")
+        XCTAssertEqual(funding["address"], original["address"])
+        XCTAssertEqual(funding["nanos"], "10000000000")
+        let tenTOS = app.staticTexts.matching(NSPredicate(format: "label MATCHES[c] %@", "10([.,]0+)?\\s*TOS")).firstMatch
+        for _ in 0..<5 {
+            pullToRefresh(list)
+            if tenTOS.waitForExistence(timeout: 8) { break }
+        }
+        if !tenTOS.exists {
+            let detail = XCTAttachment(string: app.debugDescription); detail.lifetime = .keepAlways; add(detail)
+        }
+        XCTAssertTrue(tenTOS.exists, "The new wallet must show its real authenticated 10 TOS prefunding")
+        retainScreenshot(named: "Quantum authenticated prefunded balance")
+        _ = try control("poison")
+        defer { _ = try? control("normal") }
+        var ordinary = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/jsonRPC")))
+        ordinary.httpMethod = "POST"
+        ordinary.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        ordinary.httpBody = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": "poison-control",
+            "method": "getAddressInformation", "params": ["address": try XCTUnwrap(original["address"])]])
+        let ordinaryResult = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            synchronousData(request: ordinary, description: "ordinary relay positive control")) as? [String: Any])
+        XCTAssertEqual((ordinaryResult["result"] as? [String: Any])?["balance"] as? String, "999999999000000000")
+        pullToRefresh(list)
+        XCTAssertTrue(app.staticTexts["Balance unavailable"].waitForExistence(timeout: 30))
+        XCTAssertFalse(tenTOS.exists, "A previous numeric balance must disappear after verification fails")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "999999999")).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Receive"].exists)
+        retainScreenshot(named: "Quantum proof failure hides previous balance")
+        _ = try control("normal")
+        pullToRefresh(list)
+        XCTAssertTrue(tenTOS.waitForExistence(timeout: 30))
+        XCTAssertTrue(verified.waitForExistence(timeout: 10))
+        XCTAssertEqual(try control("snapshot"), original)
+        let status = try control("status")
+        XCTAssertGreaterThan(Int(status["proofs"] ?? "0") ?? 0, 0)
+        print("PUBLIC_QUANTUM_BALANCE_ID=" + (original["id"] ?? "missing"))
+        retainScreenshot(named: "Quantum proof balance retry restored")
+    }
+
+    private func quantumCreationControl(_ action: String) throws -> [String: String] {
+        var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_creation/" + action)))
+        request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let bytes = try synchronousData(request: request, description: "local Quantum enrollment fixture")
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: String])
+    }
+
     func testUnavailableNodeImportCanRetryWithoutLosingRecovery() throws {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic)
         app.descendants(matching: .any)["mnemonic.continue"].tap()
@@ -383,6 +1121,66 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe"].waitForExistence(timeout: 10))
     }
 
+    func testClassicRecoveryAutomaticallyRetainsSixAccountsWithoutVersionMenu() throws {
+        guard URL(string: ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] ?? "")?.port == 18648 else {
+            throw XCTSkip("Requires the bounded classic_recovery_fixture.py on loopback port 18648")
+        }
+        let phrase = "mansion chef affair ancient announce police snap machine vanish liberty peace tennis effort recall law limit mosquito tornado toward advance vibrant bachelor auction voice"
+        launchRecoveryPhraseImport(phrase: phrase)
+        for (index, word) in phrase.split(separator: " ").enumerated() {
+            XCTAssertEqual(app.textFields["mnemonic.input.\(index)"].value as? String, String(word))
+        }
+        app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let choice = app.alerts["Legacy Recovery Phrase"]
+        guard choice.waitForExistence(timeout: 10) else {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Classic recovery missing format confirmation"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            retainScreenshot(named: "Classic recovery before format confirmation")
+            XCTFail("Legacy format confirmation did not appear")
+            return
+        }
+        choice.buttons["Restore Legacy Wallet"].tap()
+        completeImportedWalletToHome()
+        app.buttons["wallet.switch"].tap()
+        for number in 1...6 {
+            XCTAssertTrue(app.staticTexts["Wallet \(number)"].waitForExistence(timeout: 5), "Missing restored account \(number)")
+        }
+        for revision in ["W5", "W5 BETA", "TOS W5", "v5R1", "v5BETA", "v4R2", "v4R1", "v3R2", "v3R1"] {
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label ==[c] %@", revision)).firstMatch.exists)
+        }
+        retainScreenshot(named: "Six classic accounts with generic names")
+        var addresses = [Int: String]()
+        let order = Array(1...6) + Array((1...6).reversed())
+        for (index, number) in order.enumerated() {
+            if index > 0 {
+                XCTAssertTrue(app.buttons["wallet.switch"].waitForExistence(timeout: 10))
+                app.buttons["wallet.switch"].tap()
+            }
+            let target = app.staticTexts["Wallet \(number)"]
+            XCTAssertTrue(target.waitForExistence(timeout: 5)); target.tap()
+            assertNativeWalletHome()
+            app.descendants(matching: .any)["Receive"].tap()
+            let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")).firstMatch
+            XCTAssertTrue(address.waitForExistence(timeout: 10))
+            if let original = addresses[number] { XCTAssertEqual(address.label, original) }
+            else { addresses[number] = address.label }
+            if number == 1 { XCTAssertEqual(address.label, "UQCJFahawZUzYka4uzFTeWns-oQNfoa0VNVOAn8e8BJnXPZe") }
+            let dismiss = app.buttons["Dismiss"]
+            XCTAssertTrue(dismiss.waitForExistence(timeout: 5)); dismiss.tap()
+        }
+        XCTAssertEqual(Set(addresses.values).count, 6, "Every restored account must have a distinct receive address")
+        app.terminate(); app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"; app.launch()
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
+        enterPasscode("1234")
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Receive"].tap()
+        XCTAssertTrue(app.staticTexts[addresses[1]!].waitForExistence(timeout: 10))
+        let evidence = XCTAttachment(string: addresses.sorted { $0.key < $1.key }.map { "Wallet \($0.key): \($0.value)" }.joined(separator: "\n"))
+        evidence.name = "Public classic account switch addresses"; evidence.lifetime = .keepAlways; add(evidence)
+    }
+
     func testLegacyWalletDeploysAndTransfersAgainFromActiveStoredContract() throws {
         // PUBLIC TEST DATA. This fixture must begin uninitialized on the isolated
         // test chain; both its deployment and active send go through the App.
@@ -460,10 +1258,13 @@ final class TOSWalletUITests: XCTestCase {
         let choice = app.alerts["Recovery Phrase Format"]
         XCTAssertTrue(choice.waitForExistence(timeout: 10))
         XCTAssertTrue(choice.buttons["Restore Legacy Wallet"].exists)
-        choice.buttons["Restore TOS Wallet"].tap()
+        choice.buttons["Restore Classic TOS Wallets"].tap()
         completeImportedWalletToHome()
         app.descendants(matching: .any)["Receive"].tap()
-        XCTAssertTrue(app.staticTexts["UQDxvyHqyxsnJeR5LU7q4j39VALosGD2fSpycZrsSeXXJwDq"].waitForExistence(timeout: 10))
+        // Global-ID 3 frozen vector shared with Android TosV1MnemonicTest.
+        let expected = "UQAry5n1Kb7aLAUW-GaVSZ0V0rKvHbvWUEMQz07MUfDAC7R_"
+        XCTAssertTrue(app.staticTexts[expected].waitForExistence(timeout: 10),
+            "Expected network-3 address; rendered addresses: \(app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")).allElementsBoundByIndex.map(\.label))")
     }
 
     func testAmbiguousPhraseCanExplicitlyRestoreLegacyWallet() {
@@ -471,7 +1272,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         let choice = app.alerts["Recovery Phrase Format"]
         XCTAssertTrue(choice.waitForExistence(timeout: 10))
-        XCTAssertTrue(choice.buttons["Restore TOS Wallet"].exists)
+        XCTAssertTrue(choice.buttons["Restore Classic TOS Wallets"].exists)
         choice.buttons["Restore Legacy Wallet"].tap()
         completeImportedWalletToHome()
         app.descendants(matching: .any)["Receive"].tap()
@@ -664,6 +1465,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+        assertRejectedRecoveryLeavesNoWalletAfterRestart()
     }
 
     func testRecoveryPhraseUnknownWordIsRejected() {
@@ -676,6 +1478,7 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+        assertRejectedRecoveryLeavesNoWalletAfterRestart()
     }
 
     func testRecoveryPhraseInvalidChecksumIsRejected() {
@@ -685,6 +1488,19 @@ final class TOSWalletUITests: XCTestCase {
         app.descendants(matching: .any)["mnemonic.continue"].tap()
         XCTAssertFalse(app.staticTexts["Create passcode"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Enter recovery phrase"].exists)
+        assertRejectedRecoveryLeavesNoWalletAfterRestart()
+    }
+
+    private func assertRejectedRecoveryLeavesNoWalletAfterRestart() {
+        XCTAssertFalse(app.alerts["Confirm Recovery Network"].exists)
+        XCTAssertFalse(app.staticTexts["Customize your Wallet"].exists)
+        app.terminate()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        XCTAssertTrue(app.buttons["Create New Wallet"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Import Existing Wallet"].exists)
+        XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+        XCTAssertFalse(app.buttons["wallet.switch"].exists)
     }
 
     func testCancelledImportLeavesNoWallet() {
@@ -723,7 +1539,7 @@ final class TOSWalletUITests: XCTestCase {
     }
 
     func testReceiveOpensNativeTOSAddressWithoutDeferredAssets() {
-        createNativeWalletToHome()
+        importFixtureWalletToHome()
 
         let receive = app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")
@@ -1283,6 +2099,89 @@ final class TOSWalletUITests: XCTestCase {
         assertReachableControlsAreAccessible()
     }
 
+    private func replaceNetworkField(in field: XCUIElement, with value: String) {
+        field.tap()
+        if let current = field.value as? String, !current.isEmpty {
+            let clear = field.buttons.firstMatch
+            XCTAssertTrue(clear.waitForExistence(timeout: 5), "Network fields must expose their clear action")
+            clear.tap()
+        }
+        field.typeText(value)
+        XCTAssertEqual(field.value as? String, value)
+    }
+
+    private func configureLiveQuantumTestNetwork() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"),
+                      ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        guard fields.allSatisfy({ !(environment[$0.1] ?? "").isEmpty }) else {
+            throw XCTSkip("Requires an independently provisioned live Quantum test-chain anchor")
+        }
+        let configure = app.buttons["onboarding.configureNode"]
+        XCTAssertTrue(configure.waitForExistence(timeout: 15)); configure.tap()
+        let quantum = app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch
+        XCTAssertTrue(quantum.waitForExistence(timeout: 5)); quantum.tap()
+        XCTAssertTrue(app.alerts["Trusted Quantum Network"].waitForExistence(timeout: 5))
+        for (name, key) in fields {
+            let field = app.textFields[name]
+            XCTAssertTrue(field.exists)
+            replaceNetworkField(in: field, with: try XCTUnwrap(environment[key]))
+            XCTAssertEqual(field.value as? String, environment[key])
+        }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        XCTAssertFalse(app.alerts["Invalid Network Configuration"].waitForExistence(timeout: 1))
+        // The application's explicit RPC setting is separate from the test transport URL.
+        configure.tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]
+        XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
+        replaceNetworkField(in: endpoint, with: try XCTUnwrap(environment["TOS_UI_RPC_URL"]))
+        XCTAssertEqual(endpoint.value as? String, environment["TOS_UI_RPC_URL"])
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        XCTAssertFalse(app.alerts["Invalid RPC Node"].waitForExistence(timeout: 1))
+    }
+
+    @discardableResult
+    private func createQuantumWalletWithConfirmedBackupToHome() -> String {
+        openCreatePasscode()
+        enterPasscode("1234")
+        XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
+        enterPasscode("1234")
+        let next = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.descendants(matching: .any)["Later"].exists,
+                       "Quantum creation requires a confirmed recovery backup")
+        next.tap()
+        XCTAssertTrue(app.staticTexts["Recovery phrase"].waitForExistence(timeout: 10))
+        var words = [Int: String]()
+        for index in 1...24 {
+            let word = app.descendants(matching: .any)["recovery.word.\(index)"]
+            XCTAssertTrue(word.exists)
+            guard let value = word.value as? String, !value.isEmpty else {
+                XCTFail("Recovery word is missing"); return ""
+            }
+            words[index] = value
+        }
+        next.tap()
+        XCTAssertTrue(app.staticTexts["Backup Check"].waitForExistence(timeout: 10))
+        let challenges = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "backup.check.input.")
+        ).allElementsBoundByIndex
+        XCTAssertEqual(challenges.count, 3)
+        for input in challenges {
+            guard let index = Int(input.identifier.split(separator: ".").last ?? ""),
+                  let word = words[index] else { XCTFail("Invalid backup challenge"); return "" }
+            input.tap(); input.typeText(word)
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        next.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 10))
+        next.tap()
+        assertNativeWalletHome()
+        XCTAssertFalse(app.staticTexts["Back up your recovery phrase"].exists)
+        return (1...24).compactMap { words[$0] }.joined(separator: " ")
+    }
+
     private func createNativeWalletToHome() {
         openCreatePasscode()
         enterPasscode("1234")
@@ -1309,6 +2208,15 @@ final class TOSWalletUITests: XCTestCase {
     private func importFixtureWalletToHome(comment: String = "TOS automated transfer") {
         launchRecoveryPhraseImport(phrase: fixtureMnemonic, comment: comment)
         app.descendants(matching: .any)["mnemonic.continue"].tap()
+        let nativeChoice = app.alerts["Restore TOS Wallet"]
+        if nativeChoice.waitForExistence(timeout: 3) {
+            XCTAssertTrue(nativeChoice.buttons["Quantum Wallet"].exists)
+            nativeChoice.buttons["Classic TOS Wallets"].tap()
+        } else {
+            let formatChoice = app.alerts["Recovery Phrase Format"]
+            XCTAssertTrue(formatChoice.waitForExistence(timeout: 5))
+            formatChoice.buttons["Restore Classic TOS Wallets"].tap()
+        }
         XCTAssertTrue(app.staticTexts["Create passcode"].waitForExistence(timeout: 10))
         enterPasscode("1234")
         XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
@@ -1553,7 +2461,8 @@ final class TOSWalletUITests: XCTestCase {
     private func launchRecoveryPhraseImport(
         phrase: String,
         comment: String = "TOS automated transfer",
-        recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
+        recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU",
+        configureQuantumNetwork: Bool = false
     ) {
         app.terminate()
         app = XCUIApplication()
@@ -1564,8 +2473,34 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
         app.launch()
+        if configureQuantumNetwork {
+            do { try configureLiveQuantumTestNetwork() }
+            catch { XCTFail("Could not configure the cold recovery network: \(error)"); return }
+        }
         openRecoveryPhraseImport()
-        app.descendants(matching: .any)["mnemonic.paste"].tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        // A fresh iOS keyboard can show its system slide-typing introduction.
+        // Dismiss only that identified keyboard panel; the actual paste control
+        // must still pass the original visibility/geometry check below.
+        let slideTypingTip = keyboard.staticTexts["Speed up your typing by sliding your finger across the letters to compose a word."]
+        if slideTypingTip.waitForExistence(timeout: 1) {
+            let continueTyping = keyboard.buttons["Continue"]
+            XCTAssertTrue(continueTyping.isHittable, "The identified system keyboard introduction must expose its Continue action")
+            retainScreenshot(named: "System slide typing introduction before recovery import")
+            continueTyping.tap()
+        }
+        let paste = app.descendants(matching: .any)["mnemonic.paste"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            keyboard.exists && paste.isHittable && paste.frame.maxY <= keyboard.frame.minY
+        }, object: nil)
+        let readyResult = XCTWaiter.wait(for: [ready], timeout: 5)
+        if readyResult != .completed {
+            let diagnostic = XCTAttachment(string: app.debugDescription)
+            diagnostic.name = "recovery-paste-readiness-hierarchy"; diagnostic.lifetime = .keepAlways; add(diagnostic)
+        }
+        XCTAssertEqual(readyResult, .completed)
+        paste.tap()
     }
 
     private func openSettings() {
@@ -2164,7 +3099,7 @@ final class TOSWalletUITests: XCTestCase {
         return false
     }
 
-    private func synchronousData(request: URLRequest, description: String) throws -> Data {
+    private func synchronousData(request: URLRequest, description: String, timeout: TimeInterval = 10) throws -> Data {
         let completed = expectation(description: description)
         var result: Result<Data, Error>?
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -2178,7 +3113,7 @@ final class TOSWalletUITests: XCTestCase {
                 result = .failure(error)
             }
         }.resume()
-        wait(for: [completed], timeout: 10)
+        wait(for: [completed], timeout: timeout)
         return try XCTUnwrap(result).get()
     }
 

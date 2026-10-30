@@ -43,4 +43,32 @@ public final class TOSQuantumProofSession {
         try TOSQuantumProofBridge.acquireBound(directory: directory, initialize: false, anchor: anchor, request: request, now: now, transport: transport)
     }
 
+    /// Uses the existing enrollment and the same cross-process checkpoint lock.
+    /// A signed message must already be durable in the outbox; this call neither
+    /// broadcasts it nor releases its authorization slot, even on refusal.
+    public func simulate(request: Data, now: Int64, signedMessage: Data,
+                         transport: @escaping TOSQuantumProofBridge.Transport) throws -> TOSQuantumProofBridge.LocalSimulation {
+        try TOSQuantumProofBridge.simulatePersisted(directory: directory, anchor: anchor, request: request,
+            now: now, signedMessage: signedMessage, transport: transport)
+    }
+
+    public static func removeCheckpoint(walletID: UUID, baseDirectory: URL? = nil) throws {
+        try removeCheckpointDirectory(walletID: walletID, baseDirectory: baseDirectory)
+    }
+    public static func removeAllCheckpoints(baseDirectory: URL? = nil) throws {
+        try removeCheckpointDirectory(walletID: nil, baseDirectory: baseDirectory)
+    }
+    private static func removeCheckpointDirectory(walletID: UUID?, baseDirectory: URL?) throws {
+        guard let base = baseDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw TOSPQError.invalidInput }
+        let parent = base.appendingPathComponent("quantum-proof-checkpoints", isDirectory: true)
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: parent.path)
+            guard attributes[.type] as? FileAttributeType == .typeDirectory,
+                  let mode = attributes[.posixPermissions] as? NSNumber, mode.intValue & 0o077 == 0 else { throw TOSPQError.invalidInput }
+        } catch CocoaError.fileReadNoSuchFile { return }
+        let target = walletID.map { parent.appendingPathComponent($0.uuidString, isDirectory: true) } ?? parent
+        do { try FileManager.default.removeItem(at: target) }
+        catch CocoaError.fileNoSuchFile { return }
+    }
+
 }

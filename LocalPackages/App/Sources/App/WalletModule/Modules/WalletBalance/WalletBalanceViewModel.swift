@@ -725,7 +725,15 @@ final class WalletBalanceViewModelImplementation:
                 }
             }
 
-            if let connectionStatusModel = self.createConnectionStatusModel(
+            if totalBalanceModelState.wallet.kind == .quantum, !totalBalanceModelState.isLoadingBalance {
+                let text: String
+                if case let .current(balance)? = totalBalanceModelState.totalBalanceState {
+                    text = "Verified " + self.headerMapper.makeUpdatedDate(balance.date)
+                } else {
+                    text = "Balance unavailable"
+                }
+                return BalanceHeaderBalanceStatusView.Configuration(state: .updated(text), action: action)
+            } else if let connectionStatusModel = self.createConnectionStatusModel(
                 backgroundUpdateState: totalBalanceModelState.backgroundUpdateConnectionState,
                 isLoading: totalBalanceModelState.isLoadingBalance
             ) {
@@ -771,7 +779,14 @@ final class WalletBalanceViewModelImplementation:
     }
 
     func createAmountViewConfiguration(state: WalletTotalBalanceModel.State) -> BalanceHeaderBalanceAmountView.Configuration {
-        let totalBalanceMapped = self.headerMapper.mapTotalBalance(totalBalance: state.totalBalanceState?.totalBalance)
+        let totalBalanceMapped: String
+        if state.wallet.kind == .quantum {
+            if case let .current(balance)? = state.totalBalanceState {
+                totalBalanceMapped = self.headerMapper.mapTotalBalance(totalBalance: balance)
+            } else { totalBalanceMapped = "—" }
+        } else {
+            totalBalanceMapped = self.headerMapper.mapTotalBalance(totalBalance: state.totalBalanceState?.totalBalance)
+        }
 
         let backupWarningState = BalanceBackupWarningCheck().check(
             wallet: state.wallet,
@@ -917,7 +932,7 @@ final class WalletBalanceViewModelImplementation:
         let sendButton = WalletBalanceHeaderButtonsView.Model.Button(
             title: TKLocales.WalletButtons.send,
             icon: .TKUIKit.Icons.Size28.arrowUpOutline,
-            isEnabled: wallet.isSendEnable,
+            isEnabled: wallet.isSendEnable || wallet.isQuantumSelfPayAvailable,
             action: { [weak self] in self?.didTapSend?(wallet) }
         )
 

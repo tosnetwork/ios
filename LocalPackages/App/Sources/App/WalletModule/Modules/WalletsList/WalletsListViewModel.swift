@@ -193,6 +193,11 @@ private extension WalletsListViewModelImplementation {
         let caption: String
         if isSecure {
             caption = .secureModeValueShort
+        } else if wallet.kind == .quantum {
+            if case let .current(totalBalance)? = totalBalanceState, let item = totalBalance.balance.tonItems.first {
+                caption = amountFormatter.format(amount: item.amount, fractionDigits: item.fractionalDigits,
+                    accessory: .symbol(TonInfo.symbol), style: .compact)
+            } else { caption = "Balance unavailable" }
         } else if let totalBalance = totalBalanceState?.totalBalance {
             caption = amountFormatter.format(
                 decimal: totalBalance.amount,

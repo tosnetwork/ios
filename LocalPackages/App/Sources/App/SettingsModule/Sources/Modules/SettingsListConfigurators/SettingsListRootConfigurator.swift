@@ -24,11 +24,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
     var didTapLogout: (() -> Void)?
     var didDeleteWallet: (() -> Void)?
     var didTapNotifications: ((Wallet) -> Void)?
-    var didTapW5Wallet: ((Wallet) -> Void)?
-    var didTapV4Wallet: ((Wallet) -> Void)?
     var didTapBattery: ((Wallet) -> Void)?
     var didTapConnectedApps: ((Wallet) -> Void)?
-    var didTapPQWallets: (() -> Void)?
     var didTapRPCNode: (() -> Void)?
 
     // MARK: - SettingsListV2Configurator
@@ -211,7 +208,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             items.append(createCurrencyItem())
         }
         items.append(contentsOf: [
-            createPQWalletsItem(),
             createRPCNodeItem(),
             createLanguageItem(),
             createThemeItem(),
@@ -349,66 +345,6 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             onSelection: {
                 [weak self] _ in
                 self?.didTapCurrencySettings?()
-            }
-        )
-    }
-
-    private func createW5Item() -> SettingsListItem? {
-        guard !wallet.isW5, !configuration.flag(\.gaslessDisabled, network: wallet.network) else { return nil }
-        let isW5Added: Bool = { [walletsStore] in
-            let wallets = walletsStore.wallets.filter { $0.kind == .regular || $0.kind == .signer }
-            do {
-                return try wallets.contains(where: { try $0.publicKey == wallet.publicKey && $0.isW5 })
-            } catch {
-                return false
-            }
-        }()
-        guard !isW5Added else { return nil }
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.walletW5)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .walletW5ItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.wallet, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self] _ in
-                guard let self else { return }
-                didTapW5Wallet?(wallet)
-            }
-        )
-    }
-
-    private func createV4Item() -> SettingsListItem? {
-        guard wallet.isW5 else { return nil }
-        let isV4R2Added: Bool = { [walletsStore] in
-            let wallets = walletsStore.wallets.filter { $0.kind == .regular || $0.kind == .signer }
-            do {
-                return try wallets.contains(where: { try $0.publicKey == wallet.publicKey && $0.isV4R2 })
-            } catch {
-                return false
-            }
-        }()
-        guard !isV4R2Added else { return nil }
-        let cellConfiguration = TKListItemCell.Configuration(
-            listItemContentViewConfiguration: TKListItemContentView.Configuration(
-                textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                    titleViewConfiguration: TKListItemTitleView.Configuration(title: TKLocales.Settings.Items.walletV4R2)
-                )
-            )
-        )
-        return SettingsListItem(
-            id: .walletV4ItemIdentifier,
-            cellConfiguration: cellConfiguration,
-            accessory: .icon(TKListItemIconAccessoryView.Configuration(icon: .TKUIKit.Icons.Size28.wallet, tintColor: .Accent.blue)),
-            onSelection: {
-                [weak self] _ in
-                guard let self else { return }
-                didTapV4Wallet?(wallet)
             }
         )
     }
@@ -616,16 +552,8 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
         )
     }
 
-    private func createPQWalletsItem() -> SettingsListItem {
-        let config = TKListItemCell.Configuration(listItemContentViewConfiguration: TKListItemContentView.Configuration(
-            textContentViewConfiguration: TKListItemTextContentView.Configuration(
-                titleViewConfiguration: TKListItemTitleView.Configuration(title: "PQ Wallets"))))
-        return SettingsListItem(id: "PQWalletsItem", cellConfiguration: config, accessory: .chevron,
-            onSelection: { [weak self] _ in self?.didTapPQWallets?() })
-    }
-
     private func createRPCNodeItem() -> SettingsListItem {
-        let endpoint = TOSRPCSettings.customEndpoint ?? "Default node"
+        let endpoint = TOSRPCSettings.quantumEndpoint ?? "Default node"
         let cellConfiguration = TKListItemCell.Configuration(
             listItemContentViewConfiguration: TKListItemContentView.Configuration(
                 textContentViewConfiguration: TKListItemTextContentView.Configuration(
@@ -669,7 +597,7 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
             title = createSignOutWalletNameTitle(wallet: wallet)
         }
 
-        let hasSeedPhrase = wallet.kind == .regular
+        let hasSeedPhrase = wallet.kind == .regular || wallet.kind == .quantum
         if hasSeedPhrase {
             action = { [weak self] in
                 guard let self else { return }
@@ -683,7 +611,15 @@ final class SettingsListRootConfigurator: SettingsListConfigurator {
                         guard let self else { return }
                         Task {
                             await self.walletNotificationStore.setNotificationIsOn(false, wallet: self.wallet)
-                            await self.walletDeleteController.deleteWallet(wallet: self.wallet)
+                            do {
+                                try await self.walletDeleteController.deleteWallet(wallet: self.wallet)
+                            } catch {
+                                await MainActor.run {
+                                    self.didShowAlert?("Wallet deletion failed", error.localizedDescription,
+                                        [UIAlertAction(title: "OK", style: .default)])
+                                }
+                                return
+                            }
                             await MainActor.run {
                                 self.didDeleteWallet?()
                                 self.anaylticsProvider.log(eventKey: .deleteWallet)
@@ -896,8 +832,6 @@ private extension String {
     static let securityItemIdentifier = "SecurityItem"
     static let backupItemIdentifier = "BackupItem"
     static let currencyItemIdentifier = "CurrencyItem"
-    static let walletW5ItemIdentifier = "walletW5ItemIdentifier"
-    static let walletV4ItemIdentifier = "walletV4ItemIdentifier"
     static let searchItemIdentifier = "SearchItem"
     static let languageItemIdentifier = "LanguageItem"
     static let themeItemIdentifier = "ThemeItem"

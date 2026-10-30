@@ -27,8 +27,11 @@ public struct RNMnemonicsVault {
         do {
             _ = try loadEncryptedMnemonics()
             return true
-        } catch {
+        } catch Error.noMnemonic {
             return false
+        } catch {
+            // A locked or corrupt vault must not be treated as a new installation.
+            return true
         }
     }
 
@@ -43,7 +46,7 @@ public struct RNMnemonicsVault {
             mnemonics[identifier] = mnemonic
             let encryptedUpdatedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedUpdatedMnemonics)
-        } catch {
+        } catch Error.noMnemonic {
             let mnemonics = [identifier: mnemonic]
             let encryptedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedMnemonics)
@@ -57,7 +60,7 @@ public struct RNMnemonicsVault {
             decryptedMnemonics.merge(mnemonics, uniquingKeysWith: { $1 })
             let encryptedUpdatedMnemonics = try await encryptMnemonics(decryptedMnemonics, password: password)
             try saveEncryptedMnemonics(encryptedUpdatedMnemonics)
-        } catch {
+        } catch Error.noMnemonic {
             let encryptedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedMnemonics)
         }
@@ -181,8 +184,8 @@ private extension RNMnemonicsVault {
         )
 
         let decrypted = try JSONDecoder().decode([String: MnemonicItem].self, from: data)
-        return decrypted.compactMapValues {
-            try? Mnemonic(mnemonicWords: $0.mnemonic.components(separatedBy: " "))
+        return try decrypted.mapValues {
+            try Mnemonic(mnemonicWords: $0.mnemonic.components(separatedBy: " "))
         }
     }
 
@@ -245,11 +248,14 @@ private extension RNMnemonicsVault {
             throw Error.noMnemonic
         }
 
+        guard (1...512).contains(count) else { throw Error.mnemonicsCorrupted }
         do {
             let encryptedMnemonicsData = try (0 ..< count)
                 .map {
                     let query = getChunkQuery(index: $0)
-                    return try keychainVault.get(query: query)
+                    let chunk: Data = try keychainVault.get(query: query)
+                    guard (1...Int.chunksSize).contains(chunk.count) else { throw Error.mnemonicsCorrupted }
+                    return chunk
                 }
                 .reduce(into: Data()) { $0 = $0 + $1 }
             return try JSONDecoder().decode(EncryptedMnemonics.self, from: encryptedMnemonicsData)

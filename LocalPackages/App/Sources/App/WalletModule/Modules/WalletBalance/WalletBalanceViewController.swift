@@ -11,6 +11,7 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
     private let viewModel: WalletBalanceViewModel
     private var rpcUnavailableObserver: NSObjectProtocol?
     private var rpcAvailableObserver: NSObjectProtocol?
+    private var rpcConfigurationObserver: NSObjectProtocol?
     private lazy var tooltipDismissGestureRecognizer: UITapGestureRecognizer = {
         let recognizer = UITapGestureRecognizer(target: self, action: #selector(didTapWhileTooltipVisible))
         recognizer.cancelsTouchesInView = false
@@ -40,7 +41,7 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
             queue: .main
         ) { _ in
             ToastPresenter.showToast(configuration: .init(
-                title: "TOS node unavailable. Pull to retry.",
+                title: "TOS node unavailable. Update the node in Settings or pull to retry.",
                 dismissRule: .none
             ))
         }
@@ -51,9 +52,16 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
         ) { _ in
             ToastPresenter.hideAll()
         }
+        rpcConfigurationObserver = NotificationCenter.default.addObserver(
+            forName: .tosRPCConfigurationChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.viewModel.reloadData()
+        }
         if TOSRPCConnectivity.isUnavailable {
             ToastPresenter.showToast(configuration: .init(
-                title: "TOS node unavailable. Pull to retry.",
+                title: "TOS node unavailable. Update the node in Settings or pull to retry.",
                 dismissRule: .none
             ))
         }
@@ -66,6 +74,9 @@ final class WalletBalanceViewController: GenericViewViewController<WalletBalance
         }
         if let rpcAvailableObserver {
             NotificationCenter.default.removeObserver(rpcAvailableObserver)
+        }
+        if let rpcConfigurationObserver {
+            NotificationCenter.default.removeObserver(rpcConfigurationObserver)
         }
     }
 

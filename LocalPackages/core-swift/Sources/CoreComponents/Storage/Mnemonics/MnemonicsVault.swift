@@ -32,8 +32,11 @@ public struct MnemonicsVault {
         do {
             _ = try loadEncryptedMnemonics()
             return true
-        } catch {
+        } catch Error.noMnemonic {
             return false
+        } catch {
+            // A locked or corrupt vault must not be treated as a new installation.
+            return true
         }
     }
 
@@ -48,7 +51,7 @@ public struct MnemonicsVault {
             mnemonics[identifier] = mnemonic
             let encryptedUpdatedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedUpdatedMnemonics)
-        } catch {
+        } catch Error.noMnemonic {
             let mnemonics = [identifier: mnemonic]
             let encryptedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedMnemonics)
@@ -62,7 +65,7 @@ public struct MnemonicsVault {
             decryptedMnemonics.merge(mnemonics, uniquingKeysWith: { $1 })
             let encryptedUpdatedMnemonics = try await encryptMnemonics(decryptedMnemonics, password: password)
             try saveEncryptedMnemonics(encryptedUpdatedMnemonics)
-        } catch {
+        } catch Error.noMnemonic {
             let encryptedMnemonics = try await encryptMnemonics(mnemonics, password: password)
             try saveEncryptedMnemonics(encryptedMnemonics)
         }
@@ -92,8 +95,12 @@ public struct MnemonicsVault {
     }
 
     public func deleteAll() async throws {
-        try keychainVault.delete(getMnemonicsVaultQuery())
-        try deletePassword()
+        // Include both the current device-only record and legacy chunks.
+        for accessible in [TKKeychainAccessible.whenUnlockedThisDeviceOnly, .whenUnlocked] {
+            do { try keychainVault.delete(getMnemonicsVaultQuery(accessible: accessible)) }
+            catch TKKeychainError.noItem {}
+        }
+        do { try deletePassword() } catch TKKeychainError.noItem {}
     }
 
     public func changePassword(
@@ -137,6 +144,11 @@ public struct MnemonicsVault {
 }
 
 private extension MnemonicsVault {
+    func getAtomicRecordQuery() -> TKKeychainQuery {
+        TKKeychainQuery(item: .genericPassword(service: "\(String.mnemonicsVaultKey)_\(seedProvider())",
+            account: "encrypted_record_v2"), accessGroup: nil, biometry: .none, accessible: .whenUnlockedThisDeviceOnly)
+    }
+
     func getChunksCountQuery() -> TKKeychainQuery {
         let service = "\(String.mnemonicsVaultKey)_\(seedProvider())"
         return TKKeychainQuery(
@@ -158,13 +170,13 @@ private extension MnemonicsVault {
         )
     }
 
-    func getMnemonicsVaultQuery() -> TKKeychainQuery {
+    func getMnemonicsVaultQuery(accessible: TKKeychainAccessible = .whenUnlockedThisDeviceOnly) -> TKKeychainQuery {
         let service = "\(String.mnemonicsVaultKey)_\(seedProvider())"
         return TKKeychainQuery(
             item: .genericPassword(service: service, account: nil),
             accessGroup: nil,
             biometry: .none,
-            accessible: .whenUnlockedThisDeviceOnly
+            accessible: accessible
         )
     }
 
@@ -190,8 +202,8 @@ private extension MnemonicsVault {
         )
 
         let decrypted = try JSONDecoder().decode([String: MnemonicItem].self, from: data)
-        return decrypted.compactMapValues {
-            try? Mnemonic(mnemonicWords: $0.mnemonic.components(separatedBy: " "))
+        return try decrypted.mapValues {
+            try Mnemonic(mnemonicWords: $0.mnemonic.components(separatedBy: " "))
         }
     }
 
@@ -227,25 +239,22 @@ private extension MnemonicsVault {
     }
 
     func saveEncryptedMnemonics(_ encryptedMnemonics: EncryptedMnemonics) throws {
-        let jsonEncoder = JSONEncoder()
-        let data = try jsonEncoder.encode(encryptedMnemonics)
-        let bytes = [UInt8](data)
-        let chunks = stride(from: 0, to: bytes.count, by: .chunksSize).map {
-            Array(bytes[$0 ..< Swift.min($0 + .chunksSize, bytes.count)])
-        }
-        do {
-            try chunks.enumerated().forEach { index, chunk in
-                let query = getChunkQuery(index: index)
-                try keychainVault.set(Data(chunk), query: query)
-            }
-            let countQuery = getChunksCountQuery()
-            try keychainVault.set(chunks.count, query: countQuery)
-        } catch {
-            throw Error.other(error)
-        }
+        let data = try JSONEncoder().encode(encryptedMnemonics)
+        guard data.count <= 1_048_576 else { throw Error.mnemonicsCorrupted }
+        // TKKeychainVaultImplementation uses one SecItemUpdate (or SecItemAdd).
+        // A failed update cannot leave a mixture of old and new ciphertext chunks.
+        try keychainVault.set(data, query: getAtomicRecordQuery())
     }
 
     func loadEncryptedMnemonics() throws -> EncryptedMnemonics {
+        do {
+            let data: Data = try keychainVault.get(query: getAtomicRecordQuery())
+            guard data.count <= 1_048_576 else { throw Error.mnemonicsCorrupted }
+            return try JSONDecoder().decode(EncryptedMnemonics.self, from: data)
+        } catch TKKeychainError.noItem {
+            // Only genuine absence permits reading the legacy representation.
+            // Corruption or Keychain access errors must not roll back the vault.
+        }
         let count: Int
         do {
             let countQuery = getChunksCountQuery()
@@ -254,11 +263,14 @@ private extension MnemonicsVault {
             throw Error.noMnemonic
         }
 
+        guard (1...512).contains(count) else { throw Error.mnemonicsCorrupted }
         do {
             let encryptedMnemonicsData = try (0 ..< count)
                 .map {
                     let query = getChunkQuery(index: $0)
-                    return try keychainVault.get(query: query)
+                    let chunk: Data = try keychainVault.get(query: query)
+                    guard (1...Int.chunksSize).contains(chunk.count) else { throw Error.mnemonicsCorrupted }
+                    return chunk
                 }
                 .reduce(into: Data()) { $0 = $0 + $1 }
             return try JSONDecoder().decode(EncryptedMnemonics.self, from: encryptedMnemonicsData)

@@ -60,6 +60,11 @@ public final class BalanceWidgetController {
                 currency: currency,
                 includingTransferFees: true
             )
+            if wallet.kind == .quantum {
+                let amount = amountFormatter.format(amount: balance.balance.tonBalance.amount,
+                    fractionDigits: TonInfo.fractionDigits, accessory: .symbol(TonInfo.symbol), style: .compact)
+                return try Model(tonBalance: amount, fiatBalance: "—", address: wallet.address.toShortString(bounceable: false))
+            }
             let rates = try await ratesService.loadRates(jettons: [], currencies: [currency])
 
             let formattedFiatBalance: String
@@ -79,7 +84,7 @@ public final class BalanceWidgetController {
                 formattedFiatBalance = "\(currency.symbol)-----"
             }
             let formattedBalance = amountFormatter.format(
-                amount: BigUInt(integerLiteral: UInt64(balance.balance.tonBalance.amount)),
+                amount: balance.balance.tonBalance.amount,
                 fractionDigits: TonInfo.fractionDigits
             )
             return try Model(

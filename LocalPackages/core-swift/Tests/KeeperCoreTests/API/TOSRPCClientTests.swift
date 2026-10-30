@@ -3,6 +3,49 @@ import XCTest
 import TonSwift
 
 final class TOSRPCClientTests: XCTestCase {
+    func testRecoveryDiscoveryUsesBoundedNativeTokenAndNFTMethods() async throws {
+        var methods = [String]()
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            let method = try XCTUnwrap(body["method"] as? String)
+            methods.append(method)
+            let params = try XCTUnwrap(body["params"] as? [String: Any])
+            XCTAssertEqual(params["address"] as? String, "0:public-recovery")
+            XCTAssertEqual(params["limit"] as? Int, 1)
+            XCTAssertEqual(params.count, 2)
+            XCTAssertEqual(request.url?.host, "node.test")
+            switch method {
+            case "getAccountTokens":
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountTokens","tokens":[{"token_wallet":"public-token"}],"index_state":{"complete":true}}}"#)
+            case "getAccountNfts":
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountNfts","nfts":[],"index_state":{"complete":true}}}"#)
+            default:
+                XCTFail("Unsupported recovery method: \(method)")
+                throw TOSRPCClient.Error.invalidResponse
+            }
+        }
+        let result = try await makeClient().recoveryAssets(address: "0:public-recovery")
+        XCTAssertTrue(result.hasAssets)
+        XCTAssertTrue(result.complete)
+        XCTAssertEqual(methods, ["getAccountTokens", "getAccountNfts"])
+    }
+
+    func testRecoveryDiscoveryDoesNotTurnNFTFailureIntoKnownEmptyAccount() async throws {
+        RPCURLProtocol.handler = { request in
+            let body = try Self.requestBody(request)
+            if body["method"] as? String == "getAccountTokens" {
+                return (200, #"{"ok":true,"result":{"@type":"wallet.accountTokens","tokens":[],"index_state":{"complete":true}}}"#)
+            }
+            return (200, #"{"ok":false,"code":-32000,"error":"index unavailable"}"#)
+        }
+        do {
+            _ = try await makeClient().recoveryAssets(address: "0:public-recovery")
+            XCTFail("An incomplete discovery must remain unknown")
+        } catch let TOSRPCClient.Error.server(code, _) {
+            XCTAssertEqual(code, -32000)
+        }
+    }
+
     override func tearDown() {
         RPCURLProtocol.handler = nil
         TOSRPCConnectivity.setUnavailable(false)
@@ -219,7 +262,7 @@ final class TOSRPCClientTests: XCTestCase {
                 XCTAssertEqual(params["ignore_chksig"] as? Bool, true)
                 let codeData = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_code"] as? String)))
                 let code = try XCTUnwrap(Cell.fromBoc(src: codeData).first)
-                XCTAssertEqual(code.hash(), try XCTUnwrap(Data(hex: "086a86aa9913c0ec52277adbb7e4b5695964dbb8c817ad0c305cdd345bbfac69")))
+                XCTAssertEqual(code.hash(), try XCTUnwrap(Data(hex: "70cac370905beb6fa644922253f7d74335c479fa1e4d9dc8bf519c71e0f8c031")))
                 let data = try XCTUnwrap(Data(base64Encoded: XCTUnwrap(params["init_data"] as? String)))
                 let slice = try XCTUnwrap(Cell.fromBoc(src: data).first).beginParse()
                 XCTAssertTrue(try slice.loadBoolean())
@@ -289,6 +332,48 @@ final class TOSRPCClientTests: XCTestCase {
             XCTFail("Missing capabilities must fail closed")
         } catch TOSNetworkIdentityError.invalidConfiguration {
             // Expected.
+        }
+    }
+
+    func testQuantumBackgroundReadUsesItsIdentityAndVM16WithoutClassicKey() async throws {
+        func wallet(globalID: Int32) throws -> Wallet {
+            let authority = try TOSQuantumSelfPayAuthority(globalID: globalID,
+                namespace: Data(repeating: 7, count: 32), primaryKey: Data(repeating: 8, count: 1312),
+                rescueKey: Data(repeating: 9, count: 32))
+            let identity = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: authority))
+            return Wallet(id: "quantum-background", identity: WalletIdentity(network: .mainnet, kind: .Quantum(identity)),
+                metaData: WalletMetaData(label: "Quantum", tintColor: .defaultColor, icon: .icon(.wallet)),
+                setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
+        }
+        for (globalID, version, allowed) in [(Int32(3), UInt32(16), true), (3, 15, false), (4, 16, false)] {
+            var methods = [String]()
+            RPCURLProtocol.handler = { request in
+                let json = try Self.requestBody(request)
+                let method = try XCTUnwrap(json["method"] as? String)
+                methods.append(method)
+                if method == "getConfigParam" {
+                    return (200, try Self.configurationResponse(requestBody: json, vmVersion: version))
+                }
+                XCTAssertEqual(method, "getWalletInformation")
+                let data = try JSONSerialization.data(withJSONObject: ["ok": true, "result": [
+                    "last_transaction_id": ["lt": "12", "hash": Data(repeating: 1, count: 32).base64EncodedString()]]])
+                return (200, try XCTUnwrap(String(data: data, encoding: .utf8)))
+            }
+            do {
+                let cursor = try await makeClient().walletBackgroundUpdateCursor(wallet: wallet(globalID: globalID))
+                XCTAssertTrue(allowed)
+                XCTAssertEqual(cursor.lt, 12)
+                XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "getWalletInformation"])
+            } catch {
+                XCTAssertFalse(allowed, "Unexpected Quantum read failure: \(error)")
+                if globalID != 3 {
+                    guard case TOSNetworkIdentityError.wrongNetwork = error else { return XCTFail("Wrong error: \(error)") }
+                    XCTAssertEqual(methods, ["getConfigParam"])
+                } else {
+                    guard case TOSNetworkIdentityError.unsupportedQuantumVMVersion = error else { return XCTFail("Wrong error: \(error)") }
+                    XCTAssertEqual(methods, ["getConfigParam", "getConfigParam"])
+                }
+            }
         }
     }
 

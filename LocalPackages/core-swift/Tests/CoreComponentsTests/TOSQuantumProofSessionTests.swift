@@ -76,4 +76,26 @@ final class TOSQuantumProofSessionTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: state), saved)
     }
 
+    func testCheckpointCleanupIsScopedIdempotentAndRejectsInsecureDirectory() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let first = UUID(), second = UUID()
+        _ = try TOSQuantumProofSession(walletID: first, locallyProvisionedAnchor: Data([1]), baseDirectory: base)
+        _ = try TOSQuantumProofSession(walletID: second, locallyProvisionedAnchor: Data([1]), baseDirectory: base)
+        let root = base.appendingPathComponent("quantum-proof-checkpoints")
+        let other = base.appendingPathComponent("unrelated-public-marker")
+        try Data([7]).write(to: other)
+        try TOSQuantumProofSession.removeCheckpoint(walletID: first, baseDirectory: base)
+        try TOSQuantumProofSession.removeCheckpoint(walletID: first, baseDirectory: base)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(first.uuidString).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(second.uuidString).path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        XCTAssertThrowsError(try TOSQuantumProofSession.removeAllCheckpoints(baseDirectory: base))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(second.uuidString).path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        try TOSQuantumProofSession.removeAllCheckpoints(baseDirectory: base)
+        try TOSQuantumProofSession.removeAllCheckpoints(baseDirectory: base)
+        XCTAssertEqual(try Data(contentsOf: other), Data([7]))
+    }
+
 }

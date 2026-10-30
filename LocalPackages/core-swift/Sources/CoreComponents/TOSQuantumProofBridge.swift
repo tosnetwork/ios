@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import CryptoKit
 import TOSProofVerify
 
@@ -10,6 +11,70 @@ public enum TOSQuantumProofBridge {
         public init(kind: UInt32, bytes: Data) { self.kind = kind; self.bytes = bytes }
     }
     public struct Result { public let verified: Data; public let nextState: Data }
+
+    /// Native local execution with its checkpoint already durably committed.
+    /// This payload is an estimate, never a verified receipt or balance update.
+    public final class LocalSimulation {
+        public let encoded: Data
+        private let anchorDigest: Data, requestDigest: Data, messageDigest: Data
+        private let verifiedNow: Int64
+        public var verifiedAt: Int64 { verifiedNow }
+        fileprivate init(_ encoded: Data, message: Data, anchor: Data, request: Data, now: Int64) throws {
+            guard let object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any],
+                  object["interface"] as? String == "tos-self-pay-simulation/1",
+                  object["scope"] as? String == "local_estimate",
+                  let status = object["status"] as? String,
+                  ["executed", "unsupported", "import_rejected", "not_accepted"].contains(status),
+                  object["message_bytes_hash"] as? String == Data(SHA256.hash(data: message))
+                    .map({ String(format: "%02x", $0) }).joined() else { throw TOSPQError.invalidInput }
+            self.encoded = encoded
+            anchorDigest = Data(SHA256.hash(data: anchor))
+            requestDigest = Data(SHA256.hash(data: request))
+            messageDigest = Data(SHA256.hash(data: message))
+            verifiedNow = now
+        }
+        /// Binds a quote to the original trust root, acquisition request and exact
+        /// signed bytes. A local confirmation window is not an on-chain fee cap.
+        public func requireBinding(anchor: Data, request: Data, signedMessage: Data,
+                                   now: Int64, maximumAge: Int64) throws {
+            guard anchorDigest == Data(SHA256.hash(data: anchor)),
+                  requestDigest == Data(SHA256.hash(data: request)),
+                  messageDigest == Data(SHA256.hash(data: signedMessage)) else { throw TOSPQError.keyBinding }
+            guard (1...300).contains(maximumAge), now >= verifiedNow,
+                  now - verifiedNow < maximumAge else { throw TOSPQError.invalidInput }
+        }
+    }
+    public enum SimulationError: Error, Equatable { case native(Int32) }
+
+    /// Integer storage is required: a rounded floating-point value must never
+    /// become a history cursor, even when converting it to UInt64 would succeed.
+    internal static func transactionLogicalTime(_ value: Any?) throws -> UInt64 {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(), !(number is NSDecimalNumber),
+              ["c", "s", "i", "l", "q", "C", "S", "I", "L", "Q"].contains(String(cString: number.objCType)),
+              let result = UInt64(number.stringValue) else { throw TOSPQError.invalidInput }
+        return result
+    }
+
+    /// Decode only after binding to an authenticated account head/predecessor.
+    /// Successful verification does not establish a completed payment.
+    public static func verifyWalletTransaction(workchain: Int32, accountHash: Data, logicalTime: UInt64,
+                                              expectedHash: Data, boc: Data) throws -> Data {
+        guard workchain == 0, accountHash.count == 32, expectedHash.count == 32, logicalTime > 0,
+              (1...1_048_576).contains(boc.count) else { throw TOSPQError.invalidInput }
+        // Separate arrays also satisfy the native ABI's disjoint borrowed ranges
+        // when a caller passes Data values sharing the same storage.
+        let account = [UInt8](accountHash), hash = [UInt8](expectedHash), bytes = [UInt8](boc)
+        var output = Data(count: 1_048_576), used = 0
+        let status = account.withUnsafeBufferPointer { a in hash.withUnsafeBufferPointer { h in
+            bytes.withUnsafeBufferPointer { b in output.withUnsafeMutableBytes { result in
+                tos_proof_verify_wallet_transaction(workchain, a.baseAddress, logicalTime, h.baseAddress,
+                    b.baseAddress, b.count, result.bindMemory(to: CChar.self).baseAddress, result.count, &used)
+            } }
+        } }
+        guard status == 0, used > 0, used <= output.count else { throw TOSPQError.invalidInput }
+        return Data(output.prefix(used))
+    }
     public static func verify(anchor: Data, request: Data, state: Data, now: Int64, material: [Material]) throws -> Result {
         guard now > 0, (1...1_048_576).contains(anchor.count), (1...1_048_576).contains(request.count),
               state.count <= 1_048_576, material.count <= 1045,
@@ -106,6 +171,50 @@ public enum TOSQuantumProofBridge {
         return Data(output.prefix(used))
     }
 
+    internal static func simulatePersisted(directory: URL, anchor: Data, request: Data, now: Int64,
+                                           signedMessage: Data, transport: @escaping Transport) throws -> LocalSimulation {
+        guard now > 0, now <= Int64(UInt32.max),
+              (1...1_048_576).contains(anchor.count), (1...1_048_576).contains(request.count),
+              (1...1_048_576).contains(signedMessage.count), !directory.path.utf8.contains(0) else {
+            throw TOSPQError.invalidInput
+        }
+        let context = QueryContext(transport)
+        let opaque = Unmanaged.passUnretained(context).toOpaque()
+        let callback: tos_proof_query_callback = { opaque, query, querySize, response, capacity, used in
+            guard let opaque, let query, let response, let used,
+                  (1...16384).contains(querySize), (1...67_108_864).contains(capacity) else { return -1 }
+            used.pointee = 0
+            let context = Unmanaged<QueryContext>.fromOpaque(opaque).takeUnretainedValue()
+            do {
+                let bytes = try context.transport(Data(bytes: query, count: querySize), capacity)
+                guard !bytes.isEmpty, bytes.count <= capacity else { throw TOSPQError.invalidInput }
+                bytes.copyBytes(to: response, count: bytes.count)
+                used.pointee = bytes.count
+                return 0
+            } catch {
+                context.failure = error
+                return -1
+            }
+        }
+        // Separate message storage keeps all borrowed C ABI input ranges disjoint.
+        let message = [UInt8](signedMessage), anchorBytes = [UInt8](anchor), requestBytes = [UInt8](request)
+        var output = Data(count: 2_097_152), used = 0
+        let status = withExtendedLifetime(context) {
+            directory.path.withCString { path in anchorBytes.withUnsafeBufferPointer { a in requestBytes.withUnsafeBufferPointer { r in
+                message.withUnsafeBufferPointer { m in output.withUnsafeMutableBytes { out in
+                    tos_proof_acquire_simulate_self_pay_persisted(path,
+                        a.baseAddress.map { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) }, a.count,
+                        r.baseAddress.map { UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self) }, r.count, now, callback, opaque,
+                        m.baseAddress, m.count, out.bindMemory(to: CChar.self).baseAddress, out.count, &used)
+                } }
+            } } }
+        }
+        if let failure = context.failure { throw failure }
+        guard status == 0 else { throw SimulationError.native(status) }
+        guard used > 0, used <= output.count else { throw TOSPQError.invalidInput }
+        return try LocalSimulation(Data(output.prefix(used)), message: signedMessage, anchor: anchor, request: request, now: now)
+    }
+
     /// A capability produced only by native verification. Binding alone does not authorize signing.
     public final class BoundRead {
         private let value: [String: Any]
@@ -132,6 +241,49 @@ public enum TOSQuantumProofBridge {
         }
         public func requireSameCheckpoint(_ other: BoundRead) throws {
             guard anchorDigest == other.anchorDigest, checkpoint == other.checkpoint else { throw TOSPQError.keyBinding }
+        }
+        /// Authenticated raw state, or nil for proven absence. No deployment/signing eligibility is implied.
+        public func provenAccountState(expectedAddress: String) throws -> Data? {
+            let account = try boundAccount(expectedAddress)
+            guard let exists = account["exists"] as? Bool else { throw TOSPQError.invalidInput }
+            if !exists { return nil }
+            guard let encoded = account["state_boc"] as? String, let bytes = Data(base64Encoded: encoded),
+                  !bytes.isEmpty else { throw TOSPQError.invalidInput }
+            return bytes
+        }
+        public func provenAccountTime(expectedAddress: String) throws -> UInt32 {
+            let account = try boundAccount(expectedAddress)
+            guard let time = account["gen_utime"] as? Int64, time >= 0, time <= Int64(UInt32.max) else {
+                throw TOSPQError.invalidInput
+            }
+            return UInt32(time)
+        }
+        /// Authenticated ShardAccount transaction head. RPC transaction metadata
+        /// is not an anchor; callers must hash-check each raw transaction and
+        /// follow its committed previous hash/lt, with a bounded walk.
+        public func provenTransactionHead(expectedAddress: String) throws -> (logicalTime: UInt64, hash: Data) {
+            let account = try boundAccount(expectedAddress)
+            let logicalTime = try TOSQuantumProofBridge.transactionLogicalTime(account["last_trans_lt"])
+            guard let encoded = account["last_trans_hash"] as? String, encoded.utf8.count == 64,
+                  encoded.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+                throw TOSPQError.invalidInput
+            }
+            var hash = Data()
+            for offset in stride(from: 0, to: encoded.count, by: 2) {
+                let start = encoded.index(encoded.startIndex, offsetBy: offset)
+                let end = encoded.index(start, offsetBy: 2)
+                guard let byte = UInt8(encoded[start..<end], radix: 16) else { throw TOSPQError.invalidInput }
+                hash.append(byte)
+            }
+            guard (logicalTime == 0) == hash.allSatisfy({ $0 == 0 }) else { throw TOSPQError.invalidInput }
+            return (logicalTime, hash)
+        }
+        private func boundAccount(_ address: String) throws -> [String: Any] {
+            guard address.range(of: "^0:[0-9a-f]{64}$", options: .regularExpression) != nil,
+                  let account = value["account"] as? [String: Any], account["address"] as? String == address else {
+                throw TOSPQError.keyBinding
+            }
+            return account
         }
         public func accountState(expectedAddress: String, expectedCodeHash: Data) throws -> Data {
             guard expectedAddress.range(of: "^-?[0-9]+:[0-9a-f]{64}$", options: .regularExpression) != nil,
