@@ -109,10 +109,25 @@ final class TOSQuantumEnrollmentControllerTests: XCTestCase {
         XCTAssertTrue(try TOSQuantumCreationRecord.scan(baseDirectory: f.base).entries.isEmpty)
     }
 
+    func testResumeWithoutConfirmedBackupRefusesBeforeMnemonicOrRegistryWrites() async throws {
+        let f = try Fixture()
+        let file = f.base.appendingPathComponent("quantum-creation/\(f.record.id.uuidString).json")
+        let before = try Data(contentsOf: file)
+        do {
+            try await f.controller.resumeQuantumCreation(id: f.record.id, metaData: f.meta, passcode: "valid")
+            XCTFail("Unconfirmed backup reached recovery")
+        } catch TOSPQError.invalidInput {}
+        XCTAssertEqual(f.mnemonics.reads, 0)
+        XCTAssertTrue(f.roles.isEmpty)
+        XCTAssertTrue(f.store.wallets.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: file), before)
+    }
+
     func testPublishedAndRegisteredEnrollmentsCannotReenterRecoveryOrDiscardActiveCustody() async throws {
         let f = try Fixture()
         try f.record.markPublished(baseDirectory: f.base)
-        do { try await f.controller.resumeQuantumCreation(id: f.record.id, metaData: f.meta, passcode: "valid"); XCTFail("Published record reentered enrollment") }
+        do { try await f.controller.resumeQuantumCreation(id: f.record.id, metaData: f.meta, passcode: "valid",
+            setupSettings: WalletSetupSettings(backupDate: Date(timeIntervalSince1970: 1))); XCTFail("Published record reentered enrollment") }
         catch TOSPQError.keyBinding {}
         XCTAssertEqual(f.mnemonics.reads, 0)
         let entry = try XCTUnwrap(f.controller.pendingQuantumEnrollments().first)
@@ -205,7 +220,8 @@ final class TOSQuantumEnrollmentControllerTests: XCTestCase {
                 identity: WalletIdentity(network: .mainnet, kind: kind, networkGlobalId: 1),
                 metaData: f.meta, setupSettings: WalletSetupSettings(), batterySettings: BatterySettings())
             try await f.store.addWallets([saved])
-            do { try await f.controller.resumeQuantumCreation(id: f.record.id, metaData: f.meta, passcode: "valid"); XCTFail("Saved identity conflict reached recovery") }
+            do { try await f.controller.resumeQuantumCreation(id: f.record.id, metaData: f.meta, passcode: "valid",
+                setupSettings: WalletSetupSettings(backupDate: Date(timeIntervalSince1970: 1))); XCTFail("Saved identity conflict reached recovery") }
             catch TOSPQError.keyBinding {}
             XCTAssertEqual(f.mnemonics.reads, 0); XCTAssertTrue(f.roles.isEmpty)
         }
