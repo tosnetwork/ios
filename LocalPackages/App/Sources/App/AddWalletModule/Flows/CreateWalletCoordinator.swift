@@ -18,6 +18,7 @@ public final class CreateWalletCoordinator: RouterCoordinator<ViewControllerRout
     private let analyticsProvider: AnalyticsProvider
     private var isManagingRecovery = false
     private var activeCreationID: UUID?
+    private var selectedCreationProfile: TOSQuantumNetworkProfile?
     private let storesAssembly: StoresAssembly
     private let customizeWalletModule: () -> MVVMModule<UIViewController, CustomizeWalletModuleOutput, Void>
 
@@ -46,7 +47,6 @@ public final class CreateWalletCoordinator: RouterCoordinator<ViewControllerRout
         }
     }
 }
-
 private extension CreateWalletCoordinator {
     func openCreatePasscode() {
         let navigationController = TKNavigationController()
@@ -63,13 +63,7 @@ private extension CreateWalletCoordinator {
                 })
             },
             onCreate: { [weak self] passcode in
-                let phrase = TOSMnemonic.generate()
-                self?.openBackupIntro(
-                    router: router,
-                    animated: true,
-                    passcode: passcode,
-                    phrase: phrase
-                )
+                self?.openCreationFlow(passcode: passcode, navigationRouter: router)
             }
         )
 
@@ -93,20 +87,133 @@ private extension CreateWalletCoordinator {
         )
     }
 
-    func openCreationFlow(passcode: String, record: TOSQuantumCreationRecord? = nil) {
+    func openCreationFlow(passcode: String, record: TOSQuantumCreationRecord? = nil,
+                          navigationRouter: NavigationControllerRouter? = nil) {
+        if let record {
+            // The phrase already exists in protected local storage. Let the
+            // user complete backup confirmation offline; resumeQuantumCreation
+            // still requires its own fresh proof before publishing the wallet.
+            presentCreationFlow(passcode: passcode, record: record, profile: record.profile,
+                navigationRouter: navigationRouter)
+            return
+        }
+        let profile: TOSQuantumNetworkProfile
+        do { profile = try TOSQuantumNetworkProfile.effective() }
+        catch {
+            presentNetworkPreflightFailure(error, passcode: passcode, record: record,
+                navigationRouter: navigationRouter)
+            return
+        }
+        let progress = UIAlertController(title: "Verifying Trusted Network",
+            message: "Checking a fresh proof against this profile before showing your recovery phrase.",
+            preferredStyle: .alert)
+        (navigationRouter?.rootViewController ?? router.rootViewController).present(progress, animated: true)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.walletsUpdateAssembly.walletAddController().preflightQuantumNetwork(profile: profile)
+                await MainActor.run {
+                    progress.dismiss(animated: false) {
+                        self.presentCreationFlow(passcode: passcode, record: nil, profile: profile,
+                            navigationRouter: navigationRouter)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    progress.dismiss(animated: false) {
+                        self.presentNetworkPreflightFailure(error, passcode: passcode, record: record,
+                            navigationRouter: navigationRouter)
+                    }
+                }
+            }
+        }
+    }
+
+    func presentCreationFlow(passcode: String, record: TOSQuantumCreationRecord?,
+                             profile: TOSQuantumNetworkProfile,
+                             navigationRouter: NavigationControllerRouter? = nil) {
         activeCreationID = nil
+        if record == nil, let navigationRouter {
+            openBackupIntro(router: navigationRouter, animated: true, passcode: passcode,
+                phrase: TOSMnemonic.generate(), profile: profile)
+            return
+        }
         let navigationController = TKNavigationController()
         navigationController.configureTransparentAppearance()
         let childRouter = NavigationControllerRouter(rootViewController: navigationController)
         if let record {
-            openCustomizeWallet(router: childRouter, animated: false, passcode: passcode,
-                                phrase: [], backupDate: nil, resumeID: record.id)
+            let progress = UIAlertController(title: "Loading recovery phrase",
+                message: "Unlocking the saved phrase so you can confirm its backup before continuing.",
+                preferredStyle: .alert)
+            router.rootViewController.present(progress, animated: true)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let phrase = try await self.walletsUpdateAssembly.walletAddController()
+                        .pendingQuantumCreationMnemonic(id: record.id, passcode: passcode)
+                    await MainActor.run {
+                        progress.dismiss(animated: false) {
+                            self.selectedCreationProfile = record.profile
+                            self.openBackupIntro(router: childRouter, animated: false,
+                                passcode: passcode, phrase: phrase, resumeID: record.id,
+                                profile: record.profile)
+                            self.router.present(navigationController, onDismiss: { [weak coordinator = self] in
+                                if coordinator?.isManagingRecovery != true { coordinator?.didCancel?() }
+                            })
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        progress.dismiss(animated: false) {
+                            self.presentPendingMnemonicFailure(error, passcode: passcode, record: record)
+                        }
+                    }
+                }
+            }
         } else {
-            openBackupIntro(router: childRouter, animated: false, passcode: passcode, phrase: TOSMnemonic.generate())
+            openBackupIntro(router: childRouter, animated: false, passcode: passcode,
+                phrase: TOSMnemonic.generate(), profile: profile)
+            router.present(navigationController, onDismiss: { [weak self] in
+                if self?.isManagingRecovery != true { self?.didCancel?() }
+            })
         }
-        router.present(navigationController, onDismiss: { [weak self] in
-            if self?.isManagingRecovery != true { self?.didCancel?() }
+    }
+
+    func presentPendingMnemonicFailure(_ error: Swift.Error, passcode: String,
+                                       record: TOSQuantumCreationRecord) {
+        let phraseMismatch = error is TOSQuantumWalletCreationError
+        let alert = UIAlertController(
+            title: phraseMismatch ? "Recovery phrase does not match this wallet" : "Recovery phrase unavailable",
+            message: phraseMismatch
+                ? "The saved phrase was not shown and no wallet data was changed. Keep this device and its wallet data. If you have a separate written backup, use Restore wallet; otherwise contact support before continuing."
+                : "The original protected phrase could not be loaded, so this wallet was not completed. The unfinished record and wallet keys were kept.\n\n\(error.localizedDescription)",
+            preferredStyle: .alert)
+        if !phraseMismatch {
+            alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+                self?.openCreationFlow(passcode: passcode, record: record)
+            })
+        }
+        alert.addAction(UIAlertAction(title: TKLocales.Actions.cancel, style: .cancel))
+        router.rootViewController.present(alert, animated: true)
+    }
+
+    func presentNetworkPreflightFailure(_ error: Swift.Error, passcode: String,
+                                        record: TOSQuantumCreationRecord?,
+                                        navigationRouter: NavigationControllerRouter? = nil) {
+        let alert = UIAlertController(title: "TOS Network Unavailable",
+            message: "A fresh proof could not be verified against the selected trusted profile. Configure a reachable TOS RPC node and retry before creating a recovery phrase.\n\n\(error.localizedDescription)",
+            preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Retry", style: .default) { [weak self] _ in
+            self?.openCreationFlow(passcode: passcode, record: record, navigationRouter: navigationRouter)
         })
+        alert.addAction(UIAlertAction(title: "Configure TOS network", style: .default) { [weak self] _ in
+            guard let self else { return }
+            TOSRPCNodeEditor.present(from: navigationRouter?.rootViewController ?? self.router.rootViewController) { [weak self] in
+                self?.openCreationFlow(passcode: passcode, record: record, navigationRouter: navigationRouter)
+            }
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        (navigationRouter?.rootViewController ?? router.rootViewController).present(alert, animated: true)
     }
 
     func chooseCreation(passcode: String, page: Int = 0) {
@@ -215,7 +322,7 @@ private extension CreateWalletCoordinator {
                             message: error.localizedDescription,
                             preferredStyle: .alert
                         )
-                        alert.addAction(UIAlertAction(title: "Configure TOS Node", style: .default) { _ in
+                        alert.addAction(UIAlertAction(title: "Configure TOS network", style: .default) { _ in
                             DispatchQueue.main.async {
                                 TOSRPCNodeEditor.present(from: router.rootViewController, onSaved: {})
                             }
@@ -271,6 +378,7 @@ private extension CreateWalletCoordinator {
             metaData: metaData,
             passcode: passcode,
             mnemonicWords: phrase,
+            quantumProfile: selectedCreationProfile,
             setupSettings: WalletSetupSettings(backupDate: backupDate),
             onEnrollment: { [weak self] id in self?.activeCreationID = id }
         )
@@ -282,50 +390,58 @@ private extension CreateWalletCoordinator {
         router: NavigationControllerRouter,
         animated: Bool,
         passcode: String,
-        phrase: [String]
+        phrase: [String],
+        resumeID: UUID? = nil,
+        profile: TOSQuantumNetworkProfile? = nil
     ) {
+        let displayProfile = profile ?? (try? TOSQuantumNetworkProfile.effective())
+        selectedCreationProfile = displayProfile
+        let profileDetails: String
+        if let displayProfile {
+            profileDetails = "Recovery also requires this same trusted network profile. Keep these values with your recovery phrase:\nGlobal ID: \(displayProfile.globalID)\nZerostate root hash: \(displayProfile.rootHash)\nZerostate file hash: \(displayProfile.fileHash)"
+        } else {
+            profileDetails = "Trusted Quantum network profile is not configured. Configure the TOS network before creating this wallet."
+        }
         let model = OnboardingInfoView.Model(
             icon: .TKUIKit.Icons.Size128.textbook,
             title: TKLocales.Onboarding.BackupIntro.title,
             subtitle: TKLocales.Onboarding.BackupIntro.caption,
-            buttonTitle: TKLocales.Actions.continueAction
+            buttonTitle: TKLocales.Actions.continueAction,
+            additionalDetails: profileDetails
         )
         let viewController = OnboardingInfoViewController(model: model)
         viewController.isInteractivePopDisabled = true
+        viewController.setupLeftCloseButton { [weak self] in
+            router.dismiss(animated: true) {
+                self?.didCancel?()
+            }
+        }
         viewController.didTapContinue = { [weak self] in
             self?.openRecoveryPhrase(
                 router: router,
                 passcode: passcode,
-                phrase: phrase
+                phrase: phrase,
+                resumeID: resumeID
             )
         }
         viewController.navigationItem.hidesBackButton = true
-        viewController.navigationItem.leftBarButtonItem = nil
-        viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
-            customView: makeLaterButton { [weak self] in
-                self?.openCustomizeWallet(
-                    router: router,
-                    animated: true,
-                    passcode: passcode,
-                    phrase: phrase,
-                    backupDate: nil
-                )
-            }
-        )
+        viewController.navigationItem.rightBarButtonItem = nil
         router.push(viewController: viewController, animated: animated)
     }
 
     func openRecoveryPhrase(
         router: NavigationControllerRouter,
         passcode: String,
-        phrase: [String]
+        phrase: [String],
+        resumeID: UUID? = nil
     ) {
         var provider = OnboardingRecoveryPhraseDataProvider(phrase: phrase)
         provider.didTapNext = { [weak self] in
             self?.openCheckRecoveryPhrase(
                 router: router,
                 passcode: passcode,
-                phrase: phrase
+                phrase: phrase,
+                resumeID: resumeID
             )
         }
         let module = TKRecoveryPhraseAssembly.module(provider: provider)
@@ -336,7 +452,8 @@ private extension CreateWalletCoordinator {
     func openCheckRecoveryPhrase(
         router: NavigationControllerRouter,
         passcode: String,
-        phrase: [String]
+        phrase: [String],
+        resumeID: UUID? = nil
     ) {
         let module = TKCheckRecoveryPhraseAssembly.module(
             provider: OnboardingCheckRecoveryPhraseProvider(phrase: phrase)
@@ -347,24 +464,11 @@ private extension CreateWalletCoordinator {
                 animated: true,
                 passcode: passcode,
                 phrase: phrase,
-                backupDate: Date()
+                backupDate: Date(),
+                resumeID: resumeID
             )
         }
         module.viewController.setupBackButton()
         router.push(viewController: module.viewController)
-    }
-}
-
-private extension CreateWalletCoordinator {
-    func makeLaterButton(action: @escaping () -> Void) -> UIView {
-        let button = TKUIHeaderTitleIconButton()
-        button.configure(
-            model: TKUIButtonTitleIconContentView.Model(
-                title: TKLocales.Onboarding.BackupIntro.later
-            )
-        )
-        button.addTapAction(action)
-        button.tapAreaInsets = UIEdgeInsets(top: -10, left: -10, bottom: -10, right: -10)
-        return button
     }
 }

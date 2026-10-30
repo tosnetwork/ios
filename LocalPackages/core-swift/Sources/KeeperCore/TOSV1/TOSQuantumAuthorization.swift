@@ -195,7 +195,7 @@ public final class TOSQuantumAuthorizationExpiryReader {
     public convenience init() throws {
         try self.init(outbox: TOSQuantumOutbox(), accounts: { flag in
             TOSQuantumAccountReader(transport: {
-                guard let text = TOSRPCSettings.customEndpoint, let endpoint = URL(string: text + "/jsonRPC") else {
+                guard let text = TOSRPCSettings.quantumEndpoint, let endpoint = TOSRPCSettings.jsonRPCEndpoint(for: text) else {
                     throw TOSQuantumNetworkProfile.Error.missingEndpoint
                 }
                 let relay = try TOSQuantumProofHTTPTransport(endpoint: endpoint)

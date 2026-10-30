@@ -49,7 +49,15 @@ private extension HistoryCoordinator {
         module.output.didChangeWallet = { [weak self, weak container = module.view, keeperCoreMainAssembly] wallet in
             guard let container else { return }
             if wallet.kind == .quantum {
-                container.historyViewController = TOSQuantumHistoryViewController(wallet: wallet)
+                let history = TOSQuantumHistoryViewController(wallet: wallet)
+                history.didRequestReceive = { [weak self] in self?.openReceive(wallet: wallet) }
+                history.didRequestConfigureRPC = { [weak history] in
+                    guard let history else { return }
+                    TOSRPCNodeEditor.present(from: history) { [weak history] in
+                        history?.refreshAfterRPCConfigurationChange()
+                    }
+                }
+                container.historyViewController = history
                 return
             }
             let listModule = HistoryListAssembly.module(

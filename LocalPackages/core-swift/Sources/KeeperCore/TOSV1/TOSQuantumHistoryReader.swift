@@ -32,8 +32,8 @@ internal final class TOSQuantumHistoryReader {
 
     convenience init(accounts: TOSQuantumAccountReader = TOSQuantumAccountReader()) {
         self.init(accounts: accounts, query: { flag in
-            guard let endpoint = TOSRPCSettings.customEndpoint,
-                  let url = URL(string: endpoint + "/jsonRPC") else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+            guard let endpoint = TOSRPCSettings.quantumEndpoint,
+                  let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
             let relay = try TOSQuantumRPCTransport(endpoint: url)
             return { address, logicalTime, hash in
                 let result = try relay.call(method: "getTransactions", params: ["address": address,

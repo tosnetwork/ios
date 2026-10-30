@@ -46,10 +46,24 @@ public struct TOSQuantumNetworkProfile: Codable, Equatable {
     }
 
     private static let key = "network.tos.wallet.quantum.trustedNetwork.v1"
+    /// Mainnet zerostate from tosnetwork/tos main at 245ac393a9b13400929857bb21faa61cfc2b4998.
+    public static func officialMainnet() throws -> Self {
+        try Self(globalID: 1,
+            rootHash: "17a3a92992aabea785a7a090985a265cd31f323d849da51239737e321fb05569",
+            fileHash: "5e994fcf4d425c0a6ce6a792594b7173205f740a39cd56f537defd28b48a0f6e")
+    }
+
     public static func selected(defaults: UserDefaults = .standard) throws -> Self {
         guard let data = defaults.data(forKey: key) else { throw Error.missingProfile }
         guard data.count <= 1024 else { throw Error.invalidProfile }
         return try JSONDecoder().decode(Self.self, from: data)
+    }
+    /// New installations use the source-pinned official mainnet profile until
+    /// the user explicitly selects another trusted network. Malformed saved
+    /// selections remain errors and never silently fall back.
+    public static func effective(defaults: UserDefaults = .standard) throws -> Self {
+        guard defaults.data(forKey: key) != nil else { return try officialMainnet() }
+        return try selected(defaults: defaults)
     }
     public func select(defaults: UserDefaults = .standard) throws {
         defaults.set(try JSONEncoder().encode(self), forKey: Self.key)

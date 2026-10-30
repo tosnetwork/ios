@@ -63,6 +63,9 @@ public final class TOSQuantumSeedKeychain {
     public func importAndWipe(id: UUID, role: TOSQuantumRole, context: Context, seed: inout Data) throws -> Data {
         defer { seed.resetBytes(in: 0..<seed.count) }
         lock.lock(); defer { lock.unlock() }
+        return try importAndWipeLocked(id: id, role: role, context: context, seed: &seed)
+    }
+    private func importAndWipeLocked(id: UUID, role: TOSQuantumRole, context: Context, seed: inout Data) throws -> Data {
         let publicKey = try TOSQuantumSigner.publicKey(role: role, seed: seed)
         var record = Self.header(id: id, role: role, context: context) + seed
         defer { record.resetBytes(in: 0..<record.count) }
@@ -74,6 +77,52 @@ public final class TOSQuantumSeedKeychain {
         let status = SecItemAdd(q as CFDictionary, nil)
         guard status == errSecSuccess else { throw TOSPQError.keychain(status) }
         return publicKey
+    }
+    /// Restore both roles for an already registered identity without leaving a
+    /// newly inserted single role behind when the other role cannot be read or
+    /// stored. Existing matching roles are retained; mismatched roles fail closed.
+    public func importMissingRolesAndWipe(id: UUID, context: Context,
+                                          primarySeed: inout Data, rescueSeed: inout Data,
+                                          expectedPrimaryKey: Data, expectedRescueKey: Data) throws {
+        defer { primarySeed.resetBytes(in: 0..<primarySeed.count); rescueSeed.resetBytes(in: 0..<rescueSeed.count) }
+        lock.lock(); defer { lock.unlock() }
+        var insertedPrimary = false
+        do {
+            insertedPrimary = try importRoleIfMissingLocked(id: id, role: .primary, context: context,
+                seed: &primarySeed, expectedPublicKey: expectedPrimaryKey)
+            _ = try importRoleIfMissingLocked(id: id, role: .rescue, context: context,
+                seed: &rescueSeed, expectedPublicKey: expectedRescueKey)
+        } catch {
+            var cleanupError: Swift.Error?
+            if insertedPrimary {
+                do { try deleteLocked(id: id, role: .primary) }
+                catch { cleanupError = error }
+            }
+            throw cleanupError ?? error
+        }
+    }
+    private func importRoleIfMissingLocked(id: UUID, role: TOSQuantumRole, context: Context,
+                                           seed: inout Data, expectedPublicKey: Data) throws -> Bool {
+        guard expectedPublicKey.count == role.publicKeySize,
+              try TOSQuantumSigner.publicKey(role: role, seed: seed) == expectedPublicKey else { throw TOSPQError.keyBinding }
+        do {
+            let current = try withSeedLocked(id: id, role: role, context: context) {
+                try TOSQuantumSigner.publicKey(role: role, seed: $0)
+            }
+            guard current == expectedPublicKey else { throw TOSPQError.keyBinding }
+            return false
+        } catch TOSPQError.keychain(let status) where status == errSecItemNotFound {
+            do {
+                _ = try importAndWipeLocked(id: id, role: role, context: context, seed: &seed)
+                return true
+            } catch TOSPQError.keychain(let status) where status == errSecDuplicateItem {
+                let current = try withSeedLocked(id: id, role: role, context: context) {
+                    try TOSQuantumSigner.publicKey(role: role, seed: $0)
+                }
+                guard current == expectedPublicKey else { throw TOSPQError.keyBinding }
+                return false
+            }
+        }
     }
     /// Retry an enrollment without replacing a protected role already present.
     /// Only a genuinely absent item permits insertion; denied access and corrupt
@@ -95,6 +144,10 @@ public final class TOSQuantumSeedKeychain {
     private func withSeed<Result>(id: UUID, role: TOSQuantumRole, context: Context,
                                   body: (Data) throws -> Result) throws -> Result {
         lock.lock(); defer { lock.unlock() }
+        return try withSeedLocked(id: id, role: role, context: context, body: body)
+    }
+    private func withSeedLocked<Result>(id: UUID, role: TOSQuantumRole, context: Context,
+                                        body: (Data) throws -> Result) throws -> Result {
         var q = query(id: id, role: role); q[kSecReturnData] = true
         var value: CFTypeRef?
         let status = SecItemCopyMatching(q as CFDictionary, &value)
@@ -119,6 +172,9 @@ public final class TOSQuantumSeedKeychain {
     }
     public func delete(id: UUID, role: TOSQuantumRole) throws {
         lock.lock(); defer { lock.unlock() }
+        try deleteLocked(id: id, role: role)
+    }
+    private func deleteLocked(id: UUID, role: TOSQuantumRole) throws {
         let status = SecItemDelete(query(id: id, role: role) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw TOSPQError.keychain(status) }
     }

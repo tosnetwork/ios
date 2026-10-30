@@ -305,6 +305,12 @@ public extension Wallet {
         }
     }
 
+    /// Quantum payments use the dedicated proof-backed TOS self-pay flow.
+    /// This does not enable classic token, scan, or contract operations.
+    var isQuantumSelfPayAvailable: Bool {
+        kind == .quantum
+    }
+
     var isReceiveEnable: Bool {
         switch kind {
         case .regular, .quantum, .signer, .ledger, .watchonly, .keystone:

@@ -55,7 +55,17 @@ final class TOSRPCLiveIntegrationTests: XCTestCase {
 
     func testAllThreeValidatorRPCViewsConverge() async throws {
         let clients = try await makeValidatorClients(count: 3)
-        let before = try await validatorViews(clients)
+        // A preceding test may have submitted a transfer. Independent wallet
+        // indexes catch up asynchronously, so establish a converged baseline.
+        let baselineDeadline = Date().addingTimeInterval(30)
+        var before = try await validatorViews(clients)
+        while Date() < baselineDeadline && (
+            Set(before.balances).count != 1 || Set(before.eventIDs).count != 1
+                || (before.seqnos.max() ?? 0) - (before.seqnos.min() ?? 0) > 1
+        ) {
+            try await Task.sleep(nanoseconds: 500_000_000)
+            before = try await validatorViews(clients)
+        }
         assertConverged(before)
 
         let expectedAfterBalance = try await requestLocalnetTransfer(amount: 0.25)

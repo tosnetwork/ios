@@ -274,4 +274,62 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
         XCTAssertEqual(published, 1); XCTAssertEqual(closes, 1)
     }
 
+    func testRestoreRefusalsPreserveExistingEnrollmentBeforeConfirmationOrWrites() async throws {
+        let (profile, network, timestamp) = try fixture()
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: base) }
+        var saved: TOSQuantumCreationRecord?
+        let setup = TOSQuantumWalletCreation(network: { _, _ in network }, storeRole: { _, role, _, seed in
+            try TOSQuantumSigner.publicKey(role: role, seed: seed)
+        }, saveRecord: { value in saved = value; try value.save(baseDirectory: base) }, now: { timestamp })
+        try await setup.create(words: words, profile: profile, saveMnemonic: { _ in }, publish: { _ in })
+        let original = try XCTUnwrap(saved)
+        let path = base.appendingPathComponent("quantum-creation/\(original.id.uuidString).json")
+        let originalBytes = try Data(contentsOf: path)
+        enum Scenario: CaseIterable { case invalidPhrase, wrongGlobalID, wrongRoot, wrongFile, unavailable, validControl }
+        enum Control: Error { case confirmationReached }
+        for scenario in Scenario.allCases {
+            let selected = try TOSQuantumNetworkProfile(
+                globalID: scenario == .wrongGlobalID ? profile.globalID + 1 : profile.globalID,
+                rootHash: scenario == .wrongRoot ? String(repeating: "77", count: 32) : profile.rootHash,
+                fileHash: scenario == .wrongFile ? String(repeating: "88", count: 32) : profile.fileHash)
+            var confirmations = 0, writes = 0, discarded = [UUID]()
+            let restore = TOSQuantumWalletCreation(network: { _, _ in
+                if scenario == .unavailable { throw Failure.injected }
+                return network
+            }, storeRole: { _, _, _, _ in writes += 1; throw Failure.injected },
+            saveRecord: { _ in writes += 1 }, now: { timestamp },
+            resumeNetwork: { id, retained in
+                XCTAssertEqual(id, original.id); XCTAssertEqual(retained, profile)
+                return network
+            }, completeRecord: { _ in writes += 1 },
+            discardUnrecordedCheckpoint: { discarded.append($0) })
+            do {
+                try await restore.restore(words: scenario == .invalidPhrase ? ["notaword"] : words,
+                    profile: selected, existing: { identity in
+                        XCTAssertEqual(identity, original.identity)
+                        return try TOSQuantumCreationRecord.load(id: original.id, baseDirectory: base)
+                    }, confirmExisting: { record in
+                        confirmations += 1
+                        XCTAssertEqual(record.id, original.id)
+                        // Positive control stops at the actual authorization boundary,
+                        // before the production path can import keys into Keychain.
+                        throw Control.confirmationReached
+                    }, saveMnemonic: { _ in writes += 1 }, cleanupMnemonic: { _ in writes += 1 },
+                    publish: { _ in writes += 1 })
+                XCTFail("Restore unexpectedly completed: \(scenario)")
+            } catch Control.confirmationReached {
+                XCTAssertEqual(scenario, .validControl)
+            } catch {
+                XCTAssertNotEqual(scenario, .validControl, "Valid restore must reach confirmation: \(error)")
+            }
+            XCTAssertEqual(confirmations, scenario == .validControl ? 1 : 0, "\(scenario)")
+            XCTAssertEqual(writes, 0, "\(scenario)")
+            XCTAssertEqual(discarded.count, 1)
+            XCTAssertNotEqual(discarded.first, original.id)
+            XCTAssertEqual(try Data(contentsOf: path), originalBytes, "\(scenario)")
+            XCTAssertEqual(try TOSQuantumCreationRecord.loadAll(baseDirectory: base).map(\.id), [original.id])
+        }
+    }
+
 }

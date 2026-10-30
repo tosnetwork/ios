@@ -932,7 +932,7 @@ final class WalletBalanceViewModelImplementation:
         let sendButton = WalletBalanceHeaderButtonsView.Model.Button(
             title: TKLocales.WalletButtons.send,
             icon: .TKUIKit.Icons.Size28.arrowUpOutline,
-            isEnabled: wallet.isSendEnable,
+            isEnabled: wallet.isSendEnable || wallet.isQuantumSelfPayAvailable,
             action: { [weak self] in self?.didTapSend?(wallet) }
         )
 

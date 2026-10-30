@@ -70,7 +70,7 @@ compile: prepare_quantum_fee_state prepare_quantum_proof
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
 		build 2>&1 | tee $(BUILD_DIR)/compile-raw.log | xcbeautify
 
-archive_v1_release:
+archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(BUILD_DIR)/release-archive
 	@echo 'archiving unsigned TOS Wallet release...' && \
@@ -91,6 +91,7 @@ archive_v1_release:
 		CODE_SIGNING_REQUIRED=NO \
 		archive \
 		-archivePath $(BUILD_DIR)/release-archive/TOSWallet.xcarchive | xcbeautify
+	python3 scripts/tests/check_release_test_hooks.py "$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app"
 
 # Test
 
@@ -167,6 +168,7 @@ test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_qu
 		TEST_RUNNER_TOS_QUANTUM_ROOT_HASH='$(TOS_QUANTUM_ROOT_HASH)' \
 		TEST_RUNNER_TOS_QUANTUM_FILE_HASH='$(TOS_QUANTUM_FILE_HASH)' \
 		TEST_RUNNER_TOS_QUANTUM_CREATED_ID='$(TOS_QUANTUM_CREATED_ID)' \
+		TEST_RUNNER_TOS_QUANTUM_COLD_RECOVERY_CONTROL='$(TOS_QUANTUM_COLD_RECOVERY_CONTROL)' \
 		TEST_RUNNER_TOS_QUANTUM_APP_PAYMENT_CANDIDATE='$(TOS_QUANTUM_APP_PAYMENT_CANDIDATE)' \
 		TEST_RUNNER_TOS_QUANTUM_RETIREMENT_LIVE='$(TOS_QUANTUM_RETIREMENT_LIVE)' \
 		TEST_RUNNER_TOS_QUANTUM_EXTERNAL_HASH='$(TOS_QUANTUM_EXTERNAL_HASH)' \

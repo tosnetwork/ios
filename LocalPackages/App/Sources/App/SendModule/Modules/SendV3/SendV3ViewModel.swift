@@ -348,20 +348,28 @@ final class SendV3ViewModelImplementation: SendV3ViewModel, SendV3ModuleOutput, 
     }
 
     func didTapRecipientPasteButton() {
+        #if DEBUG
         let environment = ProcessInfo.processInfo.environment
         let pasteboardString = environment["TOS_UI_TEST_RESET"] != nil
             ? environment["TOS_UI_TEST_SEND_RECIPIENT"]
             : UIPasteboard.general.string
+        #else
+        let pasteboardString = UIPasteboard.general.string
+        #endif
         guard let pasteboardString else { return }
         didInputRecipient(pasteboardString)
         didUpdateRecipient?(pasteboardString)
     }
 
     func didTapCommentPasteButton() {
+        #if DEBUG
         let environment = ProcessInfo.processInfo.environment
         let pasteboardString = environment["TOS_UI_TEST_RESET"] != nil
             ? environment["TOS_UI_TEST_SEND_COMMENT"]
             : UIPasteboard.general.string
+        #else
+        let pasteboardString = UIPasteboard.general.string
+        #endif
         guard let pasteboardString else { return }
         didInputComment(pasteboardString)
         didUpdateComment?(pasteboardString)

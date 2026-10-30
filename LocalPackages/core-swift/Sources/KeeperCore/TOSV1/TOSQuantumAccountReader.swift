@@ -48,10 +48,28 @@ internal final class TOSQuantumAccountReader {
 
     convenience init() {
         self.init(transport: {
-            guard let endpoint = TOSRPCSettings.customEndpoint,
-                  let url = URL(string: endpoint + "/jsonRPC") else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+            guard let endpoint = TOSRPCSettings.quantumEndpoint,
+                  let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
             let relay = try TOSQuantumProofHTTPTransport(endpoint: url)
-            return { try relay.query($0, maximumBytes: $1) }
+            return { query, maximumBytes in
+                do {
+                    let response = try relay.query(query, maximumBytes: maximumBytes)
+                    if TOSRPCConnectivity.setUnavailable(false) {
+                        NotificationCenter.default.post(name: .tosRPCAvailable, object: nil)
+                    }
+                    return response
+                } catch TOSQuantumProofHTTPTransport.Error.unavailable {
+                    if TOSRPCConnectivity.setUnavailable(true) {
+                        NotificationCenter.default.post(name: .tosRPCUnavailable, object: nil)
+                    }
+                    throw TOSQuantumProofHTTPTransport.Error.unavailable
+                } catch TOSQuantumProofHTTPTransport.Error.rpcRejected {
+                    if TOSRPCConnectivity.setUnavailable(false) {
+                        NotificationCenter.default.post(name: .tosRPCAvailable, object: nil)
+                    }
+                    throw TOSQuantumProofHTTPTransport.Error.rpcRejected
+                }
+            }
         })
     }
     internal init(baseDirectory: URL? = nil,

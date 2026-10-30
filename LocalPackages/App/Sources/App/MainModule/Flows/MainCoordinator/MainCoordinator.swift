@@ -1141,6 +1141,15 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             quantumHistory.didRequestPendingPayment = { [weak self] in
                 self?.openQuantumPayment(wallet: wallet, sendInput: .direct(item: .ton(.token(.ton, amount: 0))), recipient: nil, comment: nil)
             }
+            quantumHistory.didRequestReceive = { [weak self] in
+                self?.openReceive(tokens: [.ton(.ton)], wallet: wallet)
+            }
+            quantumHistory.didRequestConfigureRPC = { [weak quantumHistory] in
+                guard let quantumHistory else { return }
+                TOSRPCNodeEditor.present(from: quantumHistory) { [weak quantumHistory] in
+                    quantumHistory?.refreshAfterRPCConfigurationChange()
+                }
+            }
             historyContent = quantumHistory
         } else {
             let historyListModule = HistoryModule(

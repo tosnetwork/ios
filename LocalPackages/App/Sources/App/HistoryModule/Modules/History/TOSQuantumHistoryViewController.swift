@@ -15,6 +15,8 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
     var scrollView: UIScrollView { table }
     var didPullToRefresh: (() -> Void)?
     var didRequestPendingPayment: (() -> Void)?
+    var didRequestReceive: (() -> Void)?
+    var didRequestConfigureRPC: (() -> Void)?
     private let service = TOSQuantumHistoryService()
     private let dateFormatter: DateFormatter = {
         let value = DateFormatter(); value.dateStyle = .medium; value.timeStyle = .short; return value
@@ -24,6 +26,7 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
     private let newest = UIButton(type: .system)
     private let previous = UIButton(type: .system)
     private let older = UIButton(type: .system)
+    private let configureRPC = UIButton(type: .system)
     private var records = [TOSQuantumHistoryRecord]()
     private var starts: [TOSQuantumHistoryService.Cursor?] = [nil]
     private var pageIndex = 0
@@ -58,7 +61,12 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
         let savedPayment = UIButton(type: .system)
         configure(savedPayment, title: "Saved payment", id: "payment") { [weak self] in self?.didRequestPendingPayment?() }
         savedPayment.isHidden = didRequestPendingPayment == nil
-        let items: [UIView] = embedded ? [status, savedPayment, buttons] : [title, name, status, savedPayment, buttons]
+        let receive = UIButton(type: .system)
+        configure(receive, title: "Receive TOS", id: "receive") { [weak self] in self?.didRequestReceive?() }
+        receive.isHidden = didRequestReceive == nil
+        configure(configureRPC, title: "Configure TOS node", id: "configureRPC") { [weak self] in self?.didRequestConfigureRPC?() }
+        configureRPC.isHidden = true
+        let items: [UIView] = embedded ? [status, configureRPC, savedPayment, receive, buttons] : [title, name, status, configureRPC, savedPayment, receive, buttons]
         items.forEach(heading.addArrangedSubview); heading.axis = .vertical; heading.spacing = 8
         heading.translatesAutoresizingMaskIntoConstraints = false
         table.translatesAutoresizingMaskIntoConstraints = false; table.dataSource = self; table.delegate = self
@@ -110,6 +118,7 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
         table.refreshControl?.endRefreshing()
     }
     func scrollToTop() { table.setContentOffset(CGPoint(x: 0, y: -table.adjustedContentInset.top), animated: true) }
+    func refreshAfterRPCConfigurationChange() { load(index: 0, reset: true) }
     @objc private func refresh() { didPullToRefresh?(); load(index: 0, reset: true) }
 
     private func configure(_ button: UIButton, title: String, id: String, action: @escaping () -> Void) {
@@ -126,6 +135,7 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
         else { guard starts.indices.contains(index) else { return }; cursor = starts[index] }
         let id = UUID(); requestID = id
         records = []; table.reloadData(); status.text = "Verifying history…"
+        configureRPC.isHidden = true
         newest.isEnabled = false; previous.isEnabled = false; older.isEnabled = false
         let service = service, wallet = wallet
         operation = Task { [weak self] in
@@ -153,11 +163,13 @@ final class TOSQuantumHistoryViewController: UIViewController, @preconcurrency S
                 records = page.records; nextCursor = page.next
                 let date = dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(page.checkpointTime)))
                 status.text = records.isEmpty ? "No transactions. Verified through \(date)." : "Verified through \(date)"
+                configureRPC.isHidden = true
                 finish(); table.reloadData(); scrollToTop()
             } catch {
                 guard let self, requestID == id else { return }
                 records = []; starts = [nil]; pageIndex = 0; nextCursor = nil
                 status.text = "Unable to verify history. Refresh to try again."
+                configureRPC.isHidden = false
                 finish(); table.reloadData()
             }
         }

@@ -86,7 +86,7 @@ public final class TOSQuantumPaymentOutcomeReader {
         self.query = query; self.now = now
     }
     private static func endpoint() throws -> URL {
-        guard let text = TOSRPCSettings.customEndpoint, let url = URL(string: text + "/jsonRPC") else {
+        guard let text = TOSRPCSettings.quantumEndpoint, let url = TOSRPCSettings.jsonRPCEndpoint(for: text) else {
             throw TOSQuantumNetworkProfile.Error.missingEndpoint
         }
         return url

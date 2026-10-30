@@ -13,7 +13,7 @@ enum TOSRPCNodeEditor {
             field.accessibilityIdentifier = "settings.rpc.endpoint"
             field.accessibilityLabel = "RPC node endpoint"
             field.placeholder = "192.168.1.20:18545"
-            field.text = TOSRPCSettings.customEndpoint
+            field.text = TOSRPCSettings.quantumEndpoint
             field.keyboardType = .URL
             field.autocapitalizationType = .none
             field.autocorrectionType = .no
@@ -48,18 +48,32 @@ enum TOSRPCNodeEditor {
     }
 
     private static func presentQuantumNetwork(from presenter: UIViewController, onSaved: @escaping () -> Void) {
-        let profile = try? TOSQuantumNetworkProfile.selected()
+        let profile = try? TOSQuantumNetworkProfile.effective()
         let alert = UIAlertController(title: "Trusted Quantum Network",
-            message: "Use the network ID and genesis hashes from a trusted network configuration obtained separately from your RPC node. Existing wallets keep their original network.", preferredStyle: .alert)
+            message: "Use the official TOS mainnet preset or enter a profile obtained from an independently trusted source. The RPC node cannot establish network trust. Existing wallets keep their original network.", preferredStyle: .alert)
         for (name, value) in [("Network ID", profile.map { String($0.globalID) }),
                               ("Genesis root hash", profile?.rootHash), ("Genesis file hash", profile?.fileHash)] {
             alert.addTextField { field in
                 field.placeholder = name; field.text = value
                 field.accessibilityLabel = name
+                field.keyboardType = .asciiCapable
+                field.clearButtonMode = .whileEditing
                 field.autocapitalizationType = .none; field.autocorrectionType = .no
             }
         }
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        let mainnet = UIAlertAction(title: "Use official TOS mainnet", style: .default) { [weak presenter] _ in
+            do {
+                try TOSQuantumNetworkProfile.officialMainnet().select()
+                onSaved()
+            } catch {
+                let errorAlert = UIAlertController(title: "Invalid Network Configuration", message: error.localizedDescription, preferredStyle: .alert)
+                errorAlert.addAction(UIAlertAction(title: "OK", style: .default))
+                presenter?.present(errorAlert, animated: true)
+            }
+        }
+        mainnet.accessibilityIdentifier = "settings.rpc.quantumNetwork.mainnet"
+        alert.addAction(mainnet)
         alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak presenter, weak alert] _ in
             do {
                 guard let fields = alert?.textFields,

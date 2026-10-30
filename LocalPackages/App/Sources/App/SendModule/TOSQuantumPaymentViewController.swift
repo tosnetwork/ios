@@ -23,6 +23,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private let review = UIButton(type: .system), sign = UIButton(type: .system)
     private let send = UIButton(type: .system), refreshQuote = UIButton(type: .system)
     private let verify = UIButton(type: .system), older = UIButton(type: .system)
+    private let configureRPC = UIButton(type: .system)
     private let reload = UIButton(type: .system), edit = UIButton(type: .system), discard = UIButton(type: .system)
     private let endAuthorization = UIButton(type: .system), endUnverified = UIButton(type: .system)
     private let confirmEnd = UIButton(type: .system), startAnother = UIButton(type: .system), localHistory = UIButton(type: .system)
@@ -40,6 +41,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private var operation: Task<Void, Never>?
     private var requestID = UUID()
     private var busy = false, emptyJournal = false, authenticated = false
+    private var outcomeUnavailable = false
     private var reloadOnAppearance = true
 
     init(wallet: Wallet, amount initialAmount: BigUInt, recipient initialRecipient: TonRecipient?,
@@ -107,6 +109,10 @@ final class TOSQuantumPaymentViewController: UIViewController {
         configure(refreshQuote, "Re-estimate saved payment", "estimate") { [weak self] in self?.recoverEstimate() }
         configure(verify, "Verify payment result", "verify") { [weak self] in self?.verifyResult(continuing: false) }
         configure(older, "Check older transactions", "older") { [weak self] in self?.verifyResult(continuing: true) }
+        configure(configureRPC, "Configure TOS node", "configureRPC") { [weak self] in
+            guard let self else { return }
+            TOSRPCNodeEditor.present(from: self) { [weak self] in self?.loadJournal() }
+        }
         configure(edit, "Edit unsigned payment", "edit") { [weak self] in
             guard let self else { return }; prepared = nil; quote = nil; authenticated = false; details.text = nil; render()
         }
@@ -121,7 +127,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
             clearIntent(); emptyJournal = true; status.text = "Enter a new recipient and amount. No previous payment will be retried."; render()
         }
         configure(localHistory, "Local authorization history", "history") { [weak self] in self?.showLocalHistory() }
-        [review, sign, send, refreshQuote, verify, older, edit, discard, reload, endAuthorization, endUnverified, confirmEnd, startAnother, localHistory].forEach(stack.addArrangedSubview)
+        [review, sign, send, refreshQuote, verify, older, configureRPC, edit, discard, reload, endAuthorization, endUnverified, confirmEnd, startAnother, localHistory].forEach(stack.addArrangedSubview)
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(foregrounded), name: UIApplication.didBecomeActiveNotification, object: nil)
         do { coordinator = try TOSQuantumPaymentCoordinator(); retirement = try TOSQuantumRetirementCoordinator() }
@@ -163,12 +169,14 @@ final class TOSQuantumPaymentViewController: UIViewController {
         recipient.isEnabled = editable; amount.isEnabled = editable; comment.isEditable = editable; bounce.isEnabled = editable
         acknowledge.isEnabled = !busy && (editable || pending?.phase == .signed)
         review.isHidden = pending != nil || prepared != nil || ended != nil; review.isEnabled = editable
-        sign.isHidden = prepared == nil || pending != nil; sign.isEnabled = !busy && wallet.isSendEnable
-        send.isHidden = quote == nil; send.isEnabled = !busy && authenticated && wallet.isSendEnable && (!flaggedRecipient || acknowledge.isOn)
+        sign.isHidden = prepared == nil || pending != nil; sign.isEnabled = !busy && wallet.isQuantumSelfPayAvailable
+        send.isHidden = quote == nil; send.isEnabled = !busy && authenticated && wallet.isQuantumSelfPayAvailable && (!flaggedRecipient || acknowledge.isOn)
         refreshQuote.isHidden = recoveringRetirement || retirementReview != nil || pending?.phase != .signed || pending?.paymentIntent == nil
-        refreshQuote.isEnabled = !busy && wallet.isSendEnable
+        refreshQuote.isEnabled = !busy && wallet.isQuantumSelfPayAvailable
         verify.isHidden = recoveringRetirement || pending?.signedBOC == nil || pending?.paymentIntent == nil; verify.isEnabled = !busy
         older.isHidden = cursor == nil; older.isEnabled = !busy
+        configureRPC.isHidden = !outcomeUnavailable || recoveringRetirement || pending?.signedBOC == nil
+        configureRPC.isEnabled = !busy
         edit.isHidden = prepared == nil || pending != nil; edit.isEnabled = !busy
         discard.isHidden = pending?.phase != .reserved; discard.isEnabled = !busy
         endAuthorization.isHidden = pending == nil || retirementReview != nil
@@ -179,7 +187,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         localHistory.isEnabled = !busy
         reload.isEnabled = !busy
         isModalInPresentation = busy
-        if !wallet.isSendEnable && (prepared != nil || quote != nil) {
+        if !wallet.isQuantumSelfPayAvailable && (prepared != nil || quote != nil) {
             status.text = "Payment sending is not available yet. Your reviewed payment has not been sent."
         }
     }
@@ -208,6 +216,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         details.text = "Recipient: \(intent.recipient.toRaw())\nAmount: \(TOSQuantumHistoryRecord.formatNano(String(intent.amount)) ?? String(intent.amount))\nReturn on rejection: \(intent.bounce ? "Yes" : "No")\nComment: \(intent.comment ?? "None")"
     }
     private func loadJournal() {
+        outcomeUnavailable = false
         run("Loading saved payment…") { [self] in
             if coordinator == nil { coordinator = try TOSQuantumPaymentCoordinator() }
             if retirement == nil { retirement = try TOSQuantumRetirementCoordinator() }
@@ -239,6 +248,20 @@ final class TOSQuantumPaymentViewController: UIViewController {
                 let deadline = try TOSQuantumRetirementCoordinator.originalDeadline(value)
                 details.text = (details.text ?? "") + "\nOriginal authorization expires: \(Date(timeIntervalSince1970: TimeInterval(deadline)).formatted())\nEnding requires verified shard time strictly after this deadline, independently of the fee estimate."
                 if recoveringRetirement { status.text = "Interrupted authorization retirement. Fresh verification is required to finish; no replacement can be signed." }
+                if !recoveringRetirement, value.signedBOC != nil {
+                    do {
+                        let reader = try TOSQuantumPaymentOutcomeReader()
+                        let page = try await reader.read(wallet: wallet, cursor: nil)
+                        try Task.checkCancellation()
+                        try applyOutcomePage(page, entry: value)
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        record(error)
+                        outcomeUnavailable = true
+                        status.text = "Payment result could not be verified. The saved authorization remains unchanged; verify again when connected."
+                    }
+                }
             } else if let ended { showEnded(ended) }
             else { details.text = nil; status.text = "Enter the recipient and exact amount to review." }
         }
@@ -290,7 +313,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         return true
     }
     private func authorize() {
-        guard wallet.isSendEnable, let prepared, pending == nil, let coordinator else { return }
+        guard wallet.isQuantumSelfPayAvailable, let prepared, pending == nil, let coordinator else { return }
         run("Authenticate to sign and estimate locally…") { [self] in
             let approved = await authenticate(); try Task.checkCancellation()
             guard approved else { status.text = "Authentication cancelled. Nothing was signed or sent."; return }
@@ -306,7 +329,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         status.text = "Not sent. Confirm this estimated fee to send the saved signed message. Fees are an estimate."
     }
     private func recoverEstimate() {
-        guard wallet.isSendEnable, pending?.phase == .signed, let coordinator else { return }
+        guard wallet.isQuantumSelfPayAvailable, pending?.phase == .signed, let coordinator else { return }
         run("Checking the saved recipient…") { [self] in
             guard let intent = pending?.paymentIntent,
                   try await validateRecipient(intent.recipient.toRaw(), expected: intent.recipient, body: intent.comment ?? "") else { return }
@@ -318,7 +341,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         }
     }
     private func submit() {
-        guard wallet.isSendEnable, authenticated, !flaggedRecipient || acknowledge.isOn,
+        guard wallet.isQuantumSelfPayAvailable, authenticated, !flaggedRecipient || acknowledge.isOn,
               let quote, let coordinator else { return }
         guard Int64(Date().timeIntervalSince1970) < Int64(quote.expiresAt) else {
             self.quote = nil; authenticated = false; status.text = "Estimate expired. Re-estimate the saved payment."; render(); return
@@ -342,17 +365,32 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private func verifyResult(continuing: Bool) {
         let start = continuing ? cursor : nil
         run("Verifying the saved payment result…") { [self] in
-            let reader = try TOSQuantumPaymentOutcomeReader()
-            let page = try await reader.read(wallet: wallet, cursor: start)
-            try Task.checkCancellation(); cursor = page.next
-            if let receipt = page.receipt {
-                show(receipt.intent)
-                let hash = receipt.transactionHash.map { String(format: "%02x", $0) }.joined()
-                details.text = (details.text ?? "") + "\nTransaction: \(hash)\nLogical time: \(receipt.logicalTime)"
-                status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact transfer. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
-            } else {
-                status.text = page.authorizationExpired ? "Authorization expired according to verified chain time. Payment outcome is unverified; authorization retained." : "Payment outcome is unverified. Authorization retained."
+            do {
+                let reader = try TOSQuantumPaymentOutcomeReader()
+                let page = try await reader.read(wallet: wallet, cursor: start)
+                try Task.checkCancellation(); cursor = page.next
+                guard let entry = pending, page.operationID == entry.id else { throw TOSPQError.keyBinding }
+                try applyOutcomePage(page, entry: entry)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                record(error); try Task.checkCancellation()
+                outcomeUnavailable = true
+                status.text = "Payment result could not be verified. The saved authorization remains unchanged; configure the TOS node or retry when connected."
             }
+        }
+    }
+    private func applyOutcomePage(_ page: TOSQuantumPaymentOutcomeReader.Page, entry: TOSQuantumOutbox.Entry) throws {
+        guard page.operationID == entry.id else { throw TOSPQError.keyBinding }
+        outcomeUnavailable = false
+        cursor = page.next
+        if let receipt = page.receipt {
+            show(receipt.intent)
+            let hash = receipt.transactionHash.map { String(format: "%02x", $0) }.joined()
+            details.text = (details.text ?? "") + "\nTransaction: \(hash)\nLogical time: \(receipt.logicalTime)"
+            status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact transfer. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
+        } else {
+            status.text = page.authorizationExpired ? "Authorization expired according to verified chain time. Payment outcome is unverified; authorization retained." : "Payment outcome is unverified. Authorization retained."
         }
     }
     private func clearIntent() {

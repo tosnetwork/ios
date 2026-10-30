@@ -28,9 +28,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             remoteConfig: LocalRemoteConfigProvider()
         )
 
+        #if DEBUG
         let testDeeplink = ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] != nil
             ? ProcessInfo.processInfo.environment["TOS_UI_TEST_DEEP_LINK"]
             : nil
+        #else
+        let testDeeplink: String? = nil
+        #endif
         if let testDeeplink {
             coordinator.start(deeplink: testDeeplink)
         } else if let deeplink = connectionOptions.urlContexts.first?.url.absoluteString {
@@ -62,7 +66,9 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        #if DEBUG
         guard ProcessInfo.processInfo.environment["TOS_UI_TEST_KEEP_PRIVACY_SHIELD"] != "1" else { return }
+        #endif
         hidePrivacyShield()
     }
 

@@ -61,10 +61,12 @@ private extension ReceiveTabViewController {
         viewModel.didTapCopy = { [weak self] address in
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
             UIPasteboard.general.string = address
+            #if DEBUG
             if ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] != nil {
                 self?.customView.accessibilityIdentifier = "receive.copy.result"
                 self?.customView.accessibilityValue = UIPasteboard.general.string
             }
+            #endif
         }
 
         viewModel.showToast = { configuration in

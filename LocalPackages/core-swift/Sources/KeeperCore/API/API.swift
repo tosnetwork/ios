@@ -7,6 +7,7 @@ import TonSwift
 public extension Notification.Name {
     static let tosRPCUnavailable = Notification.Name("tos.rpc.unavailable")
     static let tosRPCAvailable = Notification.Name("tos.rpc.available")
+    static let tosRPCConfigurationChanged = Notification.Name("tos.rpc.configuration.changed")
 }
 
 public enum TOSRPCConnectivity {
@@ -159,7 +160,7 @@ struct TOSRPCClient {
 
     private func callOnce(method: String, params: [String: Any], wrapArray: Bool = false) async throws -> [String: Any] {
         let basePath = await basePath().trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let endpoint = URL(string: basePath + "/jsonRPC") else {
+        guard let endpoint = TOSRPCSettings.jsonRPCEndpoint(for: basePath) else {
             throw Error.invalidEndpoint
         }
 

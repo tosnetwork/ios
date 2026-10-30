@@ -18,7 +18,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        #if DEBUG
         resetStateForUITestsIfRequested()
+        #endif
         Log.configure()
 
         UNUserNotificationCenter.current().delegate = self
@@ -47,6 +49,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 }
 
 private extension AppDelegate {
+    #if DEBUG
     func resetStateForUITestsIfRequested() {
         guard ProcessInfo.processInfo.environment["TOS_UI_TEST_RESET"] == "1" else { return }
 
@@ -77,6 +80,7 @@ private extension AppDelegate {
             SecItemDelete([kSecClass: itemClass] as CFDictionary)
         }
     }
+    #endif
 }
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
