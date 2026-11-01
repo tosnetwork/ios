@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import TonSwift
 
 /// Unverified wire fields only. Parsing does not authorize signing or restore a current role.
 final class TOSQuantumBackupPayload {
@@ -58,6 +59,37 @@ final class TOSQuantumBackupPayload {
                   constantTimeEqual(Data(SHA256.hash(data: derived)), entry.publicKeyHash) else {
                 throw TOSPQError.keyBinding
             }
+        }
+    }
+
+    /// Verifies only the declared source-to-seed mapping; this does not establish live authority.
+    func validateProvenance() throws {
+        for entry in roles {
+            if entry.sourceProfile == 1 { continue } // Seed-only makes no mnemonic/master claim.
+            var master = Data()
+            defer { master.resetBytes(in: 0..<master.count) }
+            switch entry.sourceProfile {
+            case 2:
+                guard entry.wordIndices.allSatisfy({ Int($0) < TonSwift.Mnemonic.words.count }) else {
+                    throw TOSPQError.invalidInput
+                }
+                let words = entry.wordIndices.map { TonSwift.Mnemonic.words[Int($0)] }
+                var password = entry.phrasePassword
+                defer { password.resetBytes(in: 0..<password.count) }
+                master = try TOSQuantumMnemonic.masterAndWipePassword(words: words, password: &password)
+            case 3: master = entry.master
+            default: throw TOSPQError.invalidInput
+            }
+            let material: TOSQuantumKdf.Material
+            switch entry.role {
+            case 1: material = .primary
+            case 2: material = .rescue
+            default: throw TOSPQError.invalidInput
+            }
+            var derived = try TOSQuantumKdf.deriveAndWipe(material: material, master: &master,
+                network: namespace, globalID: globalID, account: entry.account, generation: entry.generation)
+            defer { derived.resetBytes(in: 0..<derived.count) }
+            guard constantTimeEqual(derived, entry.seed) else { throw TOSPQError.keyBinding }
         }
     }
 
