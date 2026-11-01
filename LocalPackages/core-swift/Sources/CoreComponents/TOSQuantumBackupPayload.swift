@@ -31,6 +31,11 @@ final class TOSQuantumBackupPayload {
     let authorityBOC: Data
     private(set) var roles: [Role]
 
+    func identityFields() throws -> TOSQuantumBackupIdentityFields {
+        try TOSQuantumBackupIdentityFields(globalID: globalID, rootHash: rootHash, fileHash: fileHash,
+            namespace: namespace, birthBOC: birthBOC, authorityBOC: authorityBOC)
+    }
+
     private init(globalID: Int32, root: Data, file: Data, namespace: Data,
                  birth: Data, authority: Data, roles: [Role]) {
         self.globalID = globalID
