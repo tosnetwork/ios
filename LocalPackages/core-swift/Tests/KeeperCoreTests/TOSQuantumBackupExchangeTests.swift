@@ -6,6 +6,48 @@ import TonSwift
 
 /// All secrets/passwords here are public frozen test vectors. Never use them for funds.
 final class TOSQuantumBackupExchangeTests: XCTestCase {
+    func testImportsActualAndroidMixedRoleFile() throws {
+        let directory = try XCTUnwrap(Bundle.module.url(forResource: "quantum-backup-exchange-v1", withExtension: nil))
+        let bytes = try Data(contentsOf: directory.appendingPathComponent("android-public-mixed-role-v1.tosqbk"))
+        let expected = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf:
+            directory.appendingPathComponent("android-public-mixed-role-v1.json"))) as? [String: Any])
+        func hex(_ value: Data) -> String { value.map { String(format: "%02x", $0) }.joined() }
+        XCTAssertEqual(expected["producer"] as? String, "android")
+        XCTAssertEqual(expected["is_public_test_material"] as? Bool, true)
+        XCTAssertEqual(expected["cipher_sha256"] as? String, hex(Data(SHA256.hash(data: bytes))))
+        // Trust values are specified by test code, not selected by the incoming backup.
+        let profile = try TOSQuantumNetworkProfile(globalID: -239, rootHash: String(repeating: "03", count: 32),
+            fileHash: String(repeating: "04", count: 32))
+        let namespace = Data(32..<64)
+        let inspection = try TOSQuantumBackupInspection(encrypted: bytes, password: "public exchange password 😀",
+            profile: profile, expectedNamespace: namespace)
+        XCTAssertEqual(expected["birth_address"] as? String, "0:" + hex(inspection.identity.birth.address.hash))
+        XCTAssertEqual(expected["authority_hash"] as? String, hex(inspection.identity.snapshot.hash))
+        XCTAssertEqual(expected["primary_key_hash"] as? String, hex(Data(SHA256.hash(data: inspection.identity.snapshot.primaryKey))))
+        XCTAssertEqual(expected["rescue_key_hash"] as? String, hex(Data(SHA256.hash(data: inspection.identity.snapshot.rescueKey))))
+        XCTAssertEqual(inspection.roles.map(\.role), [.primary, .rescue])
+        XCTAssertEqual(inspection.roles.map(\.account), [1, 2])
+        XCTAssertEqual(inspection.roles.map(\.generation), [19, 20])
+        XCTAssertEqual(inspection.roles.map(\.sourceProfile), [2, 3])
+        var plaintext = try TOSQuantumBackupCipher.decrypt(bytes, password: "public exchange password 😀")
+        defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+        let parsed = try TOSQuantumBackupPayload.parseUnverified(plaintext)
+        defer { parsed.wipe() }
+        let words = Array(repeating: "abandon", count: 23) + ["chicken"]
+        let indices = try words.map { UInt16(try XCTUnwrap(TonSwift.Mnemonic.words.firstIndex(of: $0))) }
+        XCTAssertEqual(parsed.roles.first?.wordIndices, indices)
+        XCTAssertEqual(parsed.roles.first?.phrasePassword, Data(" public test password ".utf8))
+        XCTAssertEqual(parsed.roles.last?.master, Data(0..<32))
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: bytes, password: "incorrect public exchange password",
+            profile: profile, expectedNamespace: namespace))
+        let wrong = try TOSQuantumNetworkProfile(globalID: -238, rootHash: profile.rootHash, fileHash: profile.fileHash)
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: bytes, password: "public exchange password 😀",
+            profile: wrong, expectedNamespace: namespace))
+        var tampered = bytes; tampered[tampered.count - 1] ^= 1
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: tampered, password: "public exchange password 😀",
+            profile: profile, expectedNamespace: namespace))
+    }
+
     func testProduceMixedRoleExchangeFile() throws {
         let namespace = Data(repeating: 3, count: 32), root = Data(repeating: 4, count: 32), file = Data(repeating: 5, count: 32)
         let words = Array(repeating: "abandon", count: 23) + ["chicken"]
