@@ -31,7 +31,42 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         XCTAssertEqual(matches.count, 1)
         XCTAssertEqual(matches[0].role, .primary)
         XCTAssertEqual(matches[0].match, .matchesCurrent)
+        let initial = try f.outbox.prepareBackupImport(backup)
+        XCTAssertEqual(initial.phase, .boundSecrets)
+        XCTAssertTrue(try f.outbox.requiresRecovery(f.identity))
+        let ordinaryPayment = try f.payment()
+        XCTAssertThrowsError(try f.outbox.reserve(payment: ordinaryPayment, now: f.clock)) { error in
+            if case .recoveryRequired? = error as? TOSQuantumOutbox.Error { return }
+            XCTFail("Expected recovery isolation rejection, got \(error)")
+        }
+        let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        let observed = try reopened.observeBackupImport(backup, observation: observation, now: f.clock)
+        XCTAssertEqual(observed[0].match, .matchesCurrent)
+        let progressed = try reopened.prepareBackupImport(backup)
+        XCTAssertEqual(progressed.id, initial.id)
+        XCTAssertEqual(progressed.phase, .observedRoles)
+        // A different encrypted export of the same wallet cannot overwrite a pending transaction.
+        XCTAssertThrowsError(try reopened.prepareBackupImport(inspect(f.identity)))
+        let name = f.identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".import"
+        let canonical = f.base.appendingPathComponent("outbox/" + name)
+        let original = try Data(contentsOf: canonical)
+        let stage = canonical.appendingPathExtension("next")
+        try original.write(to: stage)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.path)
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        var jumped = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        jumped["phase"] = 5
+        try JSONSerialization.data(withJSONObject: jumped).write(to: stage)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.path)
+        XCTAssertThrowsError(try reopened.prepareBackupImport(backup))
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        try FileManager.default.removeItem(at: stage)
         XCTAssertThrowsError(try backup.classify(observation: observation, now: f.clock + 301))
+        XCTAssertThrowsError(try reopened.observeBackupImport(backup, observation: observation, now: f.clock + 301))
         let otherBirth = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(
             authority: f.identity.wallet.initialAuthority, walletID: 1))
         let other = try inspect(otherBirth)

@@ -102,6 +102,108 @@ public final class TOSQuantumOutbox {
         guard try !recoveryIsolated(identity) else { throw Error.recoveryRequired }
     }
 
+    /// Progress is a retry journal, never proof of live roles, custody, or permission to sign.
+    struct BackupImportCheckpoint: Codable {
+        enum Phase: UInt8, Codable { case validatedFile, boundSecrets, observedRoles, protectedStored, publicRecordDurable, publishedRecoveryOnly }
+        let version: UInt8
+        let id: UUID
+        let identity: TOSQuantumSelfPayIdentity
+        let profile: TOSQuantumNetworkProfile
+        let encryptedDigest: Data
+        fileprivate(set) var phase: Phase
+    }
+
+    /// Inspection has authenticated the file and secrets; isolation precedes every journal/custody write.
+    /// The original encrypted file is required again after restart; this journal stores no secrets.
+    func prepareBackupImport(_ inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint {
+        try isolateRecoveredIdentity(inspection.identity.birth)
+        return try locked {
+            let canonical = importPath(inspection.identity.birth)
+            let stage = canonical.appendingPathExtension("next")
+            var current = try readImport(canonical, inspection: inspection)
+            if let next = try readImport(stage, inspection: inspection) {
+                if let current {
+                    guard next.id == current.id,
+                          next.phase.rawValue == current.phase.rawValue || next.phase.rawValue == current.phase.rawValue + 1 else {
+                        throw Error.invalidRecord
+                    }
+                } else {
+                    guard next.phase == .validatedFile else { throw Error.invalidRecord }
+                }
+                try retirementFileSync(stage)
+                try syncDirectory()
+                guard rename(stage.path, canonical.path) == 0 else { throw Error.storage }
+                try syncDirectory()
+                current = next
+            }
+            if current == nil {
+                func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+                let initial = BackupImportCheckpoint(version: 1, id: UUID(), identity: inspection.identity.birth,
+                    profile: try TOSQuantumNetworkProfile(globalID: inspection.fields.globalID,
+                        rootHash: hex(inspection.fields.rootHash), fileHash: hex(inspection.fields.fileHash)),
+                    encryptedDigest: inspection.encryptedDigest, phase: .validatedFile)
+                try writeImport(initial)
+                current = initial
+            }
+            guard var checkpoint = current else { throw Error.invalidRecord }
+            if checkpoint.phase == .validatedFile {
+                checkpoint.phase = .boundSecrets
+                try writeImport(checkpoint)
+            }
+            return checkpoint
+        }
+    }
+
+    /// Revalidate a real observation on every retry; a saved phase is not a cached role capability.
+    func observeBackupImport(_ inspection: TOSQuantumBackupInspection,
+                             observation: TOSQuantumAccountReader.Observation, now: Int64) throws -> [TOSQuantumBackupInspection.ObservedRole] {
+        let result = try inspection.classify(observation: observation, now: now)
+        _ = try prepareBackupImport(inspection)
+        try locked {
+            guard try recoveryIsolated(inspection.identity.birth),
+                  var checkpoint = try readImport(importPath(inspection.identity.birth), inspection: inspection) else {
+                throw Error.invalidRecord
+            }
+            try observation.requireFresh(now: now)
+            if checkpoint.phase == .boundSecrets {
+                checkpoint.phase = .observedRoles
+                try writeImport(checkpoint)
+            }
+        }
+        return result
+    }
+
+    private func importPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
+        path(identity).deletingPathExtension().appendingPathExtension("import")
+    }
+    private func readImport(_ file: URL, inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint? {
+        guard let bytes = try retirementRead(file, maximum: 65536) else { return nil }
+        let value = try JSONDecoder().decode(BackupImportCheckpoint.self, from: bytes)
+        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.observedRoles.rawValue,
+              value.identity == inspection.identity.birth,
+              value.encryptedDigest.count == 32, value.encryptedDigest == inspection.encryptedDigest,
+              value.profile.globalID == inspection.fields.globalID,
+              Data(hex: value.profile.rootHash) == inspection.fields.rootHash,
+              Data(hex: value.profile.fileHash) == inspection.fields.fileHash else { throw Error.invalidRecord }
+        return value
+    }
+    private func writeImport(_ value: BackupImportCheckpoint) throws {
+        let canonical = importPath(value.identity), stage = canonical.appendingPathExtension("next")
+        let bytes = try JSONEncoder().encode(value)
+        guard bytes.count <= 65536 else { throw Error.capacity }
+        guard try retirementNames(directory, maximum: 128).count < 126 else { throw Error.capacity }
+        let fd = open(stage.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw Error.storage }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: stage.path)
+        try handle.write(contentsOf: bytes)
+        guard fsync(fd) == 0, fcntl(fd, F_FULLFSYNC) == 0 else { throw Error.storage }
+        try syncDirectory()
+        guard rename(stage.path, canonical.path) == 0 else { throw Error.storage }
+        try syncDirectory()
+    }
+
     /// One slot per birth identity, shared by PRIMARY/RESCUE and all local wallet IDs.
     /// A different trusted anchor cannot open another slot for the same wallet.
     public func reserve(identity: TOSQuantumSelfPayIdentity, profile: TOSQuantumNetworkProfile,

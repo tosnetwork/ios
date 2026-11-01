@@ -1,6 +1,7 @@
 import Foundation
 import CoreComponents
 import TonSwift
+import CryptoKit
 
 /// Historical file validation only. A result cannot sign, publish, or clear recovery isolation.
 struct TOSQuantumBackupInspection {
@@ -10,6 +11,7 @@ struct TOSQuantumBackupInspection {
         let match: Match
     }
     let fields: TOSQuantumBackupIdentityFields
+    let encryptedDigest: Data
     let identity: TOSQuantumBackupFileIdentity
     let roles: [TOSQuantumBackupInspectionSession.Role]
 
@@ -51,5 +53,6 @@ struct TOSQuantumBackupInspection {
         roles = try session.validateSecrets(primary: identity.snapshot.primaryKey, rescue: identity.snapshot.rescueKey)
         self.identity = identity
         fields = session.identity
+        encryptedDigest = Data(SHA256.hash(data: encrypted))
     }
 }
