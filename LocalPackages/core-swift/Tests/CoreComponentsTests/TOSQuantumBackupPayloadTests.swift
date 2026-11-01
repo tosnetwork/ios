@@ -1,7 +1,50 @@
 import XCTest
+import CryptoKit
 @testable import CoreComponents
 
 final class TOSQuantumBackupPayloadTests: XCTestCase {
+    func testNativeSeedsBindToFullSnapshotKeysAndDigests() throws {
+        let primarySeed = Data(repeating: 7, count: 32)
+        let rescueSeed = Data(repeating: 8, count: 48)
+        let primary = try TOSQuantumSigner.publicKey(role: .primary, seed: primarySeed)
+        let rescue = try TOSQuantumSigner.publicKey(role: .rescue, seed: rescueSeed)
+        let roles = [TOSQuantumBackupPayload.Role(role: 1, account: 0, generation: 3,
+            seed: primarySeed, publicKeyHash: Data(SHA256.hash(data: primary)), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data()),
+            TOSQuantumBackupPayload.Role(role: 2, account: 1, generation: 5,
+            seed: rescueSeed, publicKeyHash: Data(SHA256.hash(data: rescue)), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data())]
+        func payload(_ entries: [TOSQuantumBackupPayload.Role]) throws -> TOSQuantumBackupPayload {
+            try TOSQuantumBackupPayload.parseUnverified(TOSQuantumBackupPayload.encodeUnverified(
+                globalID: -3, root: Data(count: 32), file: Data(count: 32), namespace: Data(count: 32),
+                birth: Data([1]), authority: Data([1]), roles: entries))
+        }
+        let valid = try payload(roles)
+        defer { valid.wipe() }
+        try valid.validateSnapshotKeys(primary: primary, rescue: rescue)
+        var substituted = primary
+        substituted[0] ^= 1
+        XCTAssertThrowsError(try valid.validateSnapshotKeys(primary: substituted, rescue: rescue))
+        var wrongRescue = rescue
+        wrongRescue[0] ^= 1
+        XCTAssertThrowsError(try valid.validateSnapshotKeys(primary: primary, rescue: wrongRescue))
+        var changed = roles
+        changed[0].seed[0] ^= 1
+        let wrongSeed = try payload(changed)
+        defer { wrongSeed.wipe() }
+        XCTAssertThrowsError(try wrongSeed.validateSnapshotKeys(primary: primary, rescue: rescue))
+        changed = roles
+        changed[1] = TOSQuantumBackupPayload.Role(role: 2, account: 1, generation: 5,
+            seed: rescueSeed, publicKeyHash: Data(count: 32), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data())
+        let wrongHash = try payload(changed)
+        defer { wrongHash.wipe() }
+        XCTAssertThrowsError(try wrongHash.validateSnapshotKeys(primary: primary, rescue: rescue))
+        let rescueOnly = try payload([roles[1]])
+        defer { rescueOnly.wipe() }
+        try rescueOnly.validateSnapshotKeys(primary: primary, rescue: rescue)
+    }
+
     private func fixture(roles: [UInt8] = [1, 2], source: UInt8 = 1,
                          word: UInt16 = 2047, password: Data = Data()) -> Data {
         var result = Data([1, 255, 255, 255, 253])

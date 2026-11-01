@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Unverified wire fields only. Parsing does not authorize signing or restore a current role.
 final class TOSQuantumBackupPayload {
@@ -43,6 +44,29 @@ final class TOSQuantumBackupPayload {
     /// Best effort only: Swift value copies and runtime allocations cannot be guaranteed erased.
     func wipe() { for index in roles.indices { roles[index].wipe() } }
     deinit { wipe() }
+
+    /// Binds every declared seed to the complete snapshot key, not just a file-supplied digest.
+    /// Snapshot identity, provenance and fresh chain-role validation remain separate requirements.
+    func validateSnapshotKeys(primary: Data, rescue: Data) throws {
+        guard primary.count == TOSQuantumRole.primary.publicKeySize,
+              rescue.count == TOSQuantumRole.rescue.publicKeySize else { throw TOSPQError.invalidInput }
+        for entry in roles {
+            guard let role = TOSQuantumRole(rawValue: Int32(entry.role)) else { throw TOSPQError.invalidInput }
+            let derived = try TOSQuantumSigner.publicKey(role: role, seed: entry.seed)
+            let expected = role == .primary ? primary : rescue
+            guard constantTimeEqual(derived, expected),
+                  constantTimeEqual(Data(SHA256.hash(data: derived)), entry.publicKeyHash) else {
+                throw TOSPQError.keyBinding
+            }
+        }
+    }
+
+    private func constantTimeEqual(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        var difference: UInt8 = 0
+        for (a, b) in zip(lhs, rhs) { difference |= a ^ b }
+        return difference == 0
+    }
 
     /// Wire encoding only; custody must first validate identity and role provenance.
     static func encodeUnverified(globalID: Int32, root: Data, file: Data, namespace: Data,
