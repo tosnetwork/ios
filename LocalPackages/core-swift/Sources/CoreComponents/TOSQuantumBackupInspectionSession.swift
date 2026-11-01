@@ -27,6 +27,45 @@ public final class TOSQuantumBackupInspectionSession {
             throw error
         }
     }
+    internal init(protectedPayload: Data, originalDigest: Data) throws {
+        guard originalDigest.count == 32 else { throw TOSPQError.invalidInput }
+        let parsed = try TOSQuantumBackupPayload.parseUnverified(protectedPayload)
+        do {
+            identity = try parsed.identityFields()
+            encryptedDigest = originalDigest
+            payload = parsed
+        } catch { parsed.wipe(); throw error }
+    }
+    /// Requires the original user-presence-protected Keychain item, not the old file/password.
+    public static func openProtected(id: UUID, birthHash: Data, originalDigest: Data) throws -> TOSQuantumBackupInspectionSession {
+        guard birthHash.count == 32, originalDigest.count == 32 else { throw TOSPQError.invalidInput }
+        return try TOSQuantumRecoveryMaterialKeychain.withPayload(id: id, birthHash: birthHash, encryptedDigest: originalDigest) {
+            try TOSQuantumBackupInspectionSession(protectedPayload: $0, originalDigest: originalDigest)
+        }
+    }
+
+    /// The service must strictly decode the supplied current authority and verify a fresh observation.
+    /// Retains original birth/provenance; never adds an undeclared role or returns plaintext.
+    public func encryptedExport(current: TOSQuantumBackupIdentityFields, primary: Data, rescue: Data,
+                                selected: [TOSQuantumRole], password: String) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        guard let payload, (1...2).contains(selected.count),
+              Set(selected.map(\.rawValue)).count == selected.count,
+              current.globalID == payload.globalID, current.rootHash == payload.rootHash,
+              current.fileHash == payload.fileHash, current.namespace == payload.namespace,
+              current.birthBOC == payload.birthBOC else { throw TOSPQError.keyBinding }
+        let roles = payload.roles.filter { entry in selected.contains(where: { $0.rawValue == Int32(entry.role) }) }
+        guard roles.count == selected.count else { throw TOSPQError.keyBinding }
+        var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: payload.globalID,
+            root: payload.rootHash, file: payload.fileHash, namespace: payload.namespace,
+            birth: payload.birthBOC, authority: current.authorityBOC, roles: roles)
+        defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+        let bound = try TOSQuantumBackupPayload.parseUnverified(plaintext)
+        defer { bound.wipe() }
+        try bound.validateSnapshotKeys(primary: primary, rescue: rescue)
+        try bound.validateProvenance()
+        return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
+    }
 
     /// Keys must come from the strictly decoded snapshot; does not authenticate current chain roles.
     public func validateSecrets(primary: Data, rescue: Data) throws -> [Role] {

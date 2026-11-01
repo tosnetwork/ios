@@ -4,6 +4,25 @@ import Security
 /// Whole validated recovery material, protected atomically. No public plaintext read API.
 /// Uses the seed service so the existing explicit sign-out deleteAll also removes these records.
 enum TOSQuantumRecoveryMaterialKeychain {
+    private static func query(_ id: UUID) -> [CFString: Any] {
+        [kSecClass: kSecClassGenericPassword, kSecAttrService: "network.tos.wallet.quantum.seed.v1",
+         kSecAttrAccount: "recovery-material.\(id.uuidString)", kSecAttrSynchronizable: false]
+    }
+    static func withPayload<T>(id: UUID, birthHash: Data, encryptedDigest: Data,
+                               body: (Data) throws -> T) throws -> T {
+        var read = query(id); read[kSecReturnData] = true
+        var value: CFTypeRef?
+        let status = SecItemCopyMatching(read as CFDictionary, &value)
+        guard status == errSecSuccess, var record = value as? Data else { throw TOSPQError.keychain(status) }
+        defer { record.resetBytes(in: 0..<record.count) }
+        var plaintext = try payload(record, id: id, birthHash: birthHash, encryptedDigest: encryptedDigest)
+        defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+        return try body(plaintext)
+    }
+    static func delete(id: UUID) throws {
+        let status = SecItemDelete(query(id) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw TOSPQError.keychain(status) }
+    }
     static func encode(_ payload: Data, id: UUID, birthHash: Data, encryptedDigest: Data) throws -> Data {
         guard birthHash.count == 32, encryptedDigest.count == 32,
               (1...TOSQuantumBackupCipher.maximumPayload).contains(payload.count) else { throw TOSPQError.invalidInput }
@@ -28,9 +47,7 @@ enum TOSQuantumRecoveryMaterialKeychain {
     static func store(_ payload: Data, id: UUID, birthHash: Data, encryptedDigest: Data) throws {
         var record = try encode(payload, id: id, birthHash: birthHash, encryptedDigest: encryptedDigest)
         defer { record.resetBytes(in: 0..<record.count) }
-        let query: [CFString: Any] = [kSecClass: kSecClassGenericPassword,
-            kSecAttrService: "network.tos.wallet.quantum.seed.v1",
-            kSecAttrAccount: "recovery-material.\(id.uuidString)", kSecAttrSynchronizable: false]
+        let query = query(id)
         var error: Unmanaged<CFError>?
         guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
             .userPresence, &error) else { throw TOSPQError.invalidInput }

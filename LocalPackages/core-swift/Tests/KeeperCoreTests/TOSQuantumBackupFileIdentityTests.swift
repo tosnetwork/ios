@@ -5,6 +5,68 @@ import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumBackupFileIdentityTests: XCTestCase {
+    func testProtectedReexportRetainsProvenanceAndBirthWithoutOriginalFile() throws {
+        let words = Array(repeating: "abandon", count: 23) + ["chicken"] // Public native fixture.
+        let indices = try words.map { UInt16(try XCTUnwrap(TonSwift.Mnemonic.words.firstIndex(of: $0))) }
+        for source: UInt8 in [2, 3] {
+            var phrasePassword = Data(" public test password ".utf8)
+            var master = source == 2 ? try TOSQuantumMnemonic.masterAndWipePassword(words: words, password: &phrasePassword) : Data(0..<32)
+            defer { master.resetBytes(in: 0..<master.count) }
+            var deriveMaster = master
+            var seed = try TOSQuantumKdf.deriveAndWipe(material: .primary, master: &deriveMaster,
+                network: namespace, globalID: -239, account: 1, generation: 19)
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            let primary = try TOSQuantumSigner.publicKey(role: .primary, seed: seed)
+            let rescue = try TOSQuantumSigner.publicKey(role: .rescue, seed: Data(repeating: 8, count: 48))
+            let snapshot = try TOSQuantumSelfPayAuthority(globalID: -239, namespace: namespace, primaryKey: primary, rescueKey: rescue)
+            let birth = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: snapshot))
+            let role = TOSQuantumBackupPayload.Role(role: 1, account: 1, generation: 19, seed: seed,
+                publicKeyHash: Data(SHA256.hash(data: primary)), sourceProfile: source,
+                wordIndices: source == 2 ? indices : [], phrasePassword: source == 2 ? Data(" public test password ".utf8) : Data(),
+                master: source == 3 ? master : Data())
+            var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: -239, root: root, file: file,
+                namespace: namespace, birth: birth.toBOC(), authority: snapshot.cell.toBoc(), roles: [role])
+            var original = try TOSQuantumBackupCipher.encrypt(plaintext, password: "old public backup password")
+            let digest = Data(SHA256.hash(data: original)), id = UUID()
+            var frame = try TOSQuantumRecoveryMaterialKeychain.encode(plaintext, id: id, birthHash: birth.cell.hash(), encryptedDigest: digest)
+            plaintext.resetBytes(in: 0..<plaintext.count); original.resetBytes(in: 0..<original.count)
+            var material = try TOSQuantumRecoveryMaterialKeychain.payload(frame, id: id, birthHash: birth.cell.hash(), encryptedDigest: digest)
+            let session = try TOSQuantumBackupInspectionSession(protectedPayload: material, originalDigest: digest)
+            material.resetBytes(in: 0..<material.count)
+            defer { session.close(); frame.resetBytes(in: 0..<frame.count) }
+            let retained = try TOSQuantumBackupInspection(session: session, profile: profile(), expectedNamespace: namespace)
+            let refreshed = try TOSQuantumSelfPayAuthority(globalID: -239, namespace: namespace, primaryKey: primary,
+                rescueKey: TOSQuantumSigner.publicKey(role: .rescue, seed: Data(repeating: 9, count: 48)))
+            let current = try TOSQuantumBackupIdentityFields(globalID: -239, rootHash: root, fileHash: file,
+                namespace: namespace, birthBOC: retained.fields.birthBOC, authorityBOC: refreshed.cell.toBoc())
+            let exported = try session.encryptedExport(current: current, primary: primary, rescue: refreshed.rescueKey,
+                selected: [.primary], password: "new public backup password")
+            for selection: [TOSQuantumRole] in [[], [.primary, .primary], [.rescue]] {
+                XCTAssertThrowsError(try session.encryptedExport(current: current, primary: primary, rescue: refreshed.rescueKey,
+                    selected: selection, password: "new public backup password"))
+            }
+            XCTAssertThrowsError(try session.encryptedExport(current: current, primary: Data(count: 1312), rescue: refreshed.rescueKey,
+                selected: [.primary], password: "new public backup password"))
+            session.close(); frame.resetBytes(in: 0..<frame.count)
+            let cold = try TOSQuantumBackupInspection(encrypted: exported, password: "new public backup password",
+                profile: profile(), expectedNamespace: namespace)
+            XCTAssertEqual(cold.identity.birth.address, birth.address)
+            XCTAssertEqual(cold.identity.snapshot.hash, refreshed.hash)
+            XCTAssertNotEqual(cold.identity.birth.address, try TOSQuantumSelfPayWallet(authority: refreshed).address)
+            var restored = try TOSQuantumBackupCipher.decrypt(exported, password: "new public backup password")
+            defer { restored.resetBytes(in: 0..<restored.count) }
+            let parsed = try TOSQuantumBackupPayload.parseUnverified(restored)
+            defer { parsed.wipe() }
+            XCTAssertEqual(parsed.roles[0].seed, seed)
+            XCTAssertEqual(parsed.roles[0].account, 1); XCTAssertEqual(parsed.roles[0].generation, 19)
+            if source == 2 {
+                XCTAssertEqual(parsed.roles[0].wordIndices, indices)
+                XCTAssertEqual(parsed.roles[0].phrasePassword, Data(" public test password ".utf8))
+            } else { XCTAssertEqual(parsed.roles[0].master, master) }
+            try parsed.validateProvenance()
+        }
+    }
+
     func testMixedCurrentAndStaleRolesRemainIndependent() throws {
         let snapshot = try authority()
         let primaryChanged = try authority(key: 9)

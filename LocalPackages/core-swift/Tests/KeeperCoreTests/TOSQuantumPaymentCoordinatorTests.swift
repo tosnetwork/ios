@@ -96,7 +96,15 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         XCTAssertThrowsError(try store { _, _, _, _, _ in writes += 1; time += 301 })
         XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
         time = f.clock
-        let stored = try store { _, _, _, _, _ in writes += 1 }
+        var recoveryFrame = Data()
+        defer { recoveryFrame.resetBytes(in: 0..<recoveryFrame.count) }
+        let stored = try store { _, id, birth, _, _ in
+            writes += 1
+            var material = try TOSQuantumBackupCipher.decrypt(encryptedFile, password: password)
+            defer { material.resetBytes(in: 0..<material.count) }
+            recoveryFrame = try TOSQuantumRecoveryMaterialKeychain.encode(material, id: id,
+                birthHash: birth, encryptedDigest: backup.encryptedDigest)
+        }
         XCTAssertEqual(stored.id, initial.id); XCTAssertEqual(stored.phase, .protectedStored)
         XCTAssertTrue(try reopened.requiresRecovery(f.identity))
         XCTAssertEqual(writes, 3)
@@ -109,6 +117,37 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         }
         XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        var reads = 0
+        func readMaterial(_ checkpoint: TOSQuantumOutbox.BackupImportCheckpoint) throws -> TOSQuantumBackupInspectionSession {
+            reads += 1
+            var material = try TOSQuantumRecoveryMaterialKeychain.payload(recoveryFrame, id: checkpoint.id,
+                birthHash: checkpoint.identity.cell.hash(), encryptedDigest: checkpoint.encryptedDigest)
+            defer { material.resetBytes(in: 0..<material.count) }
+            return try TOSQuantumBackupInspectionSession(protectedPayload: material, originalDigest: checkpoint.encryptedDigest)
+        }
+        let exported = try reopened.exportBackupImport(backup, observation: observation, selected: [.primary],
+            password: "public second export password", now: { f.clock }, read: readMaterial)
+        let checked = try TOSQuantumBackupInspection(encrypted: exported, password: "public second export password",
+            profile: f.profile, expectedNamespace: state.authority.namespace)
+        XCTAssertEqual(checked.identity.birth.address, f.identity.address)
+        XCTAssertEqual(checked.roles.map(\.role), [.primary])
+        XCTAssertThrowsError(try reopened.exportBackupImport(backup, observation: observation, selected: [.rescue],
+            password: "public second export password", now: { f.clock }, read: readMaterial))
+        XCTAssertEqual(reads, 1)
+        var readCompleted = false, afterReadClockCalls = 0
+        var retainedSession: TOSQuantumBackupInspectionSession?
+        XCTAssertThrowsError(try reopened.exportBackupImport(backup, observation: observation, selected: [.primary],
+            password: "public second export password", now: {
+                if readCompleted { afterReadClockCalls += 1 }
+                return f.clock + (afterReadClockCalls >= 2 ? 301 : 0)
+            }, read: { checkpoint in
+                let session = try readMaterial(checkpoint)
+                retainedSession = session; readCompleted = true
+                return session
+            }))
+        XCTAssertEqual(afterReadClockCalls, 2)
+        XCTAssertThrowsError(try retainedSession?.validateSecrets(primary: state.authority.primaryKey, rescue: state.authority.rescueKey))
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
     }
 
     private final class Fixture {

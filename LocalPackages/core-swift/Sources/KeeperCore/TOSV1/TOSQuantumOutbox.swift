@@ -185,6 +185,55 @@ public final class TOSQuantumOutbox {
     private func importPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
         path(identity).deletingPathExtension().appendingPathExtension("import")
     }
+    func exportBackupImport(_ inspection: TOSQuantumBackupInspection, observation: TOSQuantumAccountReader.Observation,
+                            selected: [TOSQuantumRole], password: String, now: () -> Int64) throws -> Data {
+        try exportBackupImport(inspection, observation: observation, selected: selected, password: password, now: now) { checkpoint in
+            try TOSQuantumBackupInspectionSession.openProtected(id: checkpoint.id,
+                birthHash: checkpoint.identity.cell.hash(), originalDigest: checkpoint.encryptedDigest)
+        }
+    }
+    /// Scoped protected-read seam; production always reads the user-presence Keychain item.
+    internal func exportBackupImport(_ inspection: TOSQuantumBackupInspection, observation: TOSQuantumAccountReader.Observation,
+                                     selected: [TOSQuantumRole], password: String, now: () -> Int64,
+                                     read: (BackupImportCheckpoint) throws -> TOSQuantumBackupInspectionSession) throws -> Data {
+        var result = Data()
+        do {
+            let selection = selected
+            guard (1...2).contains(selection.count), Set(selection.map(\.rawValue)).count == selection.count else {
+                throw Error.invalidRecord
+            }
+            let observed = try inspection.classify(observation: observation, now: now())
+            guard selection.allSatisfy({ role in observed.contains { $0.role == role && $0.match == .matchesCurrent } }),
+                  case .active(let state) = observation.snapshot.status else { throw Error.invalidRecord }
+            let checkpoint = try locked {
+                guard try recoveryIsolated(inspection.identity.birth),
+                      let value = try readImport(importPath(inspection.identity.birth), inspection: inspection),
+                      value.phase == .protectedStored else { throw Error.invalidRecord }
+                return value
+            }
+            try observation.requireFresh(now: now())
+            let session = try read(checkpoint)
+            defer { session.close() }
+            let stored = try TOSQuantumBackupInspection(session: session, profile: observation.profile,
+                expectedNamespace: inspection.fields.namespace)
+            guard stored.identity.birth == inspection.identity.birth, stored.encryptedDigest == inspection.encryptedDigest,
+                  stored.identity.snapshot.hash == inspection.identity.snapshot.hash else { throw Error.invalidRecord }
+            let current = try TOSQuantumBackupIdentityFields(globalID: stored.fields.globalID,
+                rootHash: stored.fields.rootHash, fileHash: stored.fields.fileHash, namespace: stored.fields.namespace,
+                birthBOC: stored.fields.birthBOC, authorityBOC: state.authority.cell.toBoc())
+            let typed = try TOSQuantumBackupFileIdentity(fields: current, profile: observation.profile,
+                expectedNamespace: stored.fields.namespace)
+            guard typed.birth == stored.identity.birth, typed.snapshot.hash == state.authority.hash else { throw Error.invalidRecord }
+            try observation.requireFresh(now: now())
+            result = try session.encryptedExport(current: current, primary: state.authority.primaryKey,
+                rescue: state.authority.rescueKey, selected: selection, password: password)
+            try observation.requireFresh(now: now())
+            return result
+        } catch {
+            result.resetBytes(in: 0..<result.count)
+            throw error
+        }
+    }
     private func readImport(_ file: URL, inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint? {
         guard let bytes = try retirementRead(file, maximum: 65536) else { return nil }
         let value = try JSONDecoder().decode(BackupImportCheckpoint.self, from: bytes)

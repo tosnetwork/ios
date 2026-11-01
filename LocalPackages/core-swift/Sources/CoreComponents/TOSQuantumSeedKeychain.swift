@@ -236,6 +236,11 @@ public final class TOSQuantumSeedKeychain {
         lock.lock(); defer { lock.unlock() }
         try deleteLocked(id: id, role: role)
     }
+    /// Explicit whole-wallet removal; does not delete other wallets or release recovery isolation.
+    public func deleteRecoveryMaterial(id: UUID) throws {
+        lock.lock(); defer { lock.unlock() }
+        try TOSQuantumRecoveryMaterialKeychain.delete(id: id)
+    }
     private func deleteLocked(id: UUID, role: TOSQuantumRole) throws {
         let status = SecItemDelete(query(id: id, role: role) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw TOSPQError.keychain(status) }
