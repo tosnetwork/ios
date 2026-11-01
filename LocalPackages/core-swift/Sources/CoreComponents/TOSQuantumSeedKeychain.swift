@@ -60,6 +60,20 @@ public final class TOSQuantumSeedKeychain {
         }
         return record.subdata(in: expected.count..<record.count)
     }
+    /// Context is read from the protected role record, never guessed from birth generation 0/0.
+    internal static func registeredContext(record: Data, id: UUID, role: TOSQuantumRole,
+                                           network: Data, globalID: Int32) throws -> Context {
+        guard record.count == 69 + role.seedSize, network.count == 32 else { throw TOSPQError.keyBinding }
+        let bytes = Data(record)
+        func uint32(_ offset: Int) -> UInt32 {
+            bytes[offset..<(offset + 4)].reduce(UInt32(0)) { ($0 << 8) | UInt32($1) }
+        }
+        let context = try Context(network: bytes.subdata(in: 25..<57),
+            globalID: Int32(bitPattern: uint32(57)), account: uint32(61), generation: uint32(65))
+        guard context.network == network, context.globalID == globalID,
+              bytes.prefix(69) == header(id: id, role: role, context: context) else { throw TOSPQError.keyBinding }
+        return context
+    }
     public func importAndWipe(id: UUID, role: TOSQuantumRole, context: Context, seed: inout Data) throws -> Data {
         defer { seed.resetBytes(in: 0..<seed.count) }
         lock.lock(); defer { lock.unlock() }
@@ -148,14 +162,33 @@ public final class TOSQuantumSeedKeychain {
     }
     private func withSeedLocked<Result>(id: UUID, role: TOSQuantumRole, context: Context,
                                         body: (Data) throws -> Result) throws -> Result {
+        try withRecordLocked(id: id, role: role) { record in
+            var seed = try Self.seed(record: record, id: id, role: role, context: context)
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            return try body(seed)
+        }
+    }
+    private func withRecordLocked<Result>(id: UUID, role: TOSQuantumRole,
+                                          body: (Data) throws -> Result) throws -> Result {
         var q = query(id: id, role: role); q[kSecReturnData] = true
         var value: CFTypeRef?
         let status = SecItemCopyMatching(q as CFDictionary, &value)
         guard status == errSecSuccess, var record = value as? Data else { throw TOSPQError.keychain(status) }
         defer { record.resetBytes(in: 0..<record.count) }
-        var seed = try Self.seed(record: record, id: id, role: role, context: context)
-        defer { seed.resetBytes(in: 0..<seed.count) }
-        return try body(seed)
+        return try body(record)
+    }
+
+    /// Resolves actual account/generation under protected access and binds the complete expected key.
+    public func signRegistered(id: UUID, role: TOSQuantumRole, network: Data, globalID: Int32,
+                               expectedPublicKey: Data, purpose: TOSQuantumPurpose, digest: Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        return try withRecordLocked(id: id, role: role) { record in
+            let context = try Self.registeredContext(record: record, id: id, role: role, network: network, globalID: globalID)
+            var seed = try Self.seed(record: record, id: id, role: role, context: context)
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            return try TOSQuantumSigner.sign(role: role, purpose: purpose, seed: seed,
+                expectedPublicKey: expectedPublicKey, digest: digest)
+        }
     }
     /// Internal export primitive; service must validate birth/snapshot before and after export.
     /// Template seeds are ignored. Only existing user-presence-protected custody supplies seeds.
