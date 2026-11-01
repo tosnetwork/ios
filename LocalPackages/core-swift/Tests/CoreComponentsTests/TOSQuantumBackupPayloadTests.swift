@@ -55,6 +55,28 @@ final class TOSQuantumBackupPayloadTests: XCTestCase {
         }
     }
 
+    func testEncodingPreservesExactWireAndRejectsInvalidSource() throws {
+        for source: UInt8 in 1...3 {
+            let original = fixture(source: source, password: Data("é 😀".utf8))
+            let parsed = try TOSQuantumBackupPayload.parseUnverified(original)
+            defer { parsed.wipe() }
+            XCTAssertEqual(try TOSQuantumBackupPayload.encodeUnverified(globalID: parsed.globalID,
+                root: parsed.rootHash, file: parsed.fileHash, namespace: parsed.namespace,
+                birth: parsed.birthBOC, authority: parsed.authorityBOC, roles: parsed.roles), original)
+        }
+        let parsed = try TOSQuantumBackupPayload.parseUnverified(fixture(source: 2))
+        defer { parsed.wipe() }
+        var invalid = parsed.roles
+        defer { for index in invalid.indices { invalid[index].wipe() } }
+        invalid[0].wordIndices[0] = 2048
+        XCTAssertThrowsError(try TOSQuantumBackupPayload.encodeUnverified(globalID: parsed.globalID,
+            root: parsed.rootHash, file: parsed.fileHash, namespace: parsed.namespace,
+            birth: parsed.birthBOC, authority: parsed.authorityBOC, roles: invalid))
+        XCTAssertThrowsError(try TOSQuantumBackupPayload.encodeUnverified(globalID: parsed.globalID,
+            root: Data(count: 31), file: parsed.fileHash, namespace: parsed.namespace,
+            birth: parsed.birthBOC, authority: parsed.authorityBOC, roles: parsed.roles))
+    }
+
     func testInvalidRolesSourcesAndUTF8Rejected() {
         for roles: [UInt8] in [[], [1, 1], [2, 1], [3]] {
             XCTAssertThrowsError(try TOSQuantumBackupPayload.parseUnverified(fixture(roles: roles)))

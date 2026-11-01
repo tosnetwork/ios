@@ -44,6 +44,71 @@ final class TOSQuantumBackupPayload {
     func wipe() { for index in roles.indices { roles[index].wipe() } }
     deinit { wipe() }
 
+    /// Wire encoding only; custody must first validate identity and role provenance.
+    static func encodeUnverified(globalID: Int32, root: Data, file: Data, namespace: Data,
+                                 birth: Data, authority: Data, roles: [Role]) throws -> Data {
+        guard root.count == 32, file.count == 32, namespace.count == 32,
+              (1...65536).contains(birth.count), (1...16384).contains(authority.count),
+              (1...2).contains(roles.count) else { throw TOSPQError.invalidInput }
+        var previous: UInt8 = 0
+        for role in roles {
+            guard (1...2).contains(role.role), role.role > previous,
+                  role.seed.count == (role.role == 1 ? 32 : 48), role.publicKeyHash.count == 32 else {
+                throw TOSPQError.invalidInput
+            }
+            previous = role.role
+            switch role.sourceProfile {
+            case 1:
+                guard role.wordIndices.isEmpty, role.phrasePassword.isEmpty, role.master.isEmpty else {
+                    throw TOSPQError.invalidInput
+                }
+            case 2:
+                guard role.wordIndices.count == 12 || role.wordIndices.count == 24,
+                      role.wordIndices.allSatisfy({ $0 < 2048 }), role.phrasePassword.count <= 1024,
+                      role.master.isEmpty, validUTF8(role.phrasePassword) else { throw TOSPQError.invalidInput }
+            case 3:
+                guard role.master.count == 32, role.wordIndices.isEmpty, role.phrasePassword.isEmpty else {
+                    throw TOSPQError.invalidInput
+                }
+            default: throw TOSPQError.invalidInput
+            }
+        }
+        var output = Data()
+        // All variable fields have been bounded before allocation or writing.
+        output.reserveCapacity(1 + 4 + 96 + 4 + birth.count + 4 + authority.count + 1 + 4096)
+        func append32(_ value: UInt32) {
+            output.append(contentsOf: [UInt8(value >> 24), UInt8((value >> 16) & 255),
+                                      UInt8((value >> 8) & 255), UInt8(value & 255)])
+        }
+        func append16(_ value: UInt16) {
+            output.append(contentsOf: [UInt8(value >> 8), UInt8(value & 255)])
+        }
+        output.append(1)
+        append32(UInt32(bitPattern: globalID))
+        output.append(root); output.append(file); output.append(namespace)
+        append32(UInt32(birth.count)); output.append(birth)
+        append32(UInt32(authority.count)); output.append(authority)
+        output.append(UInt8(roles.count))
+        for role in roles {
+            output.append(role.role)
+            append32(role.account); append32(role.generation)
+            output.append(role.seed); output.append(role.publicKeyHash); output.append(role.sourceProfile)
+            switch role.sourceProfile {
+            case 2:
+                output.append(1); output.append(UInt8(role.wordIndices.count))
+                for word in role.wordIndices { append16(word) }
+                append16(UInt16(role.phrasePassword.count)); output.append(role.phrasePassword)
+            case 3: output.append(role.master)
+            default: break
+            }
+        }
+        guard output.count <= TOSQuantumBackupCipher.maximumPayload else {
+            output.resetBytes(in: 0..<output.count)
+            throw TOSPQError.invalidInput
+        }
+        return output
+    }
+
     /// Caller must erase its authenticated plaintext input after parsing or failure.
     static func parseUnverified(_ plaintext: Data) throws -> TOSQuantumBackupPayload {
         var reader = try Reader(plaintext)
