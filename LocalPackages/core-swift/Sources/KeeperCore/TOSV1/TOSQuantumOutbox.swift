@@ -244,9 +244,9 @@ public final class TOSQuantumOutbox {
         defer { Self.publicationMutex.withLock { _ = Self.publishingImports.remove(birth) } }
         func verified() throws -> (BackupImportCheckpoint, RecoveryRecord) {
             _ = try inspection.classify(observation: observation, now: now())
-            let network = try TOSQuantumSelfPayNetwork(proof: observation.network,
-                expectedGlobalID: inspection.fields.globalID, now: now(), maximumAge: 300)
-            guard network.namespace == inspection.fields.namespace else { throw Error.invalidRecord }
+            let namespace = try TOSQuantumSelfPayNetwork.recoveryNamespace(proof: observation.network,
+                expectedGlobalID: inspection.fields.globalID, now: now())
+            guard namespace == inspection.fields.namespace else { throw Error.invalidRecord }
             return try locked {
                 guard try recoveryIsolated(inspection.identity.birth),
                       let checkpoint = try readImport(importPath(inspection.identity.birth), inspection: inspection),

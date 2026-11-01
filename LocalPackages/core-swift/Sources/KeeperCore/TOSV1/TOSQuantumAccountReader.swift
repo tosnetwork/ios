@@ -128,9 +128,9 @@ internal final class TOSQuantumAccountReader {
         }
         let observation = try observeEnrolled(id: checkpoint.id, identity: checkpoint.identity,
             profile: checkpoint.profile, configIndices: [8, 19, 48])
-        let network = try TOSQuantumSelfPayNetwork(proof: observation.network,
-            expectedGlobalID: checkpoint.profile.globalID, now: now(), maximumAge: Self.maximumAge)
-        guard network.namespace == expectedNamespace else { throw TOSPQError.keyBinding }
+        let namespace = try TOSQuantumSelfPayNetwork.recoveryNamespace(proof: observation.network,
+            expectedGlobalID: checkpoint.profile.globalID, now: now())
+        guard namespace == expectedNamespace else { throw TOSPQError.keyBinding }
         try observation.requireFresh(now: now())
         return observation
     }

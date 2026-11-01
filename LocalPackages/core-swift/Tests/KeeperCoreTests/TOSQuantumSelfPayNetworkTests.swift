@@ -68,4 +68,21 @@ final class TOSQuantumSelfPayNetworkTests: XCTestCase {
         XCTAssertEqual(request["mode"] as? String, "live")
         XCTAssertEqual(request["max_age_seconds"] as? Int, 300)
     }
+
+    func testRecoveryIdentifiesRetiredNetworkWithoutAdmittingPrimary() throws {
+        for cell in try [policy(retired: 2), policy(deadline: 100)] {
+            XCTAssertEqual(try TOSQuantumSelfPayNetwork.validateRecovery(version: version(), identity: identity(),
+                policy: cell, expectedGlobalID: 1), network)
+            XCTAssertThrowsError(try TOSQuantumSelfPayNetwork.validate(version: version(), identity: identity(),
+                policy: cell, expectedGlobalID: 1, now: 100))
+        }
+        for cell in try [policy(retired: 4), policy(validSpec: false), policy(deadline: 0)] {
+            XCTAssertThrowsError(try TOSQuantumSelfPayNetwork.validateRecovery(version: version(), identity: identity(),
+                policy: cell, expectedGlobalID: 1))
+        }
+        XCTAssertThrowsError(try TOSQuantumSelfPayNetwork.validateRecovery(version: version(15), identity: identity(),
+            policy: policy(), expectedGlobalID: 1))
+        XCTAssertThrowsError(try TOSQuantumSelfPayNetwork.validateRecovery(version: version(), identity: identity(2),
+            policy: policy(), expectedGlobalID: 1))
+    }
 }

@@ -40,6 +40,24 @@ public struct TOSQuantumSelfPayNetwork {
     // Its return value is not an authenticated network capability.
     internal static func validate(version: Cell, identity: Cell, policy: Cell,
                                   expectedGlobalID: Int32, now: UInt32) throws -> Data {
+        let namespace = try validateRecovery(version: version, identity: identity, policy: policy,
+            expectedGlobalID: expectedGlobalID)
+        try TOSQuantumRetirementPolicy.requirePrimary(policy, network: namespace, now: now)
+        return namespace
+    }
+
+    internal static func recoveryNamespace(proof: TOSQuantumProofBridge.BoundRead,
+                                           expectedGlobalID: Int32, now: Int64) throws -> Data {
+        try proof.requireLive(now: now, maximumAge: 300)
+        func cell(_ index: Int) throws -> Cell {
+            try TOSRPCOrdinaryBOC.decode(proof.provenConfigParam(index).base64EncodedString())
+        }
+        return try validateRecovery(version: cell(8), identity: cell(19), policy: cell(48), expectedGlobalID: expectedGlobalID)
+    }
+
+    /// Network identity remains readable after PRIMARY retirement; recovery does not admit a signature.
+    internal static func validateRecovery(version: Cell, identity: Cell, policy: Cell,
+                                          expectedGlobalID: Int32) throws -> Data {
         try TOSQuantumSelfPayAuthority.ordinary(version)
         let v = try version.beginParse()
         guard try v.loadUint(bits: 8) == 0xc4, try v.loadUint(bits: 32) >= 16 else {
@@ -55,7 +73,7 @@ public struct TOSQuantumSelfPayNetwork {
         let p = try policy.beginParse()
         guard try p.loadUint(bits: 8) == 0xa1 else { throw TOSPQError.invalidInput }
         let namespace = try p.loadBytes(32)
-        try TOSQuantumRetirementPolicy.requirePrimary(policy, network: namespace, now: now)
+        try TOSQuantumRetirementPolicy.requireNetwork(policy, network: namespace)
         return namespace
     }
 

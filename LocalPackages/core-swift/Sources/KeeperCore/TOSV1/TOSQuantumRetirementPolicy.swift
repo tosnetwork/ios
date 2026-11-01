@@ -12,6 +12,13 @@ public enum TOSQuantumRetirementPolicy {
         })
     }()
     public static func requirePrimary(_ cell: Cell, network: Data, now: UInt32) throws {
+        let value = try parse(cell, network: network)
+        guard value.retired & 2 == 0, value.deadline == 0 || now < value.deadline else { throw TOSPQError.keyBinding }
+    }
+    /// Strict network-policy validation only; does not grant PRIMARY admission.
+    public static func requireNetwork(_ cell: Cell, network: Data) throws { _ = try parse(cell, network: network) }
+
+    private static func parse(_ cell: Cell, network: Data) throws -> (retired: UInt16, deadline: UInt32) {
         guard network.count == 32, !cell.isExotic, cell.level == 0 else { throw TOSPQError.invalidInput }
         let s = try cell.beginParse()
         guard try s.loadUint(bits: 8) == 0xa1, try s.loadBytes(32) == network else { throw TOSPQError.keyBinding }
@@ -39,6 +46,6 @@ public enum TOSQuantumRetirementPolicy {
             deadline = UInt32(try d.loadUint(bits: 32))
             guard deadline > 0 else { throw TOSPQError.invalidInput }
         }
-        guard retired & 2 == 0, deadline == 0 || now < deadline else { throw TOSPQError.keyBinding }
+        return (retired, deadline)
     }
 }
