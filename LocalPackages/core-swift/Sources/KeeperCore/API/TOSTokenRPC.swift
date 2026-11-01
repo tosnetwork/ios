@@ -30,15 +30,15 @@ enum TOSTokenRPC {
 
     static func masterInfo(_ data: [String: Any], address: Address, offchain: [String: Any]?) throws -> JettonInfo {
         try requireMaster(data)
-        let name = (data["token_name"] as? String)?.nilIfEmpty
-            ?? (offchain?["name"] as? String)?.nilIfEmpty
+        let name = (data["token_name"] as? String)?.tosNilIfEmpty
+            ?? (offchain?["name"] as? String)?.tosNilIfEmpty
             ?? "Jetton \(address.toRaw().suffix(6))"
-        let symbol = (data["token_symbol"] as? String)?.nilIfEmpty
-            ?? (offchain?["symbol"] as? String)?.nilIfEmpty
-        let decimals = Int((data["token_decimals"] as? String)?.nilIfEmpty
-            ?? (offchain?["decimals"] as? String)?.nilIfEmpty ?? "") ?? 9
-        let image = (data["token_image"] as? String)?.nilIfEmpty
-            ?? (offchain?["image"] as? String)?.nilIfEmpty
+        let symbol = (data["token_symbol"] as? String)?.tosNilIfEmpty
+            ?? (offchain?["symbol"] as? String)?.tosNilIfEmpty
+        let decimals = Int((data["token_decimals"] as? String)?.tosNilIfEmpty
+            ?? (offchain?["decimals"] as? String)?.tosNilIfEmpty ?? "") ?? 9
+        let image = (data["token_image"] as? String)?.tosNilIfEmpty
+            ?? (offchain?["image"] as? String)?.tosNilIfEmpty
         return JettonInfo(
             isTransferable: true,
             hasCustomPayload: false,
@@ -50,4 +50,8 @@ enum TOSTokenRPC {
             imageURL: image.flatMap(URL.init(string:))
         )
     }
+}
+
+private extension String {
+    var tosNilIfEmpty: String? { isEmpty ? nil : self }
 }
