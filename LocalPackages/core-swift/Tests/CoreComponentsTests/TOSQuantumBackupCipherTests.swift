@@ -46,4 +46,22 @@ final class TOSQuantumBackupCipherTests: XCTestCase {
         }
         XCTAssertThrowsError(try TOSQuantumBackupCipher.decrypt(vector + Data([0]), password: password))
     }
+
+    func testExactUnicodePasswordRules() throws {
+        for password in ["  public password  ", "é".repeating(12), "😀".repeating(12)] {
+            let payload = Data([1])
+            let record = try TOSQuantumBackupCipher.encrypt(payload, password: password)
+            XCTAssertEqual(try TOSQuantumBackupCipher.decrypt(record, password: password), payload)
+        }
+        for password in ["short", "😀".repeating(6), "public password\0", "😀".repeating(257)] {
+            XCTAssertThrowsError(try TOSQuantumBackupCipher.encrypt(Data([1]), password: password))
+        }
+        let composed = "é".repeating(12)
+        let record = try TOSQuantumBackupCipher.encrypt(Data([1]), password: composed)
+        XCTAssertThrowsError(try TOSQuantumBackupCipher.decrypt(record, password: "e\u{301}".repeating(12)))
+    }
+}
+
+private extension String {
+    func repeating(_ count: Int) -> String { String(repeating: self, count: count) }
 }
