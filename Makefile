@@ -122,7 +122,7 @@ test_classic_recovery_fixture:
 	python3 scripts/tests/test_classic_recovery_fixture.py
 
 test_v1_static: compile test_brand_boundary
-	@sh scripts/tests/test_v1_static.sh
+	@sh scripts/tests/test_v1_static.sh "$(BUILD_DIR)/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app"
 
 test_v1_acceptance: test_v1_static test_all test_tos_live test_ui test_ui_layout_matrix
 
