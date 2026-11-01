@@ -5,6 +5,20 @@ import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumBackupFileIdentityTests: XCTestCase {
+    func testMixedCurrentAndStaleRolesRemainIndependent() throws {
+        let snapshot = try authority()
+        let primaryChanged = try authority(key: 9)
+        XCTAssertEqual(TOSQuantumBackupInspection.compare(role: .primary, snapshot: snapshot, current: primaryChanged), .stale)
+        XCTAssertEqual(TOSQuantumBackupInspection.compare(role: .rescue, snapshot: snapshot, current: primaryChanged), .matchesCurrent)
+        let rescueChanged = try TOSQuantumSelfPayAuthority(globalID: -239, namespace: namespace,
+            primaryKey: snapshot.primaryKey, rescueKey: Data(repeating: 9, count: 32))
+        XCTAssertEqual(TOSQuantumBackupInspection.compare(role: .primary, snapshot: snapshot, current: rescueChanged), .matchesCurrent)
+        XCTAssertEqual(TOSQuantumBackupInspection.compare(role: .rescue, snapshot: snapshot, current: rescueChanged), .stale)
+        for role in [TOSQuantumRole.primary, .rescue] {
+            XCTAssertEqual(TOSQuantumBackupInspection.compare(role: role, snapshot: snapshot, current: nil), .unavailable)
+        }
+    }
+
     func testEncryptedInspectionBindsSecretsAndExposesOnlyPublicResult() throws {
         let password = "public inspection password"
         let primarySeed = Data(repeating: 7, count: 32)

@@ -2,10 +2,42 @@ import XCTest
 import Darwin
 import BigInt
 import TonSwift
-import CoreComponents
+@testable import CoreComponents
+import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
+    func testBackupClassificationRequiresFreshBoundObservation() throws {
+        let f = try Fixture()
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { f.query }, now: { f.clock })
+        let observation = try reader.observeEnrolled(id: f.id, identity: f.identity, profile: f.profile,
+            configIndices: [8, 19, 48])
+        guard case .active(let state) = observation.snapshot.status else { return XCTFail("Expected active fixture") }
+        let password = "public classification password"
+        let seed = Data(repeating: 0x11, count: 32)
+        let role = TOSQuantumBackupPayload.Role(role: 1, account: 0, generation: 0, seed: seed,
+            publicKeyHash: Data(SHA256.hash(data: state.authority.primaryKey)), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data())
+        func inspect(_ birth: TOSQuantumSelfPayIdentity) throws -> TOSQuantumBackupInspection {
+            var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: f.profile.globalID,
+                root: Data(hex: f.profile.rootHash), file: Data(hex: f.profile.fileHash),
+                namespace: state.authority.namespace, birth: birth.toBOC(), authority: state.authority.cell.toBoc(), roles: [role])
+            defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+            return try TOSQuantumBackupInspection(encrypted: TOSQuantumBackupCipher.encrypt(plaintext, password: password),
+                password: password, profile: f.profile, expectedNamespace: state.authority.namespace)
+        }
+        let backup = try inspect(f.identity)
+        let matches = try backup.classify(observation: observation, now: f.clock)
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].role, .primary)
+        XCTAssertEqual(matches[0].match, .matchesCurrent)
+        XCTAssertThrowsError(try backup.classify(observation: observation, now: f.clock + 301))
+        let otherBirth = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(
+            authority: f.identity.wallet.initialAuthority, walletID: 1))
+        let other = try inspect(otherBirth)
+        XCTAssertThrowsError(try other.classify(observation: observation, now: f.clock))
+    }
+
     private final class Fixture {
         let base: URL, outbox: TOSQuantumOutbox, assets: URL, id = UUID()
         let profile: TOSQuantumNetworkProfile, identity: TOSQuantumSelfPayIdentity
