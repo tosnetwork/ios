@@ -27,16 +27,16 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
         return (profile, try TOSQuantumSelfPayNetwork(proof: proof, expectedGlobalID: 1, now: now, maximumAge: 300), now)
     }
 
-    func testRestoreIsolationFailureStopsBeforeAnySecretStorageOrPublication() async throws {
+    func testRestorePolicyFailureStopsBeforeAnySecretStorageOrPublication() async throws {
         let (profile, network, timestamp) = try fixture()
         let phrase = "twice half glass steak version only friend bone addict during joke offer fog punch panel true regular letter topple often afraid hint ready exhibit".components(separatedBy: " ")
         for hasExisting in [false, true] {
-            var writes = 0, confirmations = 0, isolations = 0
+            var writes = 0, confirmations = 0, validations = 0
             let creator = TOSQuantumWalletCreation(network: { _, _ in network },
                 storeRole: { _, _, _, _ in writes += 1; throw Failure.injected },
                 saveRecord: { _ in writes += 1 }, now: { timestamp },
                 completeRecord: { _ in writes += 1 },
-                isolateRecovered: { _ in isolations += 1; throw Failure.injected })
+                validateOrdinaryRestore: { _ in validations += 1; throw Failure.injected })
             do {
                 try await creator.restore(words: phrase, profile: profile,
                     existing: { identity in
@@ -46,10 +46,33 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
                     confirmExisting: { _ in confirmations += 1 },
                     saveMnemonic: { _ in writes += 1 }, cleanupMnemonic: { _ in writes += 1 },
                     publish: { _ in writes += 1 })
-                XCTFail("Isolation failure must stop restoration")
+                XCTFail("Restore policy failure must stop restoration")
             } catch Failure.injected {} catch { XCTFail("Unexpected failure: \(error)") }
-            XCTAssertEqual(isolations, 1)
+            XCTAssertEqual(validations, 1)
             XCTAssertEqual(confirmations, hasExisting ? 1 : 0)
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
+    func testCancellationDuringRestorePolicyPreventsSecretStorageAndPublication() async throws {
+        let (profile, network, timestamp) = try fixture()
+        let phrase = "twice half glass steak version only friend bone addict during joke offer fog punch panel true regular letter topple often afraid hint ready exhibit".components(separatedBy: " ")
+        for hasExisting in [false, true] {
+            var writes = 0
+            let creator = TOSQuantumWalletCreation(network: { _, _ in network },
+                storeRole: { _, _, _, _ in writes += 1; throw Failure.injected },
+                saveRecord: { _ in writes += 1 }, now: { timestamp },
+                completeRecord: { _ in writes += 1 },
+                validateOrdinaryRestore: { _ in withUnsafeCurrentTask { $0?.cancel() } })
+            let operation = Task {
+                try await creator.restore(words: phrase, profile: profile,
+                    existing: { identity in
+                        hasExisting ? try TOSQuantumCreationRecord(id: UUID(), profile: profile, identity: identity) : nil
+                    }, confirmExisting: { _ in }, saveMnemonic: { _ in writes += 1 },
+                    cleanupMnemonic: { _ in writes += 1 }, publish: { _ in writes += 1 })
+            }
+            do { try await operation.value; XCTFail("Cancelled restore must not publish") }
+            catch is CancellationError {} catch { XCTFail("Unexpected failure: \(error)") }
             XCTAssertEqual(writes, 0)
         }
     }

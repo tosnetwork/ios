@@ -23,7 +23,7 @@ internal final class TOSQuantumWalletCreation {
     private let now: () -> Int64
     private let discardUnrecordedCheckpoint: (UUID) throws -> Void
     private let completeRecord: (TOSQuantumCreationRecord) throws -> Void
-    private let isolateRecovered: (TOSQuantumSelfPayIdentity) throws -> Void
+    private let validateOrdinaryRestore: (TOSQuantumCreationRecord) async throws -> Void
 
     convenience init() {
         let keychain = TOSQuantumSeedKeychain()
@@ -32,8 +32,29 @@ internal final class TOSQuantumWalletCreation {
             saveRecord: { try $0.save() }, now: { Int64(Date().timeIntervalSince1970) },
             resumeNetwork: { id, profile in try await Self.observe(id: id, profile: profile, resume: true) },
             completeRecord: { try $0.markPublished() },
-            isolateRecovered: { try TOSQuantumOutbox().isolateRecoveredIdentity($0) },
+            validateOrdinaryRestore: { try await Self.validateRestore($0) },
             discardUnrecordedCheckpoint: { try TOSQuantumProofSession.removeCheckpoint(walletID: $0) })
+    }
+
+    private static func validateRestore(_ record: TOSQuantumCreationRecord) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    guard try !TOSQuantumOutbox().requiresRecovery(record.identity) else {
+                        throw TOSQuantumOrdinaryRestore.Error.existingRecovery
+                    }
+                    let observed = try TOSQuantumAccountReader().observeEnrolled(id: record.id,
+                        identity: record.identity, profile: record.profile, configIndices: [8, 19, 48])
+                    let timestamp = Int64(Date().timeIntervalSince1970)
+                    try observed.requireFresh(now: timestamp)
+                    let network = try TOSQuantumSelfPayNetwork(proof: observed.network,
+                        expectedGlobalID: record.profile.globalID, now: timestamp, maximumAge: 300)
+                    try network.requireSameCheckpoint(observed.proof, now: timestamp)
+                    try TOSQuantumOrdinaryRestore.requireUsable(identity: record.identity, status: observed.snapshot.status)
+                    continuation.resume(returning: ())
+                } catch { continuation.resume(throwing: error) }
+            }
+        }
     }
 
     private static func observe(id: UUID, profile: TOSQuantumNetworkProfile, resume: Bool) async throws -> TOSQuantumSelfPayNetwork {
@@ -78,10 +99,10 @@ internal final class TOSQuantumWalletCreation {
                   now: @escaping () -> Int64,
                   resumeNetwork: ((UUID, TOSQuantumNetworkProfile) async throws -> TOSQuantumSelfPayNetwork)? = nil,
                   completeRecord: @escaping (TOSQuantumCreationRecord) throws -> Void = { _ in },
-                  isolateRecovered: @escaping (TOSQuantumSelfPayIdentity) throws -> Void = { _ in },
+                  validateOrdinaryRestore: @escaping (TOSQuantumCreationRecord) async throws -> Void = { _ in },
                   discardUnrecordedCheckpoint: @escaping (UUID) throws -> Void = { _ in }) {
         self.network = network; self.resumeNetwork = resumeNetwork ?? network; self.storeRole = storeRole; self.saveRecord = saveRecord; self.now = now; self.completeRecord = completeRecord; self.discardUnrecordedCheckpoint = discardUnrecordedCheckpoint
-        self.isolateRecovered = isolateRecovered
+        self.validateOrdinaryRestore = validateOrdinaryRestore
     }
 
     /// Publish only after the recovery phrase and both protected role records are
@@ -156,9 +177,9 @@ internal final class TOSQuantumWalletCreation {
                   authority.globalID == profile.globalID else { throw TOSPQError.keyBinding }
             try bound.requireFresh(now: now())
             try await confirmExisting(prior)
-            // A local enrollment is not authenticated authorization history.
-            // Cancellation above does not change an existing wallet's isolation.
-            try isolateRecovered(identity)
+            // Authenticate current authority before secret writes; retain existing guards and journals.
+            try await validateOrdinaryRestore(prior)
+            try Task.checkCancellation()
             let context = try TOSQuantumSeedKeychain.Context(network: authority.namespace, globalID: authority.globalID,
                                                               account: prior.account, generation: prior.generation)
             try TOSQuantumSeedKeychain().importMissingRolesAndWipe(id: prior.id, context: context,
@@ -182,7 +203,8 @@ internal final class TOSQuantumWalletCreation {
                 throw TOSPQError.keyBinding
             }
             try enrolled.requireFresh(now: now())
-            try isolateRecovered(identity)
+            try await validateOrdinaryRestore(record)
+            try Task.checkCancellation()
             try saveRecord(record)
             // Treat a throwing save as potentially partially durable and
             // attempt removal for this newly allocated UUID as well.
