@@ -20,6 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify proof source checkout boundaries
+        run: python3 scripts/test_quantum_proof_source.py
+
       - name: Select Xcode
         run: python3 scripts/select_ci_xcode.py
 
