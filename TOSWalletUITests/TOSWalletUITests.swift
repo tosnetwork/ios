@@ -192,6 +192,9 @@ final class TOSWalletUITests: XCTestCase {
             XCTAssertTrue(app.alerts["Trusted Quantum Network"].waitForExistence(timeout: 5))
         }
         openProfile()
+        // The editor now starts with the valid official mainnet preset.
+        // Supply an explicitly invalid ID to exercise validation rejection.
+        replaceNetworkField(in: app.textFields["Network ID"], with: "invalid")
         app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
         XCTAssertTrue(app.alerts["Invalid Network Configuration"].waitForExistence(timeout: 5))
         app.alerts["Invalid Network Configuration"].buttons["OK"].tap()
@@ -201,7 +204,8 @@ final class TOSWalletUITests: XCTestCase {
         let root = String(repeating: "42", count: 32), file = String(repeating: "24", count: 32)
         for (name, value) in [("Network ID", "-1"), ("Genesis root hash", root), ("Genesis file hash", file)] {
             let field = app.textFields[name]
-            XCTAssertTrue(field.exists); field.tap(); field.typeText(value)
+            XCTAssertTrue(field.exists)
+            replaceNetworkField(in: field, with: value)
         }
         app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
         app.terminate()
