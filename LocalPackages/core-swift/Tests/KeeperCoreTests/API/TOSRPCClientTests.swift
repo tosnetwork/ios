@@ -209,9 +209,9 @@ final class TOSRPCClientTests: XCTestCase {
             switch method {
             case "getConfigParam":
                 return (200, try Self.configurationResponse(requestBody: json))
-            case "getWalletInformation":
+            case "getAddressInformation":
                 endpoint = "http://unverified.test"
-                return (200, #"{"ok":true,"result":{"account_state":"uninitialized","wallet":false}}"#)
+                return (200, #"{"ok":true,"result":{"state":"uninitialized","code":"","data":""}}"#)
             default:
                 XCTAssertEqual(method, "estimateFee")
                 let params = try XCTUnwrap(json["params"] as? [String: Any])
@@ -232,17 +232,21 @@ final class TOSRPCClientTests: XCTestCase {
         let client = TOSRPCClient(basePath: { endpoint }, urlSession: URLSession(configuration: configuration))
         let fee = try await client.estimateWalletFee(body: "signed-wallet-body", wallet: wallet)
         XCTAssertEqual(fee, 10)
-        XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "getWalletInformation", "estimateFee"])
+        XCTAssertEqual(methods, ["getConfigParam", "getConfigParam", "getAddressInformation", "estimateFee"])
     }
 
     func testActiveWalletEstimateUsesChainStateWithoutDeploymentInit() async throws {
+        let wallet = makeTOSWallet(globalId: 3)
+        let code = try TOSLegacyWalletRPC.initialComponents(wallet: wallet).code
+        let data = try Builder().store(bit: true).store(uint: 7, bits: 32).store(uint: 0, bits: 32)
+            .store(data: wallet.publicKey.data).store(bit: false).endCell()
         RPCURLProtocol.handler = { request in
             let json = try Self.requestBody(request)
             switch json["method"] as? String {
             case "getConfigParam":
                 return (200, try Self.configurationResponse(requestBody: json))
-            case "getWalletInformation":
-                return (200, #"{"ok":true,"result":{"account_state":"active","wallet":true,"seqno":7}}"#)
+            case "getAddressInformation":
+                return (200, try XCTUnwrap(String(data: JSONSerialization.data(withJSONObject: ["result": ["state": "active", "code": code.toBoc().base64EncodedString(), "data": data.toBoc().base64EncodedString()]]), encoding: .utf8)))
             default:
                 let params = try XCTUnwrap(json["params"] as? [String: Any])
                 XCTAssertNil(params["init_code"])
@@ -250,7 +254,7 @@ final class TOSRPCClientTests: XCTestCase {
                 return (200, #"{"ok":true,"result":{"source_fees":{"in_fwd_fee":1,"storage_fee":2,"gas_fee":3,"fwd_fee":4}}}"#)
             }
         }
-        let fee = try await makeClient().estimateWalletFee(body: "body", wallet: makeTOSWallet(globalId: 3))
+        let fee = try await makeClient().estimateWalletFee(body: "body", wallet: wallet)
         XCTAssertEqual(fee, 10)
     }
 
