@@ -30,6 +30,52 @@ final class TOSQuantumOutboxTests: XCTestCase {
             rootHash: String(repeating: "1", count: 64), fileHash: String(repeating: "2", count: 64)), request, signature)
     }
 
+    func testRecoveryIsolationPersistsByBirthAndBlocksExistingAuthorization() throws {
+        let (identity, profile, request, _) = try input()
+        let outbox = try TOSQuantumOutbox(baseDirectory: directory)
+        let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: true)
+        XCTAssertFalse(try outbox.requiresRecovery(identity))
+        try outbox.isolateRecoveredIdentity(identity)
+        try outbox.isolateRecoveredIdentity(identity)
+        let reopened = try TOSQuantumOutbox(baseDirectory: directory)
+        let alias = try TOSQuantumSelfPayIdentity(boc: identity.toBOC())
+        XCTAssertTrue(try reopened.requiresRecovery(alias))
+        XCTAssertEqual(try reopened.pending(identity: alias)?.id, entry.id)
+        XCTAssertThrowsError(try reopened.beginSigning(entry))
+        var called = false
+        XCTAssertThrowsError(try reopened.signReserved(entry) { _ in called = true; return Data() })
+        XCTAssertFalse(called)
+        XCTAssertThrowsError(try reopened.reserve(identity: alias, profile: profile, request: request, deploy: true))
+        try reopened.cancelUnsigned(entry)
+        XCTAssertNil(try reopened.pending(identity: alias))
+        XCTAssertTrue(try reopened.requiresRecovery(alias))
+        XCTAssertThrowsError(try reopened.reserve(identity: alias, profile: profile, request: request, deploy: false))
+    }
+
+    func testCorruptRecoveryMarkerFailsClosed() throws {
+        let (identity, profile, request, _) = try input()
+        let outbox = try TOSQuantumOutbox(baseDirectory: directory)
+        try outbox.isolateRecoveredIdentity(identity)
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory,
+            includingPropertiesForKeys: nil).first { $0.pathExtension == "recovery" })
+        try Data([1]).write(to: file)
+        XCTAssertThrowsError(try outbox.requiresRecovery(identity))
+        XCTAssertThrowsError(try outbox.isolateRecoveredIdentity(identity))
+        XCTAssertThrowsError(try outbox.reserve(identity: identity, profile: profile, request: request, deploy: true))
+    }
+
+    func testRecoveryIsolationBlocksPreviouslySignedSubmission() throws {
+        let (identity, profile, request, signature) = try input()
+        let outbox = try TOSQuantumOutbox(baseDirectory: directory)
+        let entry = try outbox.reserve(identity: identity, profile: profile, request: request, deploy: true)
+        try outbox.signReserved(entry) { _ in signature }
+        XCTAssertEqual(try outbox.pending(identity: identity)?.phase, .signed)
+        try outbox.isolateRecoveredIdentity(identity)
+        XCTAssertThrowsError(try outbox.beginSubmission(entry))
+        XCTAssertEqual(try outbox.pending(identity: identity)?.phase, .signed)
+        XCTAssertTrue(try outbox.requiresRecovery(identity))
+    }
+
     func testReopenRetainsExactSignedMessageAndNeverUnlocksOnUnknown() throws {
         let (identity, profile, request, signature) = try input()
         let outbox = try TOSQuantumOutbox(baseDirectory: directory)
@@ -224,8 +270,12 @@ final class TOSQuantumOutboxTests: XCTestCase {
         var calls = 0
         func signer(_ stored: TOSQuantumOutbox.Entry) throws -> Data {
             calls += 1
-            let reopened = try TOSQuantumOutbox(baseDirectory: directory)
-            XCTAssertEqual(try reopened.pending(identity: identity)?.phase, .signing)
+            // Inspect durable bytes without reentering the lock held across protected signing.
+            let name = identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json"
+            let durable = try JSONDecoder().decode(TOSQuantumOutbox.Entry.self,
+                from: Data(contentsOf: directory.appendingPathComponent(name)))
+            XCTAssertEqual(durable.phase, .signing)
+            XCTAssertEqual(durable.id, stored.id)
             XCTAssertEqual(stored.requestHash, request.digest)
             return signature
         }

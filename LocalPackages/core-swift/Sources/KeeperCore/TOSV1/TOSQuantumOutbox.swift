@@ -7,7 +7,7 @@ import CoreComponents
 /// an authorization that may have reached the signer. Settlement requires chain proof.
 public final class TOSQuantumOutbox {
     public enum Phase: String, Codable { case reserved, signing, signed, submitting, unknown }
-    public enum Error: Swift.Error { case occupied, invalidTransition, invalidRecord, capacity, storage }
+    public enum Error: Swift.Error { case occupied, invalidTransition, invalidRecord, capacity, storage, recoveryRequired }
 
     public struct Entry: Codable {
         public let version: UInt8
@@ -57,6 +57,51 @@ public final class TOSQuantumOutbox {
     }
 
     /// One slot per birth identity, shared by PRIMARY/RESCUE and all local wallet IDs.
+    /// Persist before importing any secrets when authorization history is unknown.
+    /// There is intentionally no unverified clear/reset API.
+    public func isolateRecoveredIdentity(_ identity: TOSQuantumSelfPayIdentity) throws {
+        try locked {
+            let file = recoveryPath(identity)
+            let marker = recoveryMarker(identity)
+            if let existing = try retirementRead(file, maximum: 40) {
+                guard existing == marker else { throw Error.storage }
+                try retirementFileSync(file)
+                try syncDirectory()
+                return
+            }
+            guard try retirementNames(directory, maximum: 128).count < 120 else { throw Error.capacity }
+            let fd = open(file.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+            guard fd >= 0 else { throw Error.storage }
+            let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            defer { try? handle.close() }
+            // Failed/partial writes remain at the canonical path and block authorization.
+            try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
+            try handle.write(contentsOf: marker)
+            guard fsync(fd) == 0, fcntl(fd, F_FULLFSYNC) == 0 else { throw Error.storage }
+            try syncDirectory()
+        }
+    }
+
+    public func requiresRecovery(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
+        try locked { try recoveryIsolated(identity) }
+    }
+
+    private func recoveryPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
+        path(identity).deletingPathExtension().appendingPathExtension("recovery")
+    }
+    private func recoveryMarker(_ identity: TOSQuantumSelfPayIdentity) -> Data {
+        Data("TOSQRG01".utf8) + identity.cell.hash()
+    }
+    private func recoveryIsolated(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
+        guard let marker = try retirementRead(recoveryPath(identity), maximum: 40) else { return false }
+        guard marker == recoveryMarker(identity) else { throw Error.storage }
+        return true
+    }
+    private func requireKnownAuthorizationHistory(_ identity: TOSQuantumSelfPayIdentity) throws {
+        guard try !recoveryIsolated(identity) else { throw Error.recoveryRequired }
+    }
+
+    /// One slot per birth identity, shared by PRIMARY/RESCUE and all local wallet IDs.
     /// A different trusted anchor cannot open another slot for the same wallet.
     public func reserve(identity: TOSQuantumSelfPayIdentity, profile: TOSQuantumNetworkProfile,
                         request: TOSQuantumSelfPayRequest, deploy: Bool,
@@ -70,6 +115,7 @@ public final class TOSQuantumOutbox {
             throw Error.invalidRecord
         }
         return try locked {
+            try requireKnownAuthorizationHistory(identity)
             guard try read(identity) == nil else { throw Error.occupied }
             let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             guard files.filter({ $0.pathExtension == "json" }).count < 64 else { throw Error.capacity }
@@ -130,22 +176,36 @@ public final class TOSQuantumOutbox {
     }
 
     internal func signReserved(_ entry: Entry, signer: (Entry) throws -> Data) throws {
-        let stored = try beginSigning(entry)
-        try finishSigning(stored, signature: signer(stored))
+        // Serialize recovery isolation with the complete protected signing operation.
+        // Otherwise isolation could land between beginSigning and actual key access.
+        try locked {
+            try requireKnownAuthorizationHistory(entry.identity)
+            guard var stored = try read(entry.identity), stored.id == entry.id, stored.phase == .reserved else {
+                throw Error.invalidTransition
+            }
+            stored.phase = .signing
+            try write(stored)
+            let signature = try signer(stored)
+            try installSignature(&stored, signature: signature)
+            try write(stored)
+        }
     }
 
     /// Build and persist the exact envelope locally, never accepting a substituted
     /// broadcast message from the caller. No broadcaster is called by this store.
     public func finishSigning(_ entry: Entry, signature: Data) throws {
         try update(entry, allowed: [.signing]) { current in
-            guard TOSQuantumSigner.verify(role: current.role, purpose: .selfPay,
+            try installSignature(&current, signature: signature)
+        }
+    }
+    private func installSignature(_ current: inout Entry, signature: Data) throws {
+        guard TOSQuantumSigner.verify(role: current.role, purpose: .selfPay,
                 publicKey: current.signingPublicKey, digest: current.requestHash, signature: signature) else {
                 throw Error.invalidRecord
-            }
-            current.signature = signature
-            current.signedBOC = try message(current, signature: signature)
-            current.phase = .signed
         }
+        current.signature = signature
+        current.signedBOC = try message(current, signature: signature)
+        current.phase = .signed
     }
 
     /// The broadcaster receives bytes only after the attempt is durable. All
@@ -191,6 +251,7 @@ public final class TOSQuantumOutbox {
 
     private func update(_ entry: Entry, allowed: [Phase], change: (inout Entry) throws -> Void) throws {
         try locked {
+            try requireKnownAuthorizationHistory(entry.identity)
             guard var current = try read(entry.identity), current.id == entry.id,
                   allowed.contains(current.phase) else { throw Error.invalidTransition }
             try change(&current)
