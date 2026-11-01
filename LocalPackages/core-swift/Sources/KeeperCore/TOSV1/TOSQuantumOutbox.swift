@@ -88,7 +88,7 @@ public final class TOSQuantumOutbox {
     }
     private func hasImportState(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
         let canonical = importPath(identity)
-        for file in [canonical, canonical.appendingPathExtension("next")] {
+        for file in [canonical, canonical.appendingPathExtension("next"), recoveryRecordPath(identity)] {
             var info = stat()
             if lstat(file.path, &info) == 0 { return true }
             guard errno == ENOENT else { throw Error.storage }
@@ -185,6 +185,95 @@ public final class TOSQuantumOutbox {
     private func importPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
         path(identity).deletingPathExtension().appendingPathExtension("import")
     }
+
+    /// Historical public enrollment; it grants neither live role authority nor permission to sign.
+    struct RecoveryRecord: Codable {
+        let version: UInt8
+        let id: UUID
+        let identity: TOSQuantumSelfPayIdentity
+        let profile: TOSQuantumNetworkProfile
+        let encryptedDigest: Data
+        let mode: String
+    }
+    private func recoveryRecordPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
+        path(identity).deletingPathExtension().appendingPathExtension("recovery-record")
+    }
+    private func recordBytes(_ record: RecoveryRecord) throws -> Data {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let bytes = try encoder.encode(record)
+        guard (1...65536).contains(bytes.count) else { throw Error.capacity }
+        return bytes
+    }
+    private func readRecoveryRecord(_ identity: TOSQuantumSelfPayIdentity) throws -> RecoveryRecord? {
+        guard let bytes = try retirementRead(recoveryRecordPath(identity), maximum: 65536) else { return nil }
+        guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              Set(object.keys) == Set(["version", "id", "identity", "profile", "encryptedDigest", "mode"]) else {
+            throw Error.invalidRecord
+        }
+        let record = try JSONDecoder().decode(RecoveryRecord.self, from: bytes)
+        guard record.version == 1, record.mode == "recovery_only", record.identity == identity,
+              record.encryptedDigest.count == 32,
+              record.profile.globalID == identity.wallet.initialAuthority.globalID else { throw Error.invalidRecord }
+        return record
+    }
+    func recoveryRecord(_ identity: TOSQuantumSelfPayIdentity, id: UUID) throws -> RecoveryRecord {
+        try locked {
+            guard let record = try readRecoveryRecord(identity), record.id == id else { throw Error.invalidRecord }
+            return record
+        }
+    }
+    func retainBackupImportRecord(_ inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint {
+        try retainBackupImportRecord(inspection, read: { checkpoint in
+            try TOSQuantumBackupInspectionSession.openProtected(id: checkpoint.id,
+                birthHash: checkpoint.identity.cell.hash(), originalDigest: checkpoint.encryptedDigest)
+        })
+    }
+    /// Scoped protected-read and interruption seams; production reads the user-presence Keychain item.
+    internal func retainBackupImportRecord(_ inspection: TOSQuantumBackupInspection,
+        read: (BackupImportCheckpoint) throws -> TOSQuantumBackupInspectionSession,
+        afterRecord: () throws -> Void = {}) throws -> BackupImportCheckpoint {
+        let checkpoint = try prepareBackupImport(inspection)
+        guard checkpoint.phase.rawValue >= BackupImportCheckpoint.Phase.protectedStored.rawValue else {
+            throw Error.invalidTransition
+        }
+        let session = try read(checkpoint)
+        defer { session.close() }
+        let stored = try TOSQuantumBackupInspection(session: session, profile: checkpoint.profile,
+            expectedNamespace: inspection.fields.namespace)
+        guard stored.identity.birth == inspection.identity.birth, stored.encryptedDigest == inspection.encryptedDigest,
+              stored.identity.snapshot.hash == inspection.identity.snapshot.hash else { throw Error.invalidRecord }
+        return try locked {
+            guard try recoveryIsolated(inspection.identity.birth),
+                  var current = try readImport(importPath(inspection.identity.birth), inspection: inspection),
+                  current.id == checkpoint.id,
+                  current.phase.rawValue >= BackupImportCheckpoint.Phase.protectedStored.rawValue else {
+                throw Error.invalidRecord
+            }
+            let record = RecoveryRecord(version: 1, id: current.id, identity: current.identity,
+                profile: current.profile, encryptedDigest: current.encryptedDigest, mode: "recovery_only")
+            let bytes = try recordBytes(record), file = recoveryRecordPath(current.identity)
+            if let existing = try readRecoveryRecord(current.identity) {
+                guard try recordBytes(existing) == bytes else { throw Error.invalidRecord }
+                try retirementFileSync(file)
+            } else {
+                guard try retirementNames(directory, maximum: 128).count < 125 else { throw Error.capacity }
+                let fd = open(file.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+                guard fd >= 0 else { throw Error.storage }
+                let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+                defer { try? handle.close() }
+                try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: file.path)
+                try handle.write(contentsOf: bytes)
+                guard fsync(fd) == 0, fcntl(fd, F_FULLFSYNC) == 0 else { throw Error.storage }
+            }
+            try syncDirectory()
+            try afterRecord()
+            if current.phase == .protectedStored {
+                current.phase = .publicRecordDurable
+                try writeImport(current)
+            }
+            return current
+        }
+    }
     func exportBackupImport(_ inspection: TOSQuantumBackupInspection, observation: TOSQuantumAccountReader.Observation,
                             selected: [TOSQuantumRole], password: String, now: () -> Int64) throws -> Data {
         try exportBackupImport(inspection, observation: observation, selected: selected, password: password, now: now) { checkpoint in
@@ -208,7 +297,7 @@ public final class TOSQuantumOutbox {
             let checkpoint = try locked {
                 guard try recoveryIsolated(inspection.identity.birth),
                       let value = try readImport(importPath(inspection.identity.birth), inspection: inspection),
-                      value.phase == .protectedStored else { throw Error.invalidRecord }
+                      value.phase.rawValue >= BackupImportCheckpoint.Phase.protectedStored.rawValue else { throw Error.invalidRecord }
                 return value
             }
             try observation.requireFresh(now: now())
@@ -237,7 +326,7 @@ public final class TOSQuantumOutbox {
     private func readImport(_ file: URL, inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint? {
         guard let bytes = try retirementRead(file, maximum: 65536) else { return nil }
         let value = try JSONDecoder().decode(BackupImportCheckpoint.self, from: bytes)
-        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.protectedStored.rawValue,
+        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.publicRecordDurable.rawValue,
               value.identity == inspection.identity.birth,
               value.encryptedDigest.count == 32, value.encryptedDigest == inspection.encryptedDigest,
               value.profile.globalID == inspection.fields.globalID,
@@ -281,7 +370,7 @@ public final class TOSQuantumOutbox {
         let inspection = try TOSQuantumBackupInspection(session: session, profile: profile, expectedNamespace: expectedNamespace)
         _ = try observeBackupImport(inspection, observation: observation, now: now())
         let checkpoint = try prepareBackupImport(inspection)
-        guard checkpoint.phase == .observedRoles || checkpoint.phase == .protectedStored else { throw Error.invalidTransition }
+        guard checkpoint.phase.rawValue >= BackupImportCheckpoint.Phase.observedRoles.rawValue else { throw Error.invalidTransition }
         try observation.requireFresh(now: now())
         try persist(session, checkpoint.id, inspection.identity.birth.cell.hash(),
             inspection.identity.snapshot.primaryKey, inspection.identity.snapshot.rescueKey)
@@ -289,7 +378,7 @@ public final class TOSQuantumOutbox {
             guard try recoveryIsolated(inspection.identity.birth),
                   var current = try readImport(importPath(inspection.identity.birth), inspection: inspection),
                   current.id == checkpoint.id,
-                  current.phase == .observedRoles || current.phase == .protectedStored else { throw Error.invalidRecord }
+                  current.phase.rawValue >= BackupImportCheckpoint.Phase.observedRoles.rawValue else { throw Error.invalidRecord }
             // Authentication may outlive proof freshness. Stored secrets stay isolated on failure.
             try observation.requireFresh(now: now())
             if current.phase == .observedRoles {
