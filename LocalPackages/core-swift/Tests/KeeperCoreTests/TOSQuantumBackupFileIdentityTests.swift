@@ -1,9 +1,50 @@
 import XCTest
 import TonSwift
-import CoreComponents
+@testable import CoreComponents
+import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumBackupFileIdentityTests: XCTestCase {
+    func testEncryptedInspectionBindsSecretsAndExposesOnlyPublicResult() throws {
+        let password = "public inspection password"
+        let primarySeed = Data(repeating: 7, count: 32)
+        let rescueSeed = Data(repeating: 8, count: 48)
+        let primary = try TOSQuantumSigner.publicKey(role: .primary, seed: primarySeed)
+        let rescue = try TOSQuantumSigner.publicKey(role: .rescue, seed: rescueSeed)
+        let snapshot = try TOSQuantumSelfPayAuthority(globalID: -239, namespace: namespace,
+            primaryKey: primary, rescueKey: rescue)
+        let birth = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority: snapshot))
+        let role = TOSQuantumBackupPayload.Role(role: 2, account: 4, generation: 5,
+            seed: rescueSeed, publicKeyHash: Data(SHA256.hash(data: rescue)), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data())
+        func encrypt(_ role: TOSQuantumBackupPayload.Role) throws -> Data {
+            var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: -239, root: root,
+                file: file, namespace: namespace, birth: birth.toBOC(), authority: snapshot.cell.toBoc(), roles: [role])
+            defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+            return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
+        }
+        let encrypted = try encrypt(role)
+        let result = try TOSQuantumBackupInspection(encrypted: encrypted, password: password,
+            profile: profile(), expectedNamespace: namespace)
+        XCTAssertEqual(result.identity.birth.address, birth.address)
+        XCTAssertEqual(result.roles.count, 1)
+        XCTAssertEqual(result.roles[0].role, .rescue)
+        XCTAssertEqual(result.roles[0].account, 4)
+        XCTAssertEqual(result.roles[0].generation, 5)
+        XCTAssertEqual(result.fields.birthBOC, try birth.toBOC())
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: encrypted, password: "wrong public password",
+            profile: profile(), expectedNamespace: namespace))
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: encrypted, password: password,
+            profile: profile(root: 6), expectedNamespace: namespace))
+        var incorrect = role
+        incorrect.seed[0] ^= 1
+        XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: encrypt(incorrect), password: password,
+            profile: profile(), expectedNamespace: namespace))
+        let session = try TOSQuantumBackupInspectionSession(encrypted: encrypted, password: password)
+        session.close()
+        XCTAssertThrowsError(try session.validateSecrets(primary: primary, rescue: rescue))
+    }
+
     private let namespace = Data(repeating: 3, count: 32)
     private let root = Data(repeating: 4, count: 32)
     private let file = Data(repeating: 5, count: 32)
