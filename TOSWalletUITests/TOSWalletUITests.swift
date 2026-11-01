@@ -5,6 +5,63 @@ import Vision
 import XCTest
 
 final class TOSWalletUITests: XCTestCase {
+    func testEncryptedBackupEntryCancelsPickerAndClearsPasswordOnBackground() {
+        openRecoveryPhraseImport()
+        let phraseWord = app.textFields["mnemonic.input.0"]
+        XCTAssertTrue(phraseWord.waitForExistence(timeout: 5)); phraseWord.tap(); phraseWord.typeText("enhance")
+        XCTAssertEqual(phraseWord.value as? String, "enhance")
+        let entry = app.navigationBars.buttons["Backup file"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5)); entry.tap()
+        let field = app.secureTextFields["quantum.backup.password"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let review = app.buttons["quantum.backup.review"]
+        XCTAssertFalse(review.isEnabled)
+        field.tap(); field.typeText("public UI backup password")
+        let entered = field.value as? String ?? ""
+        XCTAssertFalse(entered.isEmpty || entered == "Backup file password", "Typing must populate the secure field before testing cleanup")
+        XCTAssertFalse(review.isEnabled, "A password without a selected file must not start inspection")
+        field.typeText("\n")
+        retainScreenshot(named: "Encrypted backup secure password form")
+        app.buttons["quantum.backup.choose"].tap()
+        let covered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !field.isHittable }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [covered], timeout: 5), .completed)
+        let documentService = XCUIApplication(bundleIdentifier: "com.apple.DocumentManagerUICore.Service")
+        let cancelLabel = NSPredicate(format: "label IN %@", ["Cancel", "キャンセル", "取消", "閉じる", "Close"])
+        let cancelQueries = [documentService.buttons.matching(cancelLabel), app.buttons.matching(cancelLabel)]
+        func visiblePickerCancel() -> XCUIElement? {
+            for query in cancelQueries {
+                if let button = query.allElementsBoundByIndex.first(where: { $0.isHittable }) { return button }
+            }
+            return nil
+        }
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            visiblePickerCancel() != nil
+        }, object: nil)
+        let pickerReady = XCTWaiter.wait(for: [ready], timeout: 20)
+        retainScreenshot(named: "System encrypted backup file picker")
+        let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screen.name = "Actual system screen with backup picker"; screen.lifetime = .keepAlways; add(screen)
+        if pickerReady != .completed {
+            let hierarchy = XCTAttachment(string: app.debugDescription + "\nDOCUMENT SERVICE\n" + documentService.debugDescription)
+            hierarchy.name = "Backup picker accessibility hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        XCTAssertEqual(pickerReady, .completed)
+        let pickerCancel = visiblePickerCancel()
+        XCTAssertNotNil(pickerCancel); pickerCancel?.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue((field.value as? String ?? "").isEmpty || field.value as? String == "Backup file password")
+        field.tap(); field.typeText("public UI backup password")
+        let reentered = field.value as? String ?? ""
+        XCTAssertFalse(reentered.isEmpty || reentered == "Backup file password", "Background cleanup must start with populated input")
+        XCUIDevice.shared.press(.home); app.activate()
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue((field.value as? String ?? "").isEmpty || field.value as? String == "Backup file password")
+        XCTAssertFalse(review.isEnabled)
+        retainScreenshot(named: "Encrypted backup form cleared after background")
+        app.navigationBars.buttons["Cancel"].tap()
+        XCTAssertTrue(app.staticTexts["Enter recovery phrase"].waitForExistence(timeout: 5))
+        XCTAssertNotEqual(phraseWord.value as? String, "enhance", "Switching restore methods must clear the previous phrase")
+    }
     private var app: XCUIApplication!
     private let fixtureMnemonic = "enhance depend evolve rotate creek total enable settle mammal margin round cube truck quote hold correct provide voyage north model sure off strategy pulse"
 

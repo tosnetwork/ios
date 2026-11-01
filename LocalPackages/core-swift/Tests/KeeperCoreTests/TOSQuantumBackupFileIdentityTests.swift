@@ -5,6 +5,28 @@ import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumBackupFileIdentityTests: XCTestCase {
+    func testBackupDocumentInputIsBoundedAndRejectsLinksAndSpecialFiles() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("public-framing-input.bin")
+        let bytes = Data(repeating: 0x55, count: 58)
+        try bytes.write(to: file)
+        XCTAssertEqual(try TOSQuantumBackupDocument.read(file), bytes)
+        let symlink = directory.appendingPathComponent("symbolic")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: file)
+        XCTAssertThrowsError(try TOSQuantumBackupDocument.read(symlink))
+        let hardlink = directory.appendingPathComponent("linked")
+        try FileManager.default.linkItem(at: file, to: hardlink)
+        XCTAssertThrowsError(try TOSQuantumBackupDocument.read(file))
+        try FileManager.default.removeItem(at: hardlink)
+        for size in [57, 262202] {
+            try Data(repeating: 0, count: size).write(to: file)
+            XCTAssertThrowsError(try TOSQuantumBackupDocument.read(file))
+        }
+        XCTAssertThrowsError(try TOSQuantumBackupDocument.read(directory))
+        XCTAssertThrowsError(try TOSQuantumBackupDocument.read(XCTUnwrap(URL(string: "https://example.invalid/backup"))))
+    }
     func testProtectedReexportRetainsProvenanceAndBirthWithoutOriginalFile() throws {
         let words = Array(repeating: "abandon", count: 23) + ["chicken"] // Public native fixture.
         let indices = try words.map { UInt16(try XCTUnwrap(TonSwift.Mnemonic.words.firstIndex(of: $0))) }

@@ -130,6 +130,72 @@ public final class WalletAddController {
     }
 
     /// Restore the file's original identity as recovery-only; never fabricate a creation enrollment.
+    public struct QuantumBackupPreview {
+        public let address: String
+        public let containsPrimary: Bool
+        public let containsRescue: Bool
+    }
+
+    /// Public metadata only; it does not establish current roles or authorize an operation.
+    public func inspectQuantumBackup(encrypted: Data, password: String, profile: TOSQuantumNetworkProfile,
+                                     expectedNamespace: Data) async throws -> QuantumBackupPreview {
+        guard (58...262201).contains(encrypted.count), expectedNamespace.count == 32 else { throw TOSPQError.invalidInput }
+        try Self.backupImportMutex.withLock {
+            guard !Self.importingBackup else { throw TOSQuantumOutbox.Error.occupied }
+            Self.importingBackup = true
+        }
+        defer { Self.backupImportMutex.withLock { Self.importingBackup = false } }
+        try Task.checkCancellation()
+        let result: QuantumBackupPreview = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    let inspection = try TOSQuantumBackupInspection(encrypted: encrypted, password: password,
+                        profile: profile, expectedNamespace: expectedNamespace)
+                    return QuantumBackupPreview(address: inspection.identity.birth.address.toRaw(),
+                        containsPrimary: inspection.roles.contains { $0.role == .primary },
+                        containsRescue: inspection.roles.contains { $0.role == .rescue })
+                })
+            }
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
+    /// Obtain the namespace from a fresh proof anchored in the explicitly selected profile.
+    public func quantumRecoveryNamespace(profile: TOSQuantumNetworkProfile) async throws -> Data {
+        try Self.backupImportMutex.withLock {
+            guard !Self.importingBackup else { throw TOSQuantumOutbox.Error.occupied }
+            Self.importingBackup = true
+        }
+        defer { Self.backupImportMutex.withLock { Self.importingBackup = false } }
+        try Task.checkCancellation()
+        let result: Data = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    let id = UUID()
+                    do {
+                        guard let endpoint = TOSRPCSettings.quantumEndpoint,
+                              let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+                        let relay = try TOSQuantumProofHTTPTransport(endpoint: url)
+                        let session = try TOSQuantumProofSession(walletID: id,
+                            locallyProvisionedAnchor: profile.anchor(), baseDirectory: self.enrollmentDirectory)
+                        let proof = try session.enrollBound(request: TOSQuantumSelfPayNetwork.request(maximumAge: 300),
+                            now: Int64(Date().timeIntervalSince1970), transport: { try relay.query($0, maximumBytes: $1) })
+                        let namespace = try TOSQuantumSelfPayNetwork.recoveryNamespace(proof: proof,
+                            expectedGlobalID: profile.globalID, now: Int64(Date().timeIntervalSince1970))
+                        try TOSQuantumProofSession.removeCheckpoint(walletID: id, baseDirectory: self.enrollmentDirectory)
+                        return namespace
+                    } catch {
+                        try? TOSQuantumProofSession.removeCheckpoint(walletID: id, baseDirectory: self.enrollmentDirectory)
+                        throw error
+                    }
+                })
+            }
+        }
+        try Task.checkCancellation()
+        return result
+    }
+
     public func importQuantumBackup(metaData: WalletMetaData, encrypted: Data, password: String,
         profile: TOSQuantumNetworkProfile, expectedNamespace: Data,
         setupSettings: WalletSetupSettings = WalletSetupSettings()) async throws {
