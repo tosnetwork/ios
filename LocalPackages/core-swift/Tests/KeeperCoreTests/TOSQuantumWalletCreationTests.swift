@@ -27,6 +27,33 @@ final class TOSQuantumWalletCreationTests: XCTestCase {
         return (profile, try TOSQuantumSelfPayNetwork(proof: proof, expectedGlobalID: 1, now: now, maximumAge: 300), now)
     }
 
+    func testRestoreIsolationFailureStopsBeforeAnySecretStorageOrPublication() async throws {
+        let (profile, network, timestamp) = try fixture()
+        let phrase = "twice half glass steak version only friend bone addict during joke offer fog punch panel true regular letter topple often afraid hint ready exhibit".components(separatedBy: " ")
+        for hasExisting in [false, true] {
+            var writes = 0, confirmations = 0, isolations = 0
+            let creator = TOSQuantumWalletCreation(network: { _, _ in network },
+                storeRole: { _, _, _, _ in writes += 1; throw Failure.injected },
+                saveRecord: { _ in writes += 1 }, now: { timestamp },
+                completeRecord: { _ in writes += 1 },
+                isolateRecovered: { _ in isolations += 1; throw Failure.injected })
+            do {
+                try await creator.restore(words: phrase, profile: profile,
+                    existing: { identity in
+                        if hasExisting { return try TOSQuantumCreationRecord(id: UUID(), profile: profile, identity: identity) }
+                        return nil
+                    },
+                    confirmExisting: { _ in confirmations += 1 },
+                    saveMnemonic: { _ in writes += 1 }, cleanupMnemonic: { _ in writes += 1 },
+                    publish: { _ in writes += 1 })
+                XCTFail("Isolation failure must stop restoration")
+            } catch Failure.injected {} catch { XCTFail("Unexpected failure: \(error)") }
+            XCTAssertEqual(isolations, 1)
+            XCTAssertEqual(confirmations, hasExisting ? 1 : 0)
+            XCTAssertEqual(writes, 0)
+        }
+    }
+
     func testProfileValidationAlsoAppliesToPersistedInput() throws {
         let hash = String(repeating: "42", count: 32)
         for invalid in ["", "42", String(repeating: "0", count: 64), String(repeating: "g", count: 64), "0x" + hash] {

@@ -23,6 +23,7 @@ internal final class TOSQuantumWalletCreation {
     private let now: () -> Int64
     private let discardUnrecordedCheckpoint: (UUID) throws -> Void
     private let completeRecord: (TOSQuantumCreationRecord) throws -> Void
+    private let isolateRecovered: (TOSQuantumSelfPayIdentity) throws -> Void
 
     convenience init() {
         let keychain = TOSQuantumSeedKeychain()
@@ -31,6 +32,7 @@ internal final class TOSQuantumWalletCreation {
             saveRecord: { try $0.save() }, now: { Int64(Date().timeIntervalSince1970) },
             resumeNetwork: { id, profile in try await Self.observe(id: id, profile: profile, resume: true) },
             completeRecord: { try $0.markPublished() },
+            isolateRecovered: { try TOSQuantumOutbox().isolateRecoveredIdentity($0) },
             discardUnrecordedCheckpoint: { try TOSQuantumProofSession.removeCheckpoint(walletID: $0) })
     }
 
@@ -76,8 +78,10 @@ internal final class TOSQuantumWalletCreation {
                   now: @escaping () -> Int64,
                   resumeNetwork: ((UUID, TOSQuantumNetworkProfile) async throws -> TOSQuantumSelfPayNetwork)? = nil,
                   completeRecord: @escaping (TOSQuantumCreationRecord) throws -> Void = { _ in },
+                  isolateRecovered: @escaping (TOSQuantumSelfPayIdentity) throws -> Void = { _ in },
                   discardUnrecordedCheckpoint: @escaping (UUID) throws -> Void = { _ in }) {
         self.network = network; self.resumeNetwork = resumeNetwork ?? network; self.storeRole = storeRole; self.saveRecord = saveRecord; self.now = now; self.completeRecord = completeRecord; self.discardUnrecordedCheckpoint = discardUnrecordedCheckpoint
+        self.isolateRecovered = isolateRecovered
     }
 
     /// Publish only after the recovery phrase and both protected role records are
@@ -152,6 +156,9 @@ internal final class TOSQuantumWalletCreation {
                   authority.globalID == profile.globalID else { throw TOSPQError.keyBinding }
             try bound.requireFresh(now: now())
             try await confirmExisting(prior)
+            // A local enrollment is not authenticated authorization history.
+            // Cancellation above does not change an existing wallet's isolation.
+            try isolateRecovered(identity)
             let context = try TOSQuantumSeedKeychain.Context(network: authority.namespace, globalID: authority.globalID,
                                                               account: prior.account, generation: prior.generation)
             try TOSQuantumSeedKeychain().importMissingRolesAndWipe(id: prior.id, context: context,
@@ -165,6 +172,7 @@ internal final class TOSQuantumWalletCreation {
         let context = try TOSQuantumSeedKeychain.Context(network: observed.namespace, globalID: observed.globalID,
                                                           account: 0, generation: 0)
         var mnemonicAttempted = false
+        var primaryAttempted = false, rescueAttempted = false
         do {
             // The discovery checkpoint was discarded before checking existing
             // wallets. A newly restored wallet needs its own durable enrollment
@@ -174,13 +182,16 @@ internal final class TOSQuantumWalletCreation {
                 throw TOSPQError.keyBinding
             }
             try enrolled.requireFresh(now: now())
+            try isolateRecovered(identity)
             try saveRecord(record)
             // Treat a throwing save as potentially partially durable and
             // attempt removal for this newly allocated UUID as well.
             mnemonicAttempted = true
             try await saveMnemonic(record)
             try Task.checkCancellation()
+            primaryAttempted = true
             guard try storeRole(candidateID, .primary, context, &primary) == primaryKey else { throw TOSPQError.keyBinding }
+            rescueAttempted = true
             guard try storeRole(candidateID, .rescue, context, &rescue) == rescueKey else { throw TOSPQError.keyBinding }
             try observed.requireFresh(now: now())
             try Task.checkCancellation()
@@ -188,10 +199,14 @@ internal final class TOSQuantumWalletCreation {
             finish(record)
         } catch {
             var cleanupError: Swift.Error?
-            do { try TOSQuantumSeedKeychain().delete(id: candidateID, role: .rescue) }
-            catch { cleanupError = error }
-            do { try TOSQuantumSeedKeychain().delete(id: candidateID, role: .primary) }
-            catch { cleanupError = cleanupError ?? error }
+            if rescueAttempted {
+                do { try TOSQuantumSeedKeychain().delete(id: candidateID, role: .rescue) }
+                catch { cleanupError = error }
+            }
+            if primaryAttempted {
+                do { try TOSQuantumSeedKeychain().delete(id: candidateID, role: .primary) }
+                catch { cleanupError = cleanupError ?? error }
+            }
             if mnemonicAttempted {
                 do { try await cleanupMnemonic(record) }
                 catch { cleanupError = cleanupError ?? error }
