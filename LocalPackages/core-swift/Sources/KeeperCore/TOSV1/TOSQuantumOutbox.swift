@@ -179,7 +179,7 @@ public final class TOSQuantumOutbox {
     private func readImport(_ file: URL, inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint? {
         guard let bytes = try retirementRead(file, maximum: 65536) else { return nil }
         let value = try JSONDecoder().decode(BackupImportCheckpoint.self, from: bytes)
-        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.observedRoles.rawValue,
+        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.protectedStored.rawValue,
               value.identity == inspection.identity.birth,
               value.encryptedDigest.count == 32, value.encryptedDigest == inspection.encryptedDigest,
               value.profile.globalID == inspection.fields.globalID,
@@ -202,6 +202,44 @@ public final class TOSQuantumOutbox {
         try syncDirectory()
         guard rename(stage.path, canonical.path) == 0 else { throw Error.storage }
         try syncDirectory()
+    }
+
+    func storeBackupImport(encrypted: Data, password: String, profile: TOSQuantumNetworkProfile,
+                           expectedNamespace: Data, observation: TOSQuantumAccountReader.Observation,
+                           now: () -> Int64) throws -> BackupImportCheckpoint {
+        try storeBackupImport(encrypted: encrypted, password: password, profile: profile,
+            expectedNamespace: expectedNamespace, observation: observation, now: now) { session, id, birth, primary, rescue in
+            try session.persistProtectedMaterial(id: id, birthHash: birth, primary: primary, rescue: rescue)
+        }
+    }
+
+    /// Scoped persistence seam for failure/order tests; the production entry point always uses protected Keychain.
+    internal func storeBackupImport(encrypted: Data, password: String, profile: TOSQuantumNetworkProfile,
+                                    expectedNamespace: Data, observation: TOSQuantumAccountReader.Observation,
+                                    now: () -> Int64,
+                                    persist: (TOSQuantumBackupInspectionSession, UUID, Data, Data, Data) throws -> Void) throws -> BackupImportCheckpoint {
+        let session = try TOSQuantumBackupInspectionSession(encrypted: encrypted, password: password)
+        defer { session.close() }
+        let inspection = try TOSQuantumBackupInspection(session: session, profile: profile, expectedNamespace: expectedNamespace)
+        _ = try observeBackupImport(inspection, observation: observation, now: now())
+        let checkpoint = try prepareBackupImport(inspection)
+        guard checkpoint.phase == .observedRoles || checkpoint.phase == .protectedStored else { throw Error.invalidTransition }
+        try observation.requireFresh(now: now())
+        try persist(session, checkpoint.id, inspection.identity.birth.cell.hash(),
+            inspection.identity.snapshot.primaryKey, inspection.identity.snapshot.rescueKey)
+        return try locked {
+            guard try recoveryIsolated(inspection.identity.birth),
+                  var current = try readImport(importPath(inspection.identity.birth), inspection: inspection),
+                  current.id == checkpoint.id,
+                  current.phase == .observedRoles || current.phase == .protectedStored else { throw Error.invalidRecord }
+            // Authentication may outlive proof freshness. Stored secrets stay isolated on failure.
+            try observation.requireFresh(now: now())
+            if current.phase == .observedRoles {
+                current.phase = .protectedStored
+                try writeImport(current)
+            }
+            return current
+        }
     }
 
     /// One slot per birth identity, shared by PRIMARY/RESCUE and all local wallet IDs.

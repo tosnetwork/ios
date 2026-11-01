@@ -18,15 +18,20 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         let role = TOSQuantumBackupPayload.Role(role: 1, account: 0, generation: 0, seed: seed,
             publicKeyHash: Data(SHA256.hash(data: state.authority.primaryKey)), sourceProfile: 1,
             wordIndices: [], phrasePassword: Data(), master: Data())
-        func inspect(_ birth: TOSQuantumSelfPayIdentity) throws -> TOSQuantumBackupInspection {
+        func encrypt(_ birth: TOSQuantumSelfPayIdentity) throws -> Data {
             var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: f.profile.globalID,
                 root: Data(hex: f.profile.rootHash), file: Data(hex: f.profile.fileHash),
                 namespace: state.authority.namespace, birth: birth.toBOC(), authority: state.authority.cell.toBoc(), roles: [role])
             defer { plaintext.resetBytes(in: 0..<plaintext.count) }
-            return try TOSQuantumBackupInspection(encrypted: TOSQuantumBackupCipher.encrypt(plaintext, password: password),
-                password: password, profile: f.profile, expectedNamespace: state.authority.namespace)
+            return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
         }
-        let backup = try inspect(f.identity)
+        func inspect(_ birth: TOSQuantumSelfPayIdentity) throws -> TOSQuantumBackupInspection {
+            try TOSQuantumBackupInspection(encrypted: encrypt(birth), password: password,
+                profile: f.profile, expectedNamespace: state.authority.namespace)
+        }
+        let encryptedFile = try encrypt(f.identity)
+        let backup = try TOSQuantumBackupInspection(encrypted: encryptedFile, password: password,
+            profile: f.profile, expectedNamespace: state.authority.namespace)
         let matches = try backup.classify(observation: observation, now: f.clock)
         XCTAssertEqual(matches.count, 1)
         XCTAssertEqual(matches[0].role, .primary)
@@ -71,6 +76,30 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
             authority: f.identity.wallet.initialAuthority, walletID: 1))
         let other = try inspect(otherBirth)
         XCTAssertThrowsError(try other.classify(observation: observation, now: f.clock))
+        var time = f.clock
+        var writes = 0
+        var captured: TOSQuantumBackupInspectionSession?
+        func store(_ body: (TOSQuantumBackupInspectionSession, UUID, Data, Data, Data) throws -> Void) throws -> TOSQuantumOutbox.BackupImportCheckpoint {
+            try reopened.storeBackupImport(encrypted: encryptedFile, password: password, profile: f.profile,
+                expectedNamespace: state.authority.namespace, observation: observation, now: { time }, persist: body)
+        }
+        XCTAssertThrowsError(try store { session, id, birth, primary, rescue in
+            writes += 1; captured = session
+            XCTAssertEqual(id, initial.id); XCTAssertEqual(birth, f.identity.cell.hash())
+            XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+            XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+            XCTAssertEqual(try session.validateSecrets(primary: primary, rescue: rescue).count, 1)
+            throw NSError(domain: "InjectedProtectedStoreFailure", code: 1)
+        })
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+        XCTAssertThrowsError(try captured?.validateSecrets(primary: state.authority.primaryKey, rescue: state.authority.rescueKey))
+        XCTAssertThrowsError(try store { _, _, _, _, _ in writes += 1; time += 301 })
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+        time = f.clock
+        let stored = try store { _, _, _, _, _ in writes += 1 }
+        XCTAssertEqual(stored.id, initial.id); XCTAssertEqual(stored.phase, .protectedStored)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        XCTAssertEqual(writes, 3)
     }
 
     private final class Fixture {

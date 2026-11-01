@@ -48,11 +48,15 @@ struct TOSQuantumBackupInspection {
          expectedNamespace: Data) throws {
         let session = try TOSQuantumBackupInspectionSession(encrypted: encrypted, password: password)
         defer { session.close() }
+        try self.init(session: session, profile: profile, expectedNamespace: expectedNamespace)
+    }
+    init(session: TOSQuantumBackupInspectionSession, profile: TOSQuantumNetworkProfile,
+         expectedNamespace: Data) throws {
         let identity = try TOSQuantumBackupFileIdentity(fields: session.identity, profile: profile,
             expectedNamespace: expectedNamespace)
         roles = try session.validateSecrets(primary: identity.snapshot.primaryKey, rescue: identity.snapshot.rescueKey)
         self.identity = identity
         fields = session.identity
-        encryptedDigest = Data(SHA256.hash(data: encrypted))
+        encryptedDigest = session.encryptedDigest
     }
 }
