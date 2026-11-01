@@ -84,7 +84,16 @@ public final class TOSQuantumOutbox {
     }
 
     public func requiresRecovery(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
-        try locked { try recoveryIsolated(identity) }
+        try locked { try recoveryIsolated(identity) || hasImportState(identity) }
+    }
+    private func hasImportState(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
+        let canonical = importPath(identity)
+        for file in [canonical, canonical.appendingPathExtension("next")] {
+            var info = stat()
+            if lstat(file.path, &info) == 0 { return true }
+            guard errno == ENOENT else { throw Error.storage }
+        }
+        return false
     }
 
     private func recoveryPath(_ identity: TOSQuantumSelfPayIdentity) -> URL {
@@ -99,7 +108,7 @@ public final class TOSQuantumOutbox {
         return true
     }
     private func requireKnownAuthorizationHistory(_ identity: TOSQuantumSelfPayIdentity) throws {
-        guard try !recoveryIsolated(identity) else { throw Error.recoveryRequired }
+        guard try !recoveryIsolated(identity) && !hasImportState(identity) else { throw Error.recoveryRequired }
     }
 
     /// Progress is a retry journal, never proof of live roles, custody, or permission to sign.

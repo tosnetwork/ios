@@ -100,6 +100,15 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         XCTAssertEqual(stored.id, initial.id); XCTAssertEqual(stored.phase, .protectedStored)
         XCTAssertTrue(try reopened.requiresRecovery(f.identity))
         XCTAssertEqual(writes, 3)
+        let marker = canonical.deletingPathExtension().appendingPathExtension("recovery")
+        try FileManager.default.removeItem(at: marker)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock)) { error in
+            if case .recoveryRequired? = error as? TOSQuantumOutbox.Error { return }
+            XCTFail("Missing marker bypassed import isolation: \(error)")
+        }
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
     }
 
     private final class Fixture {
