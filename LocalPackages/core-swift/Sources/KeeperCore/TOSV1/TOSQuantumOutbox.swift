@@ -27,6 +27,7 @@ public final class TOSQuantumOutbox {
     }
 
     private static let mutex = NSLock()
+    private static let recoveryMutex = NSLock()
     private static let maximumFileBytes = 2 * 1024 * 1024
     private static let maximumMessageBytes = 1024 * 1024
     private let directory: URL
@@ -60,7 +61,7 @@ public final class TOSQuantumOutbox {
     /// Persist before importing any secrets when authorization history is unknown.
     /// There is intentionally no unverified clear/reset API.
     public func isolateRecoveredIdentity(_ identity: TOSQuantumSelfPayIdentity) throws {
-        try locked {
+        try withRecoveryGate { try locked {
             let file = recoveryPath(identity)
             let marker = recoveryMarker(identity)
             if let existing = try retirementRead(file, maximum: 40) {
@@ -79,7 +80,7 @@ public final class TOSQuantumOutbox {
             try handle.write(contentsOf: marker)
             guard fsync(fd) == 0, fcntl(fd, F_FULLFSYNC) == 0 else { throw Error.storage }
             try syncDirectory()
-        }
+        } }
     }
 
     public func requiresRecovery(_ identity: TOSQuantumSelfPayIdentity) throws -> Bool {
@@ -176,18 +177,10 @@ public final class TOSQuantumOutbox {
     }
 
     internal func signReserved(_ entry: Entry, signer: (Entry) throws -> Data) throws {
-        // Serialize recovery isolation with the complete protected signing operation.
-        // Otherwise isolation could land between beginSigning and actual key access.
-        try locked {
-            try requireKnownAuthorizationHistory(entry.identity)
-            guard var stored = try read(entry.identity), stored.id == entry.id, stored.phase == .reserved else {
-                throw Error.invalidTransition
-            }
-            stored.phase = .signing
-            try write(stored)
-            let signature = try signer(stored)
-            try installSignature(&stored, signature: signature)
-            try write(stored)
+        // Serialize isolation with key access while allowing pending-state reads during signing.
+        try withRecoveryGate {
+            let stored = try beginSigning(entry)
+            try finishSigning(stored, signature: signer(stored))
         }
     }
 
@@ -364,6 +357,18 @@ public final class TOSQuantumOutbox {
         guard fd >= 0 else { throw Error.storage }
         defer { close(fd) }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else { throw Error.storage }
+        defer { flock(fd, LOCK_UN) }
+        return try body()
+    }
+    private func withRecoveryGate<T>(_ body: () throws -> T) throws -> T {
+        Self.recoveryMutex.lock(); defer { Self.recoveryMutex.unlock() }
+        let fd = open(directory.appendingPathComponent(".custody-lock").path, O_RDWR | O_CREAT | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else { throw Error.storage }
+        defer { close(fd) }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_uid == geteuid(), info.st_nlink == 1, info.st_mode & 0o7777 == 0o600,
+              flock(fd, LOCK_EX | LOCK_NB) == 0 else { throw Error.storage }
         defer { flock(fd, LOCK_UN) }
         return try body()
     }

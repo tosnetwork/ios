@@ -270,7 +270,10 @@ final class TOSQuantumOutboxTests: XCTestCase {
         var calls = 0
         func signer(_ stored: TOSQuantumOutbox.Entry) throws -> Data {
             calls += 1
-            // Inspect durable bytes without reentering the lock held across protected signing.
+            // A separate signing lease must still allow read-only outbox observation.
+            let reopened = try TOSQuantumOutbox(baseDirectory: directory)
+            XCTAssertEqual(try reopened.pending(identity: identity)?.phase, .signing)
+            // Independently inspect durable bytes before the signer returns.
             let name = identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".json"
             let durable = try JSONDecoder().decode(TOSQuantumOutbox.Entry.self,
                 from: Data(contentsOf: directory.appendingPathComponent(name)))
