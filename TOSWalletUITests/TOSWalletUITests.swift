@@ -290,8 +290,19 @@ final class TOSWalletUITests: XCTestCase {
             recipient: "0:9a21d887e406a578e80aab023d334e197bac02afefc48ed7c83ad8ce092736bf")
     }
 
+    func testQuantumActiveWalletColdRecoveryPaymentJourney() throws {
+        let restored = try quantumColdRecoveryJourney(payBeforeUninstall: true)
+        let dismiss = app.buttons["Dismiss"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5)); dismiss.tap()
+        assertNativeWalletHome()
+        try quantumAppPaymentJourney(restoredIdentity: XCTUnwrap(restored["identity_cell_hash"] as? String),
+            recipient: "0:9a21d887e406a578e80aab023d334e197bac02afefc48ed7c83ad8ce092736bf",
+            alreadyDeployed: true)
+    }
+
     private func quantumAppPaymentJourney(restoredIdentity: String? = nil,
-        recipient: String = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0") throws {
+        recipient: String = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0",
+        alreadyDeployed: Bool = false) throws {
         let environment = ProcessInfo.processInfo.environment
         let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
                       ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
@@ -303,8 +314,12 @@ final class TOSWalletUITests: XCTestCase {
             var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_balance/" + action)))
             request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            // The isolated faucet waits up to 65 seconds for actual inclusion.
+            // Keep ordinary controls short; funding needs its bounded RPC budget.
+            let timeout: TimeInterval = action == "fund" ? 75 : 10
+            request.timeoutInterval = timeout
             return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(request: request,
-                description: "isolated App payment fixture")) as? [String: String])
+                description: "isolated App payment fixture", timeout: timeout)) as? [String: String])
         }
         func paymentControl(_ action: String) throws -> [String: Any] {
             var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + "/__quantum_payment/" + action)))
@@ -324,7 +339,10 @@ final class TOSWalletUITests: XCTestCase {
         }
         func tapPayment(_ id: String) {
             let button = app.buttons["quantum.payment." + id]
-            for _ in 0..<6 { if button.isHittable { break }; app.swipeUp() }
+            for _ in 0..<6 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
             XCTAssertTrue(button.waitForExistence(timeout: 10)); XCTAssertTrue(button.isHittable); button.tap()
         }
         func openSavedPayment() {
@@ -340,12 +358,15 @@ final class TOSWalletUITests: XCTestCase {
         }
         let original = try control("snapshot")
         if let restoredIdentity { XCTAssertEqual(original["identity_cell_hash"], restoredIdentity) }
+        let initialEvents = try XCTUnwrap(paymentControl("status")["events"] as? [[String: Any]])
         let recipientBefore = try rpcBalance(address: recipient)
-        let funding = try control("fund")
-        XCTAssertEqual(funding["address"], original["address"])
+        if !alreadyDeployed {
+            let funding = try control("fund")
+            XCTAssertEqual(funding["address"], original["address"])
+        }
         print("PUBLIC_APP_PAYMENT_SENDER=" + (try XCTUnwrap(original["address"])))
         print("PUBLIC_APP_PAYMENT_ID=" + (try XCTUnwrap(original["id"])))
-        if restoredIdentity != nil {
+        if restoredIdentity != nil && !alreadyDeployed {
             let list = app.collectionViews["wallet.balance.list"]
             let tenTOS = app.staticTexts.matching(NSPredicate(format: "label MATCHES[c] %@", "10([.,]0+)?\\s*TOS")).firstMatch
             for _ in 0..<5 { pullToRefresh(list); if tenTOS.waitForExistence(timeout: 8) { break } }
@@ -379,7 +400,7 @@ final class TOSWalletUITests: XCTestCase {
         let details = app.staticTexts["quantum.payment.details"]
         XCTAssertTrue(details.label.contains(recipient))
         XCTAssertTrue(details.label.contains("1.000000001 TOS"))
-        XCTAssertTrue(details.label.contains("Wallet deployment: Required"))
+        XCTAssertTrue(details.label.contains(alreadyDeployed ? "Wallet deployment: Already deployed" : "Wallet deployment: Required"))
         retainScreenshot(named: "Quantum actual App unsigned review")
         tapPayment("sign")
         XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
@@ -399,7 +420,10 @@ final class TOSWalletUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(30)
         repeat {
             let relay = try paymentControl("status")
-            if (relay["events"] as? [[String: Any]])?.contains(where: { $0["upstream_returned"] as? Bool == true }) == true { returned = true; break }
+            if (relay["events"] as? [[String: Any]])?.contains(where: {
+                $0["operation_id"] as? String == originalOperation &&
+                $0["bytes_sha256"] as? String == originalBOC && $0["upstream_returned"] as? Bool == true
+            }) == true { returned = true; break }
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         } while Date() < deadline
         XCTAssertTrue(returned, "The proxy must actually forward the exact App message before backgrounding")
@@ -443,7 +467,7 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertEqual(try rpcBalance(address: recipient), recipientPaid)
         XCTAssertEqual(try control("snapshot"), original)
         let submissions = try paymentControl("status")
-        XCTAssertEqual((submissions["events"] as? [[String: Any]])?.count, 1)
+        XCTAssertEqual((submissions["events"] as? [[String: Any]])?.count, initialEvents.count + 1)
         let evidence = XCTAttachment(string: "recipient=\(recipient) before=\(recipientBefore) paid=\(recipientPaid) operation=\(originalOperation) boc_sha256=\(originalBOC)")
         evidence.name = "public-full-journey-payment-and-recipient"; evidence.lifetime = .keepAlways; add(evidence)
         retainScreenshot(named: "Quantum actual App payment retained after relaunch")
@@ -707,7 +731,7 @@ final class TOSWalletUITests: XCTestCase {
         _ = try quantumColdRecoveryJourney()
     }
 
-    private func quantumColdRecoveryJourney() throws -> [String: Any] {
+    private func quantumColdRecoveryJourney(payBeforeUninstall: Bool = false) throws -> [String: Any] {
         guard let endpoint = ProcessInfo.processInfo.environment["TOS_QUANTUM_COLD_RECOVERY_CONTROL"],
               let url = URL(string: endpoint), url.scheme == "http", url.host == "127.0.0.1" else {
             throw XCTSkip("Requires the disposable simulator cold-recovery controller")
@@ -731,6 +755,12 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(address.waitForExistence(timeout: 10))
         let originalAddress = address.label
         let original = try control("snapshot")
+        if payBeforeUninstall {
+            let dismiss = app.buttons["Dismiss"]
+            XCTAssertTrue(dismiss.waitForExistence(timeout: 5)); dismiss.tap()
+            assertNativeWalletHome()
+            try quantumAppPaymentJourney(restoredIdentity: XCTUnwrap(original["identity_cell_hash"] as? String))
+        }
         app.terminate()
         XCTAssertEqual(try control("reinstall")["reinstalled"] as? Bool, true)
         // The actual bundle has been uninstalled/reinstalled. The test reset
@@ -2209,7 +2239,18 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Re-enter passcode"].waitForExistence(timeout: 5))
         enterPasscode("1234")
         let next = app.descendants(matching: .any)["Continue"].firstMatch
-        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        // Creation authenticates the network before persisting protected keys.
+        // Wait for that asynchronous result, and surface a real failure directly.
+        let failure = app.alerts["Wallet creation failed"]
+        let creationFinished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            next.exists || failure.exists
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [creationFinished], timeout: 60), .completed)
+        if failure.exists {
+            XCTFail("Quantum creation failed: " + failure.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | "))
+            return ""
+        }
+        XCTAssertTrue(next.exists)
         XCTAssertFalse(app.descendants(matching: .any)["Later"].exists,
                        "Quantum creation requires a confirmed recovery backup")
         next.tap()
