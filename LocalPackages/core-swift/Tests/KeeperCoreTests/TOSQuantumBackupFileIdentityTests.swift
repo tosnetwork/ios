@@ -93,9 +93,11 @@ final class TOSQuantumBackupFileIdentityTests: XCTestCase {
         let role = TOSQuantumBackupPayload.Role(role: 2, account: 4, generation: 5,
             seed: rescueSeed, publicKeyHash: Data(SHA256.hash(data: rescue)), sourceProfile: 1,
             wordIndices: [], phrasePassword: Data(), master: Data())
+        // Preserve the actual wire input, rather than asking the BOC encoder for another representation.
+        let originalBirthBOC = try birth.toBOC()
         func encrypt(_ role: TOSQuantumBackupPayload.Role) throws -> Data {
             var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: -239, root: root,
-                file: file, namespace: namespace, birth: birth.toBOC(), authority: snapshot.cell.toBoc(), roles: [role])
+                file: file, namespace: namespace, birth: originalBirthBOC, authority: snapshot.cell.toBoc(), roles: [role])
             defer { plaintext.resetBytes(in: 0..<plaintext.count) }
             return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
         }
@@ -107,7 +109,7 @@ final class TOSQuantumBackupFileIdentityTests: XCTestCase {
         XCTAssertEqual(result.roles[0].role, .rescue)
         XCTAssertEqual(result.roles[0].account, 4)
         XCTAssertEqual(result.roles[0].generation, 5)
-        XCTAssertEqual(result.fields.birthBOC, try birth.toBOC())
+        XCTAssertEqual(result.fields.birthBOC, originalBirthBOC)
         XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: encrypted, password: "wrong public password",
             profile: profile(), expectedNamespace: namespace))
         XCTAssertThrowsError(try TOSQuantumBackupInspection(encrypted: encrypted, password: password,

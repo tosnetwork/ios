@@ -28,6 +28,8 @@ public final class TOSQuantumOutbox {
 
     private static let mutex = NSLock()
     private static let recoveryMutex = NSLock()
+    private static let publicationMutex = NSLock()
+    private static var publishingImports = Set<Data>()
     private static let maximumFileBytes = 2 * 1024 * 1024
     private static let maximumMessageBytes = 1024 * 1024
     private let directory: URL
@@ -187,7 +189,7 @@ public final class TOSQuantumOutbox {
     }
 
     /// Historical public enrollment; it grants neither live role authority nor permission to sign.
-    struct RecoveryRecord: Codable {
+    struct RecoveryRecord: Codable, Equatable {
         let version: UInt8
         let id: UUID
         let identity: TOSQuantumSelfPayIdentity
@@ -222,6 +224,58 @@ public final class TOSQuantumOutbox {
             return record
         }
     }
+    func recoveryRecordIfPresent(_ identity: TOSQuantumSelfPayIdentity, id: UUID) throws -> RecoveryRecord? {
+        try locked {
+            guard let record = try readRecoveryRecord(identity) else { return nil }
+            guard record.id == id else { throw Error.invalidRecord }
+            return record
+        }
+    }
+
+    /// Publication is retryable under the same UUID. A published wallet remains recovery-only.
+    func publishBackupImport(_ inspection: TOSQuantumBackupInspection,
+        observation: TOSQuantumAccountReader.Observation, now: () -> Int64,
+        publish: (RecoveryRecord) async throws -> Void) async throws -> BackupImportCheckpoint {
+        let birth = inspection.identity.birth.cell.hash()
+        try Self.publicationMutex.withLock {
+            guard Self.publishingImports.isEmpty else { throw Error.occupied }
+            Self.publishingImports.insert(birth)
+        }
+        defer { Self.publicationMutex.withLock { _ = Self.publishingImports.remove(birth) } }
+        func verified() throws -> (BackupImportCheckpoint, RecoveryRecord) {
+            _ = try inspection.classify(observation: observation, now: now())
+            let network = try TOSQuantumSelfPayNetwork(proof: observation.network,
+                expectedGlobalID: inspection.fields.globalID, now: now(), maximumAge: 300)
+            guard network.namespace == inspection.fields.namespace else { throw Error.invalidRecord }
+            return try locked {
+                guard try recoveryIsolated(inspection.identity.birth),
+                      let checkpoint = try readImport(importPath(inspection.identity.birth), inspection: inspection),
+                      checkpoint.phase.rawValue >= BackupImportCheckpoint.Phase.publicRecordDurable.rawValue,
+                      checkpoint.id == observation.id,
+                      let record = try readRecoveryRecord(checkpoint.identity),
+                      record.id == checkpoint.id, record.profile == checkpoint.profile,
+                      record.encryptedDigest == checkpoint.encryptedDigest else { throw Error.invalidRecord }
+                return (checkpoint, record)
+            }
+        }
+        try Task.checkCancellation()
+        let (before, record) = try verified()
+        try await publish(record)
+        try Task.checkCancellation()
+        let (after, _) = try verified()
+        guard before.id == after.id else { throw Error.invalidRecord }
+        return try locked {
+            guard try recoveryIsolated(inspection.identity.birth),
+                  var current = try readImport(importPath(inspection.identity.birth), inspection: inspection),
+                  current.id == before.id, current.phase == after.phase else { throw Error.invalidRecord }
+            try observation.requireFresh(now: now())
+            if current.phase == .publicRecordDurable {
+                current.phase = .publishedRecoveryOnly
+                try writeImport(current)
+            }
+            return current
+        }
+    }
     func retainBackupImportRecord(_ inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint {
         try retainBackupImportRecord(inspection, read: { checkpoint in
             try TOSQuantumBackupInspectionSession.openProtected(id: checkpoint.id,
@@ -253,7 +307,7 @@ public final class TOSQuantumOutbox {
                 profile: current.profile, encryptedDigest: current.encryptedDigest, mode: "recovery_only")
             let bytes = try recordBytes(record), file = recoveryRecordPath(current.identity)
             if let existing = try readRecoveryRecord(current.identity) {
-                guard try recordBytes(existing) == bytes else { throw Error.invalidRecord }
+                guard existing == record else { throw Error.invalidRecord }
                 try retirementFileSync(file)
             } else {
                 guard try retirementNames(directory, maximum: 128).count < 125 else { throw Error.capacity }
@@ -326,7 +380,7 @@ public final class TOSQuantumOutbox {
     private func readImport(_ file: URL, inspection: TOSQuantumBackupInspection) throws -> BackupImportCheckpoint? {
         guard let bytes = try retirementRead(file, maximum: 65536) else { return nil }
         let value = try JSONDecoder().decode(BackupImportCheckpoint.self, from: bytes)
-        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.publicRecordDurable.rawValue,
+        guard value.version == 1, value.phase.rawValue <= BackupImportCheckpoint.Phase.publishedRecoveryOnly.rawValue,
               value.identity == inspection.identity.birth,
               value.encryptedDigest.count == 32, value.encryptedDigest == inspection.encryptedDigest,
               value.profile.globalID == inspection.fields.globalID,

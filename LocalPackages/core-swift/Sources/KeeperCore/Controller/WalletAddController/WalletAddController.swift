@@ -5,6 +5,8 @@ import TonTransport
 import TronSwift
 
 public final class WalletAddController {
+    private static let backupImportMutex = NSLock()
+    private static var importingBackup = false
     private let walletsStore: WalletsStore
     private let tonProofTokenService: TonProofTokenService
     private let mnemonicsRepository: MnemonicsRepository
@@ -125,6 +127,69 @@ public final class WalletAddController {
             return !registered.contains { UUID(uuidString: $0.id) == id }
         }
         return TOSQuantumCreationRecord.Scan(entries: entries, overflow: scan.overflow, storedCount: scan.storedCount)
+    }
+
+    /// Restore the file's original identity as recovery-only; never fabricate a creation enrollment.
+    public func importQuantumBackup(metaData: WalletMetaData, encrypted: Data, password: String,
+        profile: TOSQuantumNetworkProfile, expectedNamespace: Data,
+        setupSettings: WalletSetupSettings = WalletSetupSettings()) async throws {
+        guard expectedNamespace.count == 32, (58...262201).contains(encrypted.count) else { throw TOSPQError.invalidInput }
+        try Task.checkCancellation()
+        try Self.backupImportMutex.withLock {
+            guard !Self.importingBackup else { throw TOSQuantumOutbox.Error.occupied }
+            Self.importingBackup = true
+        }
+        defer { Self.backupImportMutex.withLock { Self.importingBackup = false } }
+        let inspection: TOSQuantumBackupInspection = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    try TOSQuantumBackupInspection(encrypted: encrypted, password: password,
+                        profile: profile, expectedNamespace: expectedNamespace)
+                })
+            }
+        }
+        try Task.checkCancellation()
+        let outbox = try TOSQuantumOutbox(baseDirectory: enrollmentDirectory?.appendingPathComponent("outbox"))
+        let matches = try walletsStore.registeredWallets().filter {
+            if case .Quantum(let birth) = $0.identity.kind { return birth == inspection.identity.birth }
+            return false
+        }
+        guard matches.count <= 1 else { throw TOSPQError.keyBinding }
+        if let existing = matches.first {
+            guard let id = UUID(uuidString: existing.id),
+                  let record = try outbox.recoveryRecordIfPresent(inspection.identity.birth, id: id),
+                  record.profile == profile, record.encryptedDigest == inspection.encryptedDigest else {
+                throw TOSPQError.keyBinding
+            }
+        }
+        let reader = TOSQuantumAccountReader(baseDirectory: enrollmentDirectory)
+        let observation: TOSQuantumAccountReader.Observation = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    let checkpoint = try outbox.prepareBackupImport(inspection)
+                    let observed = try reader.observeRecoveryImport(checkpoint, expectedNamespace: expectedNamespace)
+                    _ = try outbox.storeBackupImport(encrypted: encrypted, password: password, profile: profile,
+                        expectedNamespace: expectedNamespace, observation: observed, now: { Int64(Date().timeIntervalSince1970) })
+                    let durable = try outbox.retainBackupImportRecord(inspection)
+                    // Keychain authentication can outlive the previous proof. Observe again before visibility.
+                    return try reader.observeRecoveryImport(durable, expectedNamespace: expectedNamespace)
+                })
+            }
+        }
+        _ = try await outbox.publishBackupImport(inspection, observation: observation,
+            now: { Int64(Date().timeIntervalSince1970) }) { record in
+            try await Self.publishQuantumRecoveryRecord(record, metaData: metaData,
+                setupSettings: setupSettings, walletsStore: self.walletsStore)
+        }
+    }
+
+    internal static func publishQuantumRecoveryRecord(_ record: TOSQuantumOutbox.RecoveryRecord,
+        metaData: WalletMetaData, setupSettings: WalletSetupSettings, walletsStore: WalletsStore) async throws {
+        guard record.version == 1, record.mode == "recovery_only", record.encryptedDigest.count == 32 else { throw TOSPQError.keyBinding }
+        let wallet = Wallet(id: record.id.uuidString,
+            identity: WalletIdentity(network: .mainnet, kind: .Quantum(record.identity), networkGlobalId: record.profile.globalID),
+            metaData: metaData, setupSettings: setupSettings, batterySettings: BatterySettings())
+        try await walletsStore.publishRecoveryWallet(wallet)
     }
 
     /// Acquire and verify one fresh network proof before the onboarding flow

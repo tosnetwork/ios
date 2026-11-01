@@ -7,7 +7,7 @@ import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
-    func testBackupClassificationRequiresFreshBoundObservation() throws {
+    func testBackupClassificationRequiresFreshBoundObservation() async throws {
         let f = try Fixture()
         let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { f.query }, now: { f.clock })
         let observation = try reader.observeEnrolled(id: f.id, identity: f.identity, profile: f.profile,
@@ -188,6 +188,94 @@ final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
         try durableJournal.write(to: canonical)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: canonical.path)
         XCTAssertEqual(try reopened.prepareBackupImport(backup).id, durable.id)
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock))
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        let restoredObservation = try reader.observeRecoveryImport(durable, expectedNamespace: state.authority.namespace)
+        XCTAssertEqual(restoredObservation.id, durable.id)
+        XCTAssertThrowsError(try reader.observeRecoveryImport(durable, expectedNamespace: Data(repeating: 0, count: 32)))
+        let registry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("restored-registry"))))
+        let metadata = WalletMetaData(label: "Public restored fixture", tintColor: .defaultColor, icon: .icon(.wallet))
+        let conflictRegistry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("existing-registry"))))
+        try await conflictRegistry.addWallets([f.wallet()])
+        do {
+            try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                setupSettings: WalletSetupSettings(), walletsStore: conflictRegistry)
+            XCTFail("Existing birth identity was replaced with another UUID")
+        } catch { }
+        XCTAssertEqual(try conflictRegistry.registeredWallets().map(\.id), [f.id.uuidString])
+        let racingRegistry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("racing-registry"))))
+        let competing = TOSQuantumOutbox.RecoveryRecord(version: 1, id: UUID(), identity: record.identity,
+            profile: record.profile, encryptedDigest: record.encryptedDigest, mode: "recovery_only")
+        @Sendable func attempt(_ candidate: TOSQuantumOutbox.RecoveryRecord) async -> Bool {
+            do {
+                try await WalletAddController.publishQuantumRecoveryRecord(candidate, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: racingRegistry)
+                return true
+            } catch { return false }
+        }
+        async let first = attempt(record)
+        async let second = attempt(competing)
+        let accepted = await [first, second].filter { $0 }
+        XCTAssertEqual(accepted.count, 1)
+        XCTAssertEqual(try racingRegistry.registeredWallets().count, 1)
+        var published = 0
+        let cancelled = Task { () -> Bool in
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { _ in
+                    XCTFail("Cancelled publication reached registry")
+                }
+                return false
+            } catch is CancellationError { return true }
+            catch { return false }
+        }
+        let cancellationRejected = await cancelled.value
+        XCTAssertTrue(cancellationRejected)
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: observation, now: { f.clock }) { _ in
+                published += 1; XCTFail("Observation for another UUID reached publication")
+            }
+            XCTFail("Wrong enrollment UUID accepted")
+        } catch { }
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { _ in
+                throw NSError(domain: "RegistryWriteFailure", code: 1)
+            }
+            XCTFail("Failed registry write advanced checkpoint")
+        } catch { }
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .publicRecordDurable)
+        var publishTime = f.clock
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { publishTime }) { record in
+                try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: registry)
+                published += 1; publishTime += 301
+            }
+            XCTFail("Expired post-publication proof advanced checkpoint")
+        } catch { }
+        XCTAssertEqual(try registry.registeredWallets().count, 1)
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .publicRecordDurable)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        for _ in 0..<2 {
+            let complete = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { record in
+                try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: registry)
+                published += 1
+            }
+            XCTAssertEqual(complete.id, durable.id)
+            XCTAssertEqual(complete.phase, .publishedRecoveryOnly)
+        }
+        XCTAssertEqual(published, 3)
+        let imported = try XCTUnwrap(registry.registeredWallets().first)
+        XCTAssertEqual(imported.id, durable.id.uuidString)
+        XCTAssertEqual(try registry.registeredWallets().count, 1)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord.load(id: durable.id, baseDirectory: f.base))
+        let restoredBalance = try await reader.read(wallet: imported)
+        XCTAssertEqual(restoredBalance.balance, observation.snapshot.balance)
+        XCTAssertThrowsError(try reader.readStored(id: UUID(), identity: f.identity))
         XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock))
         XCTAssertTrue(try reopened.requiresRecovery(f.identity))
     }

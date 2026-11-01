@@ -1,4 +1,5 @@
 import Foundation
+import CoreComponents
 
 public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
     public enum Error: Swift.Error {
@@ -88,6 +89,45 @@ public final class WalletsStore: Store<WalletsStore.Event, WalletsStore.State> {
         return await withCheckedContinuation { continuation in
             makeWalletActive(wallet) { state in
                 continuation.resume(returning: state)
+            }
+        }
+    }
+
+    /// Validate aliases on the serial durable mutation queue; a retry must preserve the original UUID.
+    internal func publishRecoveryWallet(_ wallet: Wallet) async throws {
+        guard case .Quantum(let birth) = wallet.identity.kind, UUID(uuidString: wallet.id) != nil,
+              wallet.identity.networkGlobalId == birth.wallet.initialAuthority.globalID else { throw TOSPQError.keyBinding }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Swift.Error>) in
+            var added = false
+            keeperInfoStore.persistKeeperInfo { current in
+                guard let current else { added = true; return KeeperInfo.keeperInfo(wallets: [wallet]) }
+                let matches = current.wallets.filter { candidate in
+                    if candidate.id == wallet.id { return true }
+                    if case .Quantum(let identity) = candidate.identity.kind { return identity == birth }
+                    return false
+                }
+                if let existing = matches.first {
+                    guard matches.count == 1, existing.id == wallet.id, existing.identity == wallet.identity else {
+                        throw TOSPQError.keyBinding
+                    }
+                    return current.updateActiveWallet(existing)
+                }
+                added = true
+                return current.updateWallets(current.wallets + [wallet], activeWallet: wallet)
+            } completion: { result in
+                switch result {
+                case .failure(let error): continuation.resume(throwing: error)
+                case .success(let info):
+                    let previous = try? self.state.activeWallet
+                    guard let published = info?.wallets.first(where: { $0.id == wallet.id }) else {
+                        continuation.resume(throwing: Error.noWallets); return
+                    }
+                    self.updateState { _ in StateUpdate(newState: self.getState(keeperInfo: info)) } completion: { _ in
+                        if added { self.sendEvent(.didAddWallets(wallets: [published])) }
+                        self.sendEvent(.didChangeActiveWallet(from: previous ?? published, to: published))
+                        continuation.resume()
+                    }
+                }
             }
         }
     }

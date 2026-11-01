@@ -46,8 +46,8 @@ internal final class TOSQuantumAccountReader {
     private let now: () -> Int64
     internal static let maximumAge: Int64 = 300
 
-    convenience init() {
-        self.init(transport: {
+    convenience init(baseDirectory: URL? = nil) {
+        self.init(baseDirectory: baseDirectory, transport: {
             guard let endpoint = TOSRPCSettings.quantumEndpoint,
                   let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
             let relay = try TOSQuantumProofHTTPTransport(endpoint: url)
@@ -105,9 +105,34 @@ internal final class TOSQuantumAccountReader {
     }
 
     private func observeStored(id: UUID, identity: TOSQuantumSelfPayIdentity, configIndices: [Int] = [19]) throws -> Observation {
+        let outbox = try TOSQuantumOutbox(baseDirectory: baseDirectory?.appendingPathComponent("outbox"))
+        if let recovery = try outbox.recoveryRecordIfPresent(identity, id: id) {
+            return try observeEnrolled(id: id, identity: identity, profile: recovery.profile, configIndices: configIndices)
+        }
         let record = try TOSQuantumCreationRecord.load(id: id, baseDirectory: baseDirectory)
         guard record.id == id, record.identity == identity else { throw TOSPQError.keyBinding }
         return try observeEnrolled(id: id, identity: identity, profile: record.profile, configIndices: configIndices)
+    }
+
+    /// Enroll this import's UUID without resetting any existing checkpoint on retry.
+    internal func observeRecoveryImport(_ checkpoint: TOSQuantumOutbox.BackupImportCheckpoint,
+                                       expectedNamespace: Data) throws -> Observation {
+        let session = try TOSQuantumProofSession(walletID: checkpoint.id,
+            locallyProvisionedAnchor: checkpoint.profile.anchor(), baseDirectory: baseDirectory)
+        let request = try TOSQuantumSelfPayNetwork.request(maximumAge: Self.maximumAge)
+        let relay = try transport()
+        do { _ = try session.enrollBound(request: request, now: now(), transport: relay) }
+        catch {
+            // Native initialize refuses existing state; read resumes it and never deletes/restores it.
+            _ = try session.readBound(request: request, now: now(), transport: relay)
+        }
+        let observation = try observeEnrolled(id: checkpoint.id, identity: checkpoint.identity,
+            profile: checkpoint.profile, configIndices: [8, 19, 48])
+        let network = try TOSQuantumSelfPayNetwork(proof: observation.network,
+            expectedGlobalID: checkpoint.profile.globalID, now: now(), maximumAge: Self.maximumAge)
+        guard network.namespace == expectedNamespace else { throw TOSPQError.keyBinding }
+        try observation.requireFresh(now: now())
+        return observation
     }
 
     internal func readEnrolled(id: UUID, identity: TOSQuantumSelfPayIdentity,
