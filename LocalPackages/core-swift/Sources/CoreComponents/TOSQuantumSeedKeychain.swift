@@ -157,6 +157,35 @@ public final class TOSQuantumSeedKeychain {
         defer { seed.resetBytes(in: 0..<seed.count) }
         return try body(seed)
     }
+    /// Internal export primitive; service must validate birth/snapshot before and after export.
+    /// Template seeds are ignored. Only existing user-presence-protected custody supplies seeds.
+    internal func encryptedBackup(id: UUID, template: TOSQuantumBackupPayload,
+                                  primary: Data, rescue: Data, password: String) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        var roles: [TOSQuantumBackupPayload.Role] = []
+        defer { for index in roles.indices { roles[index].wipe() } }
+        for entry in template.roles {
+            guard let role = TOSQuantumRole(rawValue: Int32(entry.role)) else { throw TOSPQError.invalidInput }
+            let context = try Context(network: template.namespace, globalID: template.globalID,
+                account: entry.account, generation: entry.generation)
+            try withSeedLocked(id: id, role: role, context: context) { seed in
+                roles.append(TOSQuantumBackupPayload.Role(role: entry.role, account: entry.account,
+                    generation: entry.generation, seed: seed, publicKeyHash: entry.publicKeyHash,
+                    sourceProfile: entry.sourceProfile, wordIndices: entry.wordIndices,
+                    phrasePassword: entry.phrasePassword, master: entry.master))
+            }
+        }
+        var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: template.globalID,
+            root: template.rootHash, file: template.fileHash, namespace: template.namespace,
+            birth: template.birthBOC, authority: template.authorityBOC, roles: roles)
+        defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+        let bound = try TOSQuantumBackupPayload.parseUnverified(plaintext)
+        defer { bound.wipe() }
+        try bound.validateSnapshotKeys(primary: primary, rescue: rescue)
+        try bound.validateProvenance()
+        return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
+    }
+
     /// Requires the same protected record access as signing; never returns seed material.
     public func publicKey(id: UUID, role: TOSQuantumRole, context: Context) throws -> Data {
         try withSeed(id: id, role: role, context: context) {
