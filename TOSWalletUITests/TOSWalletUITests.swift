@@ -3355,3 +3355,33 @@ final class TOSWalletUITests: XCTestCase {
     }
 
 }
+
+
+/// Opt-in inspection of a retained local QA wallet. This never resets its data.
+final class TOSQuantumTokenLiveUITests: XCTestCase {
+    func testInspectRetainedWalletForTokenAcceptance() throws {
+        guard ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555" else {
+            throw XCTSkip("Requires the retained local Token acceptance environment")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        app.launch()
+        let passcode = app.staticTexts["Enter passcode"]
+        if passcode.waitForExistence(timeout: 8) {
+            // Existing disposable simulator QA credential, shared with the native MVP tests.
+            for key in ["1", "2", "3", "4"] { app.buttons[key].tap() }
+        }
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 25), "Retained wallet must open without reset")
+        print("TOKEN_QA_PUBLIC_HOME=" + list.debugDescription)
+        let receive = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")).firstMatch
+        XCTAssertTrue(receive.waitForExistence(timeout: 10)); receive.tap()
+        let address = app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        print("TOKEN_QA_PUBLIC_OWNER=" + address.label)
+    }
+}
