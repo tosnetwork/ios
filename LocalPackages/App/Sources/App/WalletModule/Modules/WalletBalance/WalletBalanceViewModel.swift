@@ -435,6 +435,9 @@ final class WalletBalanceViewModelImplementation:
                 cellConfigurations[item.id] = cellConfiguration
                 sectionItems.append(sectionItem)
             case let .jetton(item):
+                // Only the PQ path supplies authenticated TOS Token positions.
+                // Classic balances still contain inherited synthetic assets.
+                guard balanceListItems.wallet.kind == .quantum else { continue }
                 let configuration = listMapper.mapJettonItem(item, isSecure: balanceListItems.isSecure,
                     isPinned: balanceListItem.isPinned, isNetworkBadgeVisible: false,
                     exactAmount: balanceListItems.wallet.kind == .quantum)
