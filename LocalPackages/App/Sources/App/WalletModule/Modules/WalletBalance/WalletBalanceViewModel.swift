@@ -376,8 +376,9 @@ final class WalletBalanceViewModelImplementation:
         var listItemsConfigurations = [String: WalletBalanceListCell.Configuration]()
         var notificationItemsConfigurations = [String: NotificationBannerCell.Configuration]()
 
-        if !notifications.isEmpty {
-            let (section, cellConfigurations) = createNotificationsSection(notifications: notifications)
+        if !notifications.isEmpty || balanceListItems?.tokenNotice != nil {
+            let (section, cellConfigurations) = createNotificationsSection(notifications: notifications,
+                tokenNotice: balanceListItems?.tokenNotice)
             notificationItemsConfigurations.merge(cellConfigurations) { $1 }
             snapshot.appendSections([.notifications(section)])
             snapshot.appendItems(section.items.map { .notificationItem($0) }, toSection: .notifications(section))
@@ -433,7 +434,16 @@ final class WalletBalanceViewModelImplementation:
                 }
                 cellConfigurations[item.id] = cellConfiguration
                 sectionItems.append(sectionItem)
-            case .jetton, .staking, .tronUSDT, .ethena:
+            case let .jetton(item):
+                let configuration = listMapper.mapJettonItem(item, isSecure: balanceListItems.isSecure,
+                    isPinned: balanceListItem.isPinned, isNetworkBadgeVisible: false,
+                    exactAmount: balanceListItems.wallet.kind == .quantum)
+                let sectionItem = WalletBalance.ListItem(identifier: item.id) { [weak self] in
+                    self?.didSelectJetton?(balanceListItems.wallet, item.jetton, false)
+                }
+                cellConfigurations[item.id] = configuration
+                sectionItems.append(sectionItem)
+            case .staking, .tronUSDT, .ethena:
                 continue
             }
         }
@@ -573,11 +583,19 @@ final class WalletBalanceViewModelImplementation:
         return (section, cellConfigurations)
     }
 
-    private func createNotificationsSection(notifications: [NotificationModel])
+    private func createNotificationsSection(notifications: [NotificationModel], tokenNotice: String? = nil)
         -> (section: WalletBalance.NotificationSection, cellConfigurations: [String: NotificationBannerCell.Configuration])
     {
         var cellConfigurations = [String: NotificationBannerCell.Configuration]()
         var items = [WalletBalance.NotificationItem]()
+        if let tokenNotice {
+            let id = "tos-token-partial-read"
+            let configuration = NotificationBannerCell.Configuration(bannerViewConfiguration: NotificationBannerView.Model(
+                title: "Token balances", caption: tokenNotice, appearance: .accentYellow,
+                actionButton: nil, closeButton: nil))
+            cellConfigurations[id] = configuration
+            items.append(WalletBalance.NotificationItem(id: id, cellConfiguration: configuration))
+        }
         for notification in notifications {
             let actionButton: NotificationBannerView.Model.ActionButton? = {
                 guard let action = notification.action else {

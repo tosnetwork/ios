@@ -14,6 +14,7 @@ public struct ProcessedBalance: Equatable, Codable {
 
     public let currency: Currency
     public let date: Date
+    public let tokenNotice: String?
 
     public func getBalanceForJetton(_ jettonInfo: JettonInfo) -> ProcessedBalanceJettonItem? {
         if jettonInfo.address == JettonMasterAddress.USDe {

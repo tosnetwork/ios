@@ -10,6 +10,7 @@ public struct ManagedBalance {
     public let currency: Currency
     public let date: Date
     public let isManagable: Bool
+    public let tokenNotice: String?
 }
 
 public enum ManagedBalanceState {
@@ -194,7 +195,8 @@ public final class ManagedBalanceStore: Store<ManagedBalanceStore.Event, Managed
             batteryBalance: balance.batteryBalance,
             currency: balance.currency,
             date: balance.date,
-            isManagable: (balance.jettonItems.count + balance.stakingItems.count) > 0
+            isManagable: (balance.jettonItems.count + balance.stakingItems.count) > 0,
+            tokenNotice: balance.tokenNotice
         )
 
         switch balanceState {

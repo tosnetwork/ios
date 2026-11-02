@@ -1233,20 +1233,26 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     func openJettonDetails(jettonItem: JettonItem, wallet: Wallet, hasPrice: Bool) {
         guard let navigationController = router.rootViewController.navigationController else { return }
 
-        let historyListModule = HistoryModule(
-            dependencies: HistoryModule.Dependencies(
-                coreAssembly: coreAssembly,
-                keeperCoreMainAssembly: keeperCoreMainAssembly
-            )
-        ).createJettonHistoryListModule(jettonMasterAddress: jettonItem.jettonInfo.address, wallet: wallet)
-
-        historyListModule.output.didSelectEvent = { [weak self] event in
-            switch event {
-            case let .tonEvent(event):
-                self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
-            case let .tronEvent(event):
-                self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+        let historyView: TokenDetailsListContentViewController
+        if wallet.kind == .quantum {
+            // The legacy index is not an authenticated Token receipt reader.
+            historyView = TOSTokenDetailsContentViewController()
+        } else {
+            let historyListModule = HistoryModule(
+                dependencies: HistoryModule.Dependencies(
+                    coreAssembly: coreAssembly,
+                    keeperCoreMainAssembly: keeperCoreMainAssembly
+                )
+            ).createJettonHistoryListModule(jettonMasterAddress: jettonItem.jettonInfo.address, wallet: wallet)
+            historyListModule.output.didSelectEvent = { [weak self] event in
+                switch event {
+                case let .tonEvent(event):
+                    self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
+                case let .tronEvent(event):
+                    self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+                }
             }
+            historyView = historyListModule.view
         }
 
         let module = TokenDetailsAssembly.module(
@@ -1263,10 +1269,19 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 ),
                 configuration: keeperCoreMainAssembly.configurationAssembly.configuration,
                 onShowUnverifiedTokenInfo: { [weak self] in
-                    self?.openUnverifiedTokenInfoPopup()
+                    if wallet.kind == .quantum {
+                        let address = jettonItem.jettonInfo.address.toRaw()
+                        let alert = UIAlertController(title: TKLocales.Token.unverified,
+                            message: "Token master\n\(address)", preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "Copy master address", style: .default) { _ in
+                            UIPasteboard.general.string = address
+                        })
+                        alert.addAction(UIAlertAction(title: TKLocales.Actions.ok, style: .cancel))
+                        self?.router.present(alert)
+                    } else { self?.openUnverifiedTokenInfoPopup() }
                 }
             ),
-            tokenDetailsListContentViewController: historyListModule.view,
+            tokenDetailsListContentViewController: historyView,
             chartViewControllerProvider: { [keeperCoreMainAssembly, coreAssembly] in
                 guard hasPrice else { return nil }
                 return ChartAssembly.module(

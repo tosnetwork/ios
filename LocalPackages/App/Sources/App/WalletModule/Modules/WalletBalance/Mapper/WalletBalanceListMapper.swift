@@ -47,7 +47,8 @@ struct WalletBalanceListMapper {
         _ item: ProcessedBalanceJettonItem,
         isSecure: Bool,
         isPinned: Bool,
-        isNetworkBadgeVisible: Bool
+        isNetworkBadgeVisible: Bool,
+        exactAmount: Bool = false
     ) -> WalletBalanceListCell.Configuration {
         return WalletBalanceListCell.Configuration(
             walletBalanceListCellContentViewConfiguration: WalletBalanceListCellContentView.Configuration(
@@ -55,7 +56,8 @@ struct WalletBalanceListMapper {
                     item,
                     isSecure: isSecure,
                     isPinned: isPinned,
-                    isNetworkBadgeVisible: isNetworkBadgeVisible
+                    isNetworkBadgeVisible: isNetworkBadgeVisible,
+                    exactAmount: exactAmount
                 ),
                 commentViewConfiguration: nil
             )

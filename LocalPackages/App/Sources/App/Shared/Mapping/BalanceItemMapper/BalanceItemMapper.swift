@@ -38,7 +38,8 @@ struct BalanceItemMapper {
         _ item: ProcessedBalanceJettonItem,
         isSecure: Bool = false,
         isPinned: Bool = false,
-        isNetworkBadgeVisible: Bool
+        isNetworkBadgeVisible: Bool,
+        exactAmount: Bool = false
     ) -> TKListItemContentView.Configuration {
         let caption = createPriceSubtitle(
             price: item.price,
@@ -65,7 +66,9 @@ struct BalanceItemMapper {
                 convertedAmount: item.converted,
                 currency: item.currency,
                 tags: tags,
-                isSecure: isSecure
+                isSecure: isSecure,
+                showsConvertedAmount: !exactAmount,
+                exactAmount: exactAmount
             )
         )
     }
@@ -154,7 +157,8 @@ struct BalanceItemMapper {
         currency: Currency,
         tags: [TKTagView.Configuration] = [],
         isSecure: Bool,
-        showsConvertedAmount: Bool = true
+        showsConvertedAmount: Bool = true,
+        exactAmount: Bool = false
     ) -> TKListItemTextContentView.Configuration {
         var icon: TKListItemTitleView.Configuration.Icon?
         if isPinned {
@@ -170,7 +174,7 @@ struct BalanceItemMapper {
         var valueViewConfiguration: TKListItemTextView.Configuration?
         var valueCaptionViewConfiguration: TKListItemTextView.Configuration?
         if let amount {
-            let formatAmount = amountFormatter.format(
+            let formatAmount = exactAmount ? ((try? TOSTokenAmount.format(amount, decimals: amountFractionDigits)) ?? "—") : amountFormatter.format(
                 amount: amount,
                 fractionDigits: amountFractionDigits
             )

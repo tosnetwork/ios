@@ -58,6 +58,9 @@ struct JettonTokenDetailsConfigurator: TokenDetailsConfigurator {
         if isSecureMode {
             tokenAmount = .secureModeValueShort
             convertedAmount = .secureModeValueShort
+        } else if wallet.kind == .quantum {
+            tokenAmount = jettonBalance.flatMap { try? TOSTokenAmount.format($0.amount, decimals: $0.fractionalDigits) } ?? "—"
+            convertedAmount = nil
         } else {
             (tokenAmount, convertedAmount) = mapper.mapJettonBalance(jettonBalance: jettonBalance, currency: currency)
         }
@@ -92,6 +95,7 @@ struct JettonTokenDetailsConfigurator: TokenDetailsConfigurator {
     }
 
     func getDetailsURL() -> URL? {
+        guard wallet.kind != .quantum else { return nil }
         guard let string = try? "\(String.tonviewer)/\(wallet.friendlyAddress.toString())/jetton/\(jettonItem.jettonInfo.address.toString())",
               let url = URL(string: string) else { return nil }
         return url
