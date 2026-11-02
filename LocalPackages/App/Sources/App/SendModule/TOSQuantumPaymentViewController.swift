@@ -334,6 +334,9 @@ final class TOSQuantumPaymentViewController: UIViewController {
                     // exists yet, so the user can safely correct the amount.
                     status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
                     return
+                } catch TOSQuantumPreparedPayment.Error.insufficientTokenBalance {
+                    status.text = "Insufficient Token balance. Edit the amount or receive more Tokens."
+                    return
                 }
                 try Task.checkCancellation(); prepared = value; show(value.intent)
                 details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"

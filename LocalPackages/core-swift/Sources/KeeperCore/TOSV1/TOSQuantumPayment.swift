@@ -110,7 +110,7 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
 /// A proof-bound unsigned payment, for the dedicated confirmation flow. The
 /// balance here is not spendable-after-fees and this type does not approve fees.
 public struct TOSQuantumPreparedPayment {
-    public enum Error: Swift.Error { case insufficientValue, frozenAccount, expired }
+    public enum Error: Swift.Error { case insufficientValue, insufficientTokenBalance, frozenAccount, expired }
     public let intent: TOSQuantumPaymentIntent
     public let identity: TOSQuantumSelfPayIdentity
     public let profile: TOSQuantumNetworkProfile
@@ -149,8 +149,7 @@ public struct TOSQuantumPreparedPayment {
         if let token = intent.tokenTransfer {
             guard let checked = tokenObservation, token.owner == observation.identity.address,
                   checked.owner.id == observation.id, checked.owner.identity == observation.identity,
-                  checked.master == token.master, checked.wallet == token.wallet,
-                  checked.balance >= token.units else { throw TOSPQError.keyBinding }
+                  checked.master == token.master, checked.wallet == token.wallet else { throw TOSPQError.keyBinding }
             try observation.network.requireSameCheckpoint(checked.owner.proof)
             try checked.requireFresh(now: now)
             let content = try TOSTokenContent.decode(checked.masterState.content)
@@ -159,6 +158,7 @@ public struct TOSQuantumPreparedPayment {
             else if let uri = content.uri { decimals = try TOSTokenMetadata.read(uri, isCancelled: { false }).decimals }
             else { throw TOSPQError.invalidInput }
             guard decimals == token.decimals else { throw TOSPQError.keyBinding }
+            guard checked.balance >= token.units else { throw Error.insufficientTokenBalance }
         } else if tokenObservation != nil { throw TOSPQError.keyBinding }
         self.tokenObservation = tokenObservation
         guard observation.snapshot.balance >= intent.amount else { throw Error.insufficientValue }

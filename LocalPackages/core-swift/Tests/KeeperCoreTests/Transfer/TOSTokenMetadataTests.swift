@@ -5,6 +5,21 @@ import Foundation
 final class TOSTokenMetadataTests: XCTestCase {
     private func decode(_ text: String) throws -> TOSTokenMetadata { try .decode(Data(text.utf8)) }
 
+    func testExplicitLiveHTTPSFixtureUsesProductionTransport() throws {
+        guard let uri = ProcessInfo.processInfo.environment["TOS_TOKEN_METADATA_TEST_URL"], !uri.isEmpty else {
+            throw XCTSkip("Requires an explicitly selected immutable HTTPS QA fixture")
+        }
+        let done = expectation(description: "Production metadata transport over real HTTPS")
+        DispatchQueue.global().async {
+            defer { done.fulfill() }
+            do {
+                let result = try TOSTokenMetadata.read(uri, isCancelled: { false })
+                XCTAssertEqual(result, TOSTokenMetadata(name: "TOS HTTPS QA", symbol: "HTTPSQA", decimals: 6))
+            } catch { XCTFail("Live HTTPS metadata read failed: \(error)") }
+        }
+        wait(for: [done], timeout: 5)
+    }
+
     func testPrecisionAndUnicodeFieldsRemainBounded() throws {
         XCTAssertEqual(try decode(#"{"name":"测试币","symbol":"CR","decimals":"6"}"#),
                        TOSTokenMetadata(name: "测试币", symbol: "CR", decimals: 6))

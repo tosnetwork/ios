@@ -3533,4 +3533,102 @@ final class TOSQuantumTokenLiveUITests: XCTestCase {
         // Independent chain reads must additionally establish recipient Token credit.
     }
 
+
+    func testRetainedQuantumTokenInvalidAmountsAndAuthenticationCancel() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555",
+              env["TOS_TOKEN_NEGATIVES_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit disposable local Token negative acceptance required")
+        }
+        let recipient = try XCTUnwrap(env["TOS_TOKEN_RECIPIENT"])
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func enabled(_ element: XCUIElement) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+                NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)], timeout: 60) == .completed
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            XCTAssertTrue(enabled(button))
+            for _ in 0..<8 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
+            XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func showFields() {
+            for _ in 0..<8 {
+                if app.textFields["quantum.payment.recipient"].isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeDown()
+            }
+        }
+        func replace(_ field: XCUIElement, _ value: String) {
+            XCTAssertTrue(field.isEnabled); field.tap()
+            let text = field.value as? String ?? ""
+            let current = text == field.placeholderValue ? "" : text
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + value)
+            XCTAssertEqual(field.value as? String, value)
+        }
+        app.launch(); unlock()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let token = list.cells.containing(.staticText, identifier: "CR").firstMatch
+        XCTAssertTrue(token.waitForExistence(timeout: 45)); token.tap()
+        let send = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Send")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 15)); send.tap()
+        XCTAssertTrue(app.textFields["quantum.payment.recipient"].waitForExistence(timeout: 15), app.debugDescription)
+        // End only the previous, already proven authorization through the actual
+        // expiry/confirmation UI. Never remove a journal or signing key in test setup.
+        if app.buttons["quantum.payment.end"].exists {
+            tapPayment("verify"); XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            tapPayment("end"); XCTAssertTrue(enabled(app.buttons["quantum.payment.confirmEnd"]))
+            tapPayment("confirmEnd")
+        }
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+        tapPayment("startAnother"); showFields()
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(enabled(recipientField)); replace(recipientField, recipient)
+        let amount = app.textFields["quantum.payment.amount"]
+        let attached = app.textFields["quantum.payment.attachment"]
+        for (quantity, attachment, marker) in [
+            ("2000", "0.1", "insufficient_token"), ("0.0000001", "0.1", "excess_precision"),
+            ("0", "0.1", "zero_token"), ("1", "0", "zero_attachment"), ("1", "100", "insufficient_tos")
+        ] {
+            showFields(); replace(amount, quantity); replace(attached, attachment); tapPayment("review")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.review"]))
+            XCTAssertTrue(amount.isEnabled, app.staticTexts["quantum.payment.status"].label)
+            XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+            XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+            XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+            print("TOKEN_QA_NEGATIVE_PASSED=" + marker)
+        }
+        showFields(); replace(amount, "1"); replace(attached, "0.1"); tapPayment("review")
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.sign"]))
+        tapPayment("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 15))
+        let close = app.buttons.matching(identifier: "Close").allElementsBoundByIndex.first(where: { $0.isHittable })
+        XCTAssertNotNil(close); close?.tap()
+        let status = app.staticTexts["quantum.payment.status"]
+        let cancelled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            status.exists && status.label == "Authentication cancelled. Nothing was signed or sent."
+        }, object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 15), .completed)
+        XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+        print("TOKEN_QA_AUTHENTICATION_CANCEL_PASSED")
+        app.terminate(); app.launch(); unlock()
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let home = XCTAttachment(string: list.debugDescription)
+        home.name = "public-token-home-after-negative-restart"; home.lifetime = .keepAlways; add(home)
+    }
+
 }
