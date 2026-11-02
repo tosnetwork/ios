@@ -2286,6 +2286,9 @@ final class TOSWalletUITests: XCTestCase {
             let clear = field.buttons.firstMatch
             XCTAssertTrue(clear.waitForExistence(timeout: 5), "Network fields must expose their clear action")
             clear.tap()
+            // Clearing an alert field can move keyboard focus during its update.
+            // Reacquire it before typing, while retaining the exact-value assertion.
+            field.tap()
         }
         field.typeText(value)
         XCTAssertEqual(field.value as? String, value)
