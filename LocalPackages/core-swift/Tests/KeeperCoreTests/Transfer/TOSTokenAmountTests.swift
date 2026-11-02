@@ -6,7 +6,7 @@ final class TOSTokenAmountTests: XCTestCase {
     func testExactUnitsRoundTripAcrossSupportedPrecision() throws {
         let maximum = (BigUInt(1) << 120) - 1
         for decimals in [0, 6, 9, 18, 255] {
-            for units in [BigUInt(1), BigUInt("9007199254740993")!, maximum] {
+            for units in [BigUInt(1), BigUInt("9007199254740993"), maximum] {
                 XCTAssertEqual(try TOSTokenAmount.parse(TOSTokenAmount.format(units, decimals: decimals), decimals: decimals), units)
             }
             XCTAssertEqual(try TOSTokenAmount.format(0, decimals: decimals), "0")
