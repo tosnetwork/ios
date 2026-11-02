@@ -58,6 +58,12 @@ public final class TKInputRecoveryPhraseViewController: GenericViewViewControlle
             self.customView.layoutIfNeeded()
         }
     }
+
+    /// Clears the visible phrase and the input module's in-memory phrase state.
+    public func clearRecoveryPhraseInput() {
+        viewModel.clearPhraseInput()
+        customView.endEditing(true)
+    }
 }
 
 private extension TKInputRecoveryPhraseViewController {

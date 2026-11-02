@@ -33,6 +33,27 @@ public final class WalletBalanceLoader {
     }
 
     public func reloadBalance(currency: Currency, includingTransferFees: Bool = true) async {
+        if wallet.kind == .quantum {
+            let task = lock.withLock { () -> Task<Void, Never> in
+                if let task = balanceLoadTask { return task }
+                isLoading = true
+                observers.forEach { $0.value() }
+                let task = Task {
+                    await loadAll(currency: .TON, includingTransferFees: includingTransferFees)
+                    lock.withLock {
+                        isLoading = false
+                        observers.forEach { $0.value() }
+                        balanceLoadTask = nil
+                    }
+                }
+                balanceLoadTask = task
+                return task
+            }
+            // Awaiting the actual read preserves the outer two-wallet batches.
+            // Repeated pulls share it instead of accumulating cancelled readers.
+            await task.value
+            return
+        }
         lock.withLock {
             self.balanceLoadTask?.cancel()
 
@@ -69,6 +90,10 @@ public final class WalletBalanceLoader {
     }
 
     private func loadAll(currency: Currency, includingTransferFees: Bool) async {
+        if wallet.kind == .quantum {
+            await loadBalance(currency: .TON, includingTransferFees: includingTransferFees)
+            return
+        }
         async let balanceTask: Void = loadBalance(currency: currency, includingTransferFees: includingTransferFees)
         async let stakingPoolsTask: Void = loadStakingPools()
         async let nftsTask: Void = loadNFTs()
@@ -111,6 +136,7 @@ public final class WalletBalanceLoader {
     }
 
     private func enrichBalanceWithJettons(balance: WalletBalance) -> WalletBalance {
+        guard wallet.kind != .quantum else { return balance }
         var jettonsBalance = balance.balance.jettonsBalance
 
         if !jettonsBalance.contains(where: { $0.item.jettonInfo.address == JettonMasterAddress.USDe }) {

@@ -29,6 +29,19 @@ final class OnboardingInfoView: UIView, ConfigurableView {
         return view
     }()
 
+    let additionalDetailsTextView: UITextView = {
+        let view = UITextView()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.isSelectable = true
+        view.backgroundColor = .clear
+        view.textColor = .Text.secondary
+        view.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        return view
+    }()
+
     let continueButton = TKButton()
     let continueButtonContainer: TKPaddingContainerView = {
         let container = TKPaddingContainerView()
@@ -42,6 +55,7 @@ final class OnboardingInfoView: UIView, ConfigurableView {
         let title: String
         let subtitle: String
         let buttonTitle: String
+        var additionalDetails: String? = nil
     }
 
     override init(frame: CGRect) {
@@ -62,6 +76,8 @@ final class OnboardingInfoView: UIView, ConfigurableView {
                 bottomDescription: model.subtitle
             )
         )
+        additionalDetailsTextView.text = model.additionalDetails
+        additionalDetailsTextView.isHidden = model.additionalDetails == nil
 
         var configuration = TKButton.Configuration.actionButtonConfiguration(
             category: .primary,
@@ -82,6 +98,7 @@ private extension OnboardingInfoView {
 
         contentStackView.addArrangedSubview(iconImageView)
         contentStackView.addArrangedSubview(titleDescriptionView)
+        contentStackView.addArrangedSubview(additionalDetailsTextView)
 
         continueButtonContainer.setViews([continueButton])
 
@@ -107,6 +124,10 @@ private extension OnboardingInfoView {
         }
 
         titleDescriptionView.snp.makeConstraints { make in
+            make.horizontalEdges.equalTo(contentStackView).inset(32)
+        }
+
+        additionalDetailsTextView.snp.makeConstraints { make in
             make.horizontalEdges.equalTo(contentStackView).inset(32)
         }
 

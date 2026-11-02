@@ -1,0 +1,151 @@
+{
+  "scope": "Read-only Quantum balance increment; no mobile-signed transaction, history, backup/rescue/migration or whole-PR completion claim",
+  "base_head": "f4146fde6ce12270405598b26e13ab04980293ea",
+  "native_node_source": "295d5029b2a465e9e17a332c34acb1eac475cca3",
+  "mobile_proof_pin": "1aa8821c0c208d09796b897b158c45203c99da51",
+  "source_files": {
+    "LocalPackages/App/Sources/App/AddWalletModule/Modules/ChooseWalletToAdd/ChooseWalletToAddViewModel.swift": "e8a272535941ea26741cabdd0de6accbf70503328f5f79a8a0deb0c6e8ec9de4",
+    "LocalPackages/App/Sources/App/SettingsModule/Sources/Modules/SettingsListConfigurators/SettingsListBackupConfigurator.swift": "1f91c28702ae4ca97b0114d58e4b76b2b755b1ea60573041d85ef85ecbbfb4c7",
+    "LocalPackages/App/Sources/App/Shared/BalanceBackupWarningCheck/BalanceBackupWarningCheck.swift": "f12500e35d2719c968cc6a9ce92802ef3aa1fdeae040d99e293d510e4af638a3",
+    "LocalPackages/App/Sources/App/WalletModule/Modules/TokenDetails/TokenDetailsMapper.swift": "7d5df6277a8b9f213a5e6c92711c394cb7381fd15c4e3c21443f8607d168b098",
+    "LocalPackages/App/Sources/App/WalletModule/Modules/TokenDetails/TokenDetailsViewModel.swift": "5930125a7ce9dabe8a3c94d8faa0eac33a3c99cdd6db6524e21492b01fa3028a",
+    "LocalPackages/App/Sources/App/WalletModule/Modules/WalletBalance/Model/WalletBalanceBalanceModel.swift": "dd3f61f1a02c20fcc512702fb2f766f663f3256f33d1a367846956501c61ae40",
+    "LocalPackages/App/Sources/App/WalletModule/Modules/WalletBalance/WalletBalanceViewModel.swift": "d6263b1765a5d2d69b7052118ec34c3a1c4645177029718b88bfb15ee4107675",
+    "LocalPackages/App/Sources/App/WalletModule/Modules/WalletsList/WalletsListViewModel.swift": "3c5fa66628db0846959d23e9d07c6d55fec241162bdc074596a0aa8241026d57",
+    "LocalPackages/core-swift/Sources/KeeperCore/Controller/BalanceWidgetController/BalanceWidgetController.swift": "58ff2ec49f1a684ca8e9ba11f3e5f9e8feb7138286e3cee227a642cac8b9e3c5",
+    "LocalPackages/core-swift/Sources/KeeperCore/Entities/Balance/Balance.swift": "f8a4f1bf35bc41eb4cd798fd4a552ed0ebe6ca5cd458ce69535aae88d767e0cb",
+    "LocalPackages/core-swift/Sources/KeeperCore/Loaders/Balance/WalletBalanceLoader.swift": "6ad5ef5eba4955b1b23ec16b35f7badd202f4a29673817556b40c5e148911218",
+    "LocalPackages/core-swift/Sources/KeeperCore/Loaders/InsufficientFundsValidator/InsufficientFundsValidator.swift": "91b9dc780316e99be6dd23e9a77237364c7c10c2df2e88f1a0d636f3d18c446a",
+    "LocalPackages/core-swift/Sources/KeeperCore/Models/ProcessedBalance.swift": "82ebb882ba4efa6348f830aad2456b0f20b3b41fd97d6eaa0664b0a02d0a0709",
+    "LocalPackages/core-swift/Sources/KeeperCore/Services/BalanceService/ActiveWalletService.swift": "23aa6731bd9c8ecf7843352f2514a567bbdcdc8f97d10b1c5e6342374c03fbda",
+    "LocalPackages/core-swift/Sources/KeeperCore/Services/BalanceService/BalanceService.swift": "bf528d1b45932be611be723c40cf6272724fb3224ad4a0025efed17d450826f2",
+    "LocalPackages/core-swift/Sources/KeeperCore/Services/BalanceService/TonBalanceService.swift": "f7310f1e10ac83bc3d87bd6a40ebbb9af69c117d7da2ac4f85409d73b441f55e",
+    "LocalPackages/core-swift/Sources/KeeperCore/Stores/Balance/BalanceStore.swift": "01f4e2d97be25dce0b458c0d6756e2cabf9e8c2c89cbd1293e7073b3ac36ba46",
+    "LocalPackages/core-swift/Sources/KeeperCore/Stores/Balance/ConvertedBalanceStore.swift": "13b8ac31a4cc6e08dd95d7231d5df9ed3746de399fb0a38fd3de31bfe90c14f8",
+    "LocalPackages/core-swift/Sources/KeeperCore/Stores/Balance/ProcessedBalanceStore.swift": "508f525b1a95dc98e242c60773cc97ab45bbe766efb81f9c98947939c2cd5597",
+    "LocalPackages/core-swift/Sources/KeeperCore/TOSV1/TOSQuantumAccountReader.swift": "85c5681a225e30c1e5f80ea6e11f24ce7817de7a7d4b3a6bf2033ee2d30b23e8",
+    "LocalPackages/core-swift/Tests/KeeperCoreTests/NativeBalanceAmountTests.swift": "62121bba5bbe008c63da644e1b47f0c711999473aed3dcdc7e7ea86354012232",
+    "LocalPackages/core-swift/Tests/KeeperCoreTests/TOSQuantumAccountReaderTests.swift": "fd56e0ed032ccba6d4ee34b5c2fe2855463c674742f9375663e2beac1b1cef90",
+    "TOSWalletUITests/TOSWalletUITests.swift": "867d99d24deb34c2dcbf5994271adad176cfac1cbff2cbf4cb936992fab8168c",
+    "scripts/tests/quantum_balance_fixture.py": "2ef017d31f38811ffe822ddccb149357172ff6abf6281d9327e8646bc11dc2c4"
+  },
+  "checks": {
+    "keeper_core": {
+      "total": 264,
+      "passed": 258,
+      "skipped": 6,
+      "failed": 0
+    },
+    "live_native_reader": {
+      "passed": 1,
+      "seconds": 0.598
+    },
+    "live_ui": {
+      "passed": 1,
+      "seconds": 70.984,
+      "funding_source": "isolated public test genesis signer; not mobile custody"
+    },
+    "sensitivity_controls": {
+      "network_guard": "runtime failure caught; restored",
+      "64bit_truncation": "runtime failure caught; restored"
+    },
+    "scoped_review": "ACCEPT, no blocker; whole PR/native verifier/helper excluded",
+    "final_normal_app_and_static": "PASS: normal dualarch make test_v1_static including brand and artifact checks",
+    "latest_ci": "Not run for this uncommitted increment"
+  },
+  "artifacts": [
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-review.json",
+      "bytes": 10055,
+      "sha256": "6b425b0cb8d5fe0a5f27d11a473421fa0ff9aa1b304d1de9ae3e34a55275f6bd"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-controls.json",
+      "bytes": 1523,
+      "sha256": "a3e0f2c0095a152e8fbc53032cc21241482e084461e4c791cf9a2fc28262c481"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-core-restored.log",
+      "bytes": 83572,
+      "sha256": "515d594b3ef42c61a1781c4459470fa4bb8113a40fea2f4de7a805c49039390d"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-network-guard-mutant-raw.log",
+      "bytes": 2408982,
+      "sha256": "a5226f8833a3c6571a5d3510c9d585b73cc2aaebe6c661372b92ad1e80066b14"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-amount-truncation-mutant-raw.log",
+      "bytes": 107048,
+      "sha256": "e5272d245e65a6b79c6c9917855630e73cf694584cf53f48e5b4b30d1c501863"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793047750900441000/live-reader.log",
+      "bytes": 58424,
+      "sha256": "925aa460be437595d9e9b6e245c138d3989e482e226e70733c120e9563764c1c"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/ui.log",
+      "bytes": 25522,
+      "sha256": "35dcb87e64124355812fbbe31e70d903fdeafbf3040aa31e826ff61e8cee3c67"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/stages.json",
+      "bytes": 651,
+      "sha256": "8b920498a7d7bb6449bd88e031e2563025f6f5b93d208a43bc11d14ccdd7f53a"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/owned-process-exits.json",
+      "bytes": 149,
+      "sha256": "de49bd83f369d6d8f63d6a06256e4b9681f45bb2058b220c94a17109af9668b3"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/source.json",
+      "bytes": 4116,
+      "sha256": "e77facd6f19a132c078de6465491969c7ce40e4a87c2866e7bfbab29f21c7009"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/installed-app.json",
+      "bytes": 30353,
+      "sha256": "c6aff68fc10ed24a038dccca7c96bb234b5e552e6c14ca0263311008de615361"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-funder-diagnostic/error.json",
+      "bytes": 69,
+      "sha256": "882ba2133d073324e2820bcda45f1bebf9d3a61d5bf1d65fe10b07d134c9c4d4"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-final.json",
+      "bytes": 4222,
+      "sha256": "33a11b19dbe83f04903903c9a441d89afeeea2a083d9ed227ebb0d7029882d69"
+    },
+    {
+      "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-final-static.log",
+      "bytes": 311457,
+      "sha256": "1e20fdf6d2d9d650643470089cf4de53f106b724198e18db6c1072c1a46bbf82"
+    }
+  ],
+  "installed_ui_proof": {
+    "path": "/Users/tomisetsu/validation/mobile-quantum-handoff/ios-proof-balance-live-1793048135060443000/installed-app.app/Frameworks/TOSProofVerify.framework/TOSProofVerify",
+    "bytes": 32390912,
+    "sha256": "a13c1f2990d8633cb8d30b67cf3add80c02459d3389c4f31204bdb56d6c3b3b7",
+    "uuids_match_pinned_build": {
+      "x86_64": "65F5555B-9C20-327F-A027-87F7C3C57552",
+      "arm64": "879468BE-965D-3A46-A3DB-C8646D531B83"
+    }
+  },
+  "final_app_proof": {
+    "path": "/Users/tomisetsu/ios/worktrees/quantum-self-pay/build/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app/Frameworks/TOSProofVerify.framework/TOSProofVerify",
+    "bytes": 32390912,
+    "sha256": "a13c1f2990d8633cb8d30b67cf3add80c02459d3389c4f31204bdb56d6c3b3b7",
+    "uuids_match_pinned_build": {
+      "x86_64": "65F5555B-9C20-327F-A027-87F7C3C57552",
+      "arm64": "879468BE-965D-3A46-A3DB-C8646D531B83"
+    }
+  },
+  "final_app_executable": {
+    "path": "/Users/tomisetsu/ios/worktrees/quantum-self-pay/build/DerivedData/Build/Products/TosWalletDebug-iphonesimulator/TOS Wallet.app/TOS Wallet",
+    "bytes": 124016,
+    "sha256": "93b4882b540870c6379220f0dc628138d3b0e0673d54728e691953293d4c3a75"
+  }
+}

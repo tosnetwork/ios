@@ -64,7 +64,7 @@ final class SettingsListBackupConfigurator: SettingsListConfigurator {
         let balanceBackupWarningState = BalanceBackupWarningCheck()
             .check(
                 wallet: wallet,
-                tonAmount: UInt64(proccessedBalance?.tonItem.amount ?? 0)
+                tonAmount: proccessedBalance?.tonItem.amount ?? 0
             )
 
         if let backupWarningNotificationSection = createBackupWarningNotificationSection(

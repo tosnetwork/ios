@@ -142,7 +142,7 @@ final class TokenDetailsViewModelImplementation: TokenDetailsViewModel, TokenDet
 private extension TokenDetailsViewModelImplementation {
     func setInitialState() {
         syncQueue.sync {
-            let balance = balanceStore.getState()[wallet]?.balance
+            let balance = displayBalance()
             let model = configurator.getTokenModel(balance: balance, isSecureMode: appSettingsStore.getState().isSecureMode)
             DispatchQueue.main.async {
                 self.didUpdateModel(model)
@@ -151,10 +151,10 @@ private extension TokenDetailsViewModelImplementation {
     }
 
     func setupObservations() {
-        configurator.didUpdate = { [weak self, wallet] in
+        configurator.didUpdate = { [weak self] in
             guard let self else { return }
             self.syncQueue.async {
-                let balance = self.balanceStore.getState()[wallet]?.balance
+                let balance = self.displayBalance()
                 let model = self.configurator.getTokenModel(balance: balance, isSecureMode: self.appSettingsStore.getState().isSecureMode)
                 DispatchQueue.main.async {
                     self.didUpdateModel(model)
@@ -167,7 +167,7 @@ private extension TokenDetailsViewModelImplementation {
             case let .didUpdateProccessedBalance(wallet):
                 guard wallet == observer.wallet else { return }
                 observer.syncQueue.async {
-                    let balance = observer.balanceStore.getState()[wallet]?.balance
+                    let balance = observer.displayBalance()
                     let model = observer.configurator.getTokenModel(balance: balance, isSecureMode: observer.appSettingsStore.getState().isSecureMode)
                     DispatchQueue.main.async {
                         self.didUpdateModel(model)
@@ -175,6 +175,16 @@ private extension TokenDetailsViewModelImplementation {
                 }
             }
         }
+    }
+
+    private func displayBalance() -> ProcessedBalance? {
+        let state = balanceStore.getState()[wallet]
+        if wallet.kind == .quantum, case .current? = state {
+            return state?.balance
+        } else if wallet.kind == .quantum {
+            return nil
+        }
+        return state?.balance
     }
 
     func didUpdateModel(_ model: TokenDetailsModel) {

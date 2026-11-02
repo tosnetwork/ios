@@ -46,7 +46,20 @@ private extension HistoryCoordinator {
     func openHistory() {
         let module = HistoryContainerAssembly.module(keeperCoreMainAssembly: keeperCoreMainAssembly)
 
-        module.output.didChangeWallet = { [weak self, keeperCoreMainAssembly] wallet in
+        module.output.didChangeWallet = { [weak self, weak container = module.view, keeperCoreMainAssembly] wallet in
+            guard let container else { return }
+            if wallet.kind == .quantum {
+                let history = TOSQuantumHistoryViewController(wallet: wallet)
+                history.didRequestReceive = { [weak self] in self?.openReceive(wallet: wallet) }
+                history.didRequestConfigureRPC = { [weak history] in
+                    guard let history else { return }
+                    TOSRPCNodeEditor.present(from: history) { [weak history] in
+                        history?.refreshAfterRPCConfigurationChange()
+                    }
+                }
+                container.historyViewController = history
+                return
+            }
             let listModule = HistoryListAssembly.module(
                 wallet: wallet,
                 paginationLoader: keeperCoreMainAssembly.loadersAssembly.historyTonEventsPaginationLoader(
@@ -123,7 +136,7 @@ private extension HistoryCoordinator {
                 self?.openSpamHistory(wallet: wallet)
             }
 
-            module.view.historyViewController = historyModule.view
+            container.historyViewController = historyModule.view
         }
 
         router.push(viewController: module.view, animated: true)

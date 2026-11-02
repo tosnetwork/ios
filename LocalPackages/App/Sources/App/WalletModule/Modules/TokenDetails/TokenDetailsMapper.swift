@@ -19,7 +19,7 @@ struct TokenDetailsMapper {
         convertedAmount: String?
     ) {
         guard let amount = tonBalance?.amount else {
-            return ("0", nil)
+            return ("—", nil)
         }
         let bigUIntAmount = BigUInt(amount)
 

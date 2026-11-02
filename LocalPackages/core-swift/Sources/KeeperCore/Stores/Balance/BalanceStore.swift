@@ -25,6 +25,7 @@ public final class BalanceStore: Store<BalanceStore.Event, BalanceStore.State> {
         let wallets = walletsStore.wallets
         var state = State()
         for wallet in wallets {
+            guard wallet.kind != .quantum else { continue }
             do {
                 let balance = try repository.getBalance(address: wallet.friendlyAddress)
                 state[wallet] = .previous(balance)
@@ -78,6 +79,7 @@ public final class BalanceStore: Store<BalanceStore.Event, BalanceStore.State> {
             guard let self else { return nil }
             var updatedState = state
             for wallet in wallets {
+                guard wallet.kind != .quantum else { continue }
                 guard state[wallet] == nil else { continue }
                 guard let balance = try? self.repository.getBalance(address: wallet.friendlyAddress) else { continue }
                 updatedState[wallet] = .previous(balance)

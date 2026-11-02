@@ -62,7 +62,17 @@ public struct TOSQuantumAuth {
                   try s.loadUint(bits: 32) == 0x0ec3c86d else { throw TOSPQError.invalidInput }
             let mode = try s.loadUint(bits: 8)
             guard mode & 2 != 0, mode & 44 == 0, mode & 192 != 192 else { throw TOSPQError.invalidInput }
-            current = try s.loadRef(); count += 1
+            let previous = try s.loadRef()
+            // The node refuses an ext_out send with any mode bit besides +1/+2 without
+            // honouring +2, so the wallet engine refuses it too (exit 147). A message
+            // too short to carry a constructor is left to the node, which skips it.
+            if mode & ~3 != 0 {
+                let head = try s.loadRef().beginParse()
+                if head.remainingBits >= 2 {
+                    guard try head.loadUint(bits: 2) != 3 else { throw TOSPQError.invalidInput }
+                }
+            }
+            current = previous; count += 1
         }
     }
 }

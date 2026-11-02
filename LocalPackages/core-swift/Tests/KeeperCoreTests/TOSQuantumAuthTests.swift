@@ -41,6 +41,30 @@ final class TOSQuantumAuthTests: XCTestCase {
         }
         XCTAssertThrowsError(try TOSQuantumAuth.validateActions(send(3, tag: 0xad4de08e)))
     }
+    func testExtOutSendKeepsOnlyModesTheNodeAccepts() throws {
+        // ext_out_msg_info$11 from and to addr_none, no StateInit, empty inline body.
+        let extOut = try Builder().store(uint: 3, bits: 2).store(uint: 0, bits: 4).store(uint: 0, bits: 64)
+            .store(uint: 0, bits: 32).store(uint: 0, bits: 2).endCell()
+        let internalMessage = try Builder().store(uint: 0, bits: 64).endCell()
+        let oneBit = try Builder().store(uint: 1, bits: 1).endCell()
+        func send(_ mode: UInt8, _ message: Cell, previous: Cell? = nil) throws -> Cell {
+            try Builder().store(uint: 0x0ec3c86d, bits: 32).store(uint: mode, bits: 8)
+                .store(ref: previous ?? Builder().endCell()).store(ref: message).endCell()
+        }
+        let allowed: Set<UInt8> = [2, 3, 18, 19, 66, 67, 82, 83, 130, 131, 146, 147]
+        for mode in UInt8.min...UInt8.max {
+            if mode == 2 || mode == 3 { XCTAssertNoThrow(try TOSQuantumAuth.validateActions(send(mode, extOut)), "ext_out \(mode)") }
+            else { XCTAssertThrowsError(try TOSQuantumAuth.validateActions(send(mode, extOut)), "ext_out \(mode)") }
+            for message in [internalMessage, oneBit] {
+                if allowed.contains(mode) { XCTAssertNoThrow(try TOSQuantumAuth.validateActions(send(mode, message)), "mode \(mode)") }
+                else { XCTAssertThrowsError(try TOSQuantumAuth.validateActions(send(mode, message)), "mode \(mode)") }
+            }
+        }
+        // The refusal holds for an action anywhere in the list.
+        XCTAssertThrowsError(try TOSQuantumAuth.validateActions(send(3, internalMessage, previous: send(66, extOut))))
+        XCTAssertThrowsError(try TOSQuantumAuth.validateActions(send(66, extOut, previous: send(3, internalMessage))))
+        XCTAssertNoThrow(try TOSQuantumAuth.validateActions(send(3, internalMessage, previous: send(2, extOut))))
+    }
     func testPrimaryControlsAndClassicalSignatureRefused() throws {
         let empty = try Builder().endCell()
         for action in [TOSQuantumAction.configure(replacement: nil), .lockPrimary,

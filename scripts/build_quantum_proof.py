@@ -10,6 +10,18 @@ import subprocess
 import tempfile
 
 
+def require_source_checkout(source):
+    root = subprocess.check_output(
+        ['git', '-C', str(source), 'rev-parse', '--show-toplevel'], text=True
+    ).strip()
+    if Path(root).resolve() != source.resolve():
+        raise RuntimeError(
+            'Proof source is not an independent Git checkout: ' + str(source)
+            + '. Move the incomplete cache aside and retry, or set TOS_PROOF_ROOT '
+            'to a clean checkout of the pinned TOS revision.'
+        )
+
+
 def main():
     repo = Path(__file__).resolve().parents[1]
     cache = repo / '.native/quantum-proof'
@@ -21,6 +33,8 @@ def main():
             raise RuntimeError('Expected an immutable proof source revision')
         default_source = (cache / 'source').resolve()
         source = Path(os.environ.get('TOS_PROOF_ROOT', default_source)).resolve()
+        if source.exists():
+            require_source_checkout(source)
         if not source.exists():
             subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', 'https://github.com/tosnetwork/tos.git', str(source)], check=True)
             subprocess.run(['git', '-C', str(source), 'checkout', '--detach', revision], check=True)

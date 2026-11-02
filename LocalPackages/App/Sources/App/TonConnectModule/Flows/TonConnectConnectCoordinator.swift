@@ -315,6 +315,7 @@ private extension TonConnectConnectCoordinator {
         }
 
         do {
+            guard parameters.wallet.kind != .quantum else { throw ConnectError.unknown }
             try await connector.connect(
                 wallet: parameters.wallet,
                 parameters: parameters.parameters,

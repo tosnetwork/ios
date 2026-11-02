@@ -49,6 +49,7 @@ public struct RNWallet: Codable {
     }
 
     public enum WalletType: String, Codable {
+        case Quantum
         case Regular
         case Lockup
         case WatchOnly
@@ -61,9 +62,11 @@ public struct RNWallet: Codable {
     public enum WalletNetwork: Int, Codable {
         case mainnet = -239
         case testnet = -3
+        case tetra = 662_387
     }
 
     public enum RNContractVersion: String, Codable {
+        case quantumSelfPay
         case v5Beta
         case v5R1
         case tosV5R1
@@ -103,7 +106,8 @@ public struct RNWallet: Codable {
     public let name: String
     public let emoji: String
     public let color: String
-    public let pubkey: String
+    public let pubkey: String?
+    public let quantumIdentity: TOSQuantumSelfPayIdentity?
     public let path: String?
     public let xfp: String?
     public let network: WalletNetwork
@@ -117,6 +121,8 @@ public struct RNWallet: Codable {
 public extension RNWallet {
     init(wallet: Wallet) {
         self.networkGlobalId = wallet.identity.networkGlobalId
+        if case .Quantum(let birth) = wallet.identity.kind { self.quantumIdentity = birth }
+        else { self.quantumIdentity = nil }
         self.identifier = wallet.id
         self.name = wallet.label
         self.color = wallet.tintColor.rawValue
@@ -126,11 +132,18 @@ public extension RNWallet {
                 return .mainnet
             case .testnet:
                 return .testnet
-            case .tetra: // impossible
-                return .testnet
+            case .tetra:
+                return wallet.kind == .quantum ? .tetra : .testnet
             }
         }()
         switch wallet.identity.kind {
+        case .Quantum:
+            self.type = .Quantum
+            self.pubkey = nil
+            self.path = nil
+            self.xfp = nil
+            self.version = .quantumSelfPay
+            self.ledger = nil
         case let .Keystone(publicKey, xfp, path, walletContractVersion):
             self.type = .Keystone
             self.pubkey = publicKey.data.hexString()
@@ -193,13 +206,35 @@ public extension RNWallet {
     }
 
     func getWallet(backupDate: Date?) throws -> Wallet {
-        guard let publicKeyData = Data(hex: pubkey) else {
+        let network: Network
+        switch self.network {
+        case .mainnet:
+            network = .mainnet
+        case .testnet:
+            network = .testnet
+        case .tetra:
+            guard type == .Quantum else { throw Error.failedToCreateWallet }
+            network = .tetra
+        }
+
+        if type == .Quantum {
+            guard version == .quantumSelfPay, let quantumIdentity, pubkey == nil,
+                  networkGlobalId == quantumIdentity.wallet.initialAuthority.globalID,
+                  workchain == 0, path == nil, xfp == nil, ledger == nil else {
+                throw Error.failedToCreateWallet
+            }
+            return makeWallet(kind: .Quantum(quantumIdentity), network: network, backupDate: backupDate)
+        }
+        guard quantumIdentity == nil, version != .quantumSelfPay,
+              let pubkey, let publicKeyData = Data(hex: pubkey) else {
             throw Error.failedToCreateWallet
         }
         let publicKey = TonSwift.PublicKey(data: publicKeyData)
 
         let contractVersion: WalletContractVersion
         switch version {
+        case .quantumSelfPay:
+            throw Error.failedToCreateWallet
         case .v3R1:
             contractVersion = .v3R1
         case .v3R2:
@@ -218,13 +253,6 @@ public extension RNWallet {
             contractVersion = .v3R1
         }
 
-        let network: Network
-        switch self.network {
-        case .mainnet:
-            network = .mainnet
-        case .testnet:
-            network = .testnet
-        }
 
         let contract: WalletContract
         switch contractVersion {
@@ -263,6 +291,8 @@ public extension RNWallet {
 
         let kind: WalletKind
         switch type {
+        case .Quantum:
+            throw Error.failedToCreateWallet
         case .Ledger:
             guard let ledgerDevice = ledger else {
                 throw Error.failedToCreateWallet
@@ -290,6 +320,10 @@ public extension RNWallet {
             kind = .Keystone(publicKey, xfp, path, contractVersion)
         }
 
+        return makeWallet(kind: kind, network: network, backupDate: backupDate)
+    }
+
+    private func makeWallet(kind: WalletKind, network: Network, backupDate: Date?) -> Wallet {
         let icon: WalletIcon
         if emoji.count == 1 {
             icon = .emoji(emoji)

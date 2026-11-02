@@ -58,15 +58,15 @@ final class BalanceServiceImplementation: BalanceService {
             tronBalance: nil
         )
 
-        try? walletBalanceRepository.saveWalletBalance(
-            walletBalance,
-            for: wallet
-        )
+        if wallet.kind != .quantum {
+            try? walletBalanceRepository.saveWalletBalance(walletBalance, for: wallet)
+        }
 
         return walletBalance
     }
 
     func getBalance(wallet: Wallet) throws -> WalletBalance {
-        try walletBalanceRepository.getWalletBalance(wallet: wallet)
+        guard wallet.kind != .quantum else { throw Wallet.Error.invalidWalletKind }
+        return try walletBalanceRepository.getWalletBalance(wallet: wallet)
     }
 }

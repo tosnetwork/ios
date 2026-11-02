@@ -2,6 +2,11 @@ import Foundation
 
 /// Untrusted read-only relay. Use on a worker thread; proof verification establishes authenticity.
 public final class TOSQuantumProofHTTPTransport {
+    public enum Error: Swift.Error {
+        case unavailable
+        case rpcRejected
+    }
+
     private let endpoint: URL
     private let configuration: URLSessionConfiguration
     private let timeout: TimeInterval
@@ -36,11 +41,19 @@ public final class TOSQuantumProofHTTPTransport {
         while receiver.completed.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
             guard DispatchTime.now() < deadline, !isCancelled() else { throw TOSPQError.invalidInput }
         }
-        guard !isCancelled(), receiver.failure == nil else { throw TOSPQError.invalidInput }
+        guard !isCancelled() else { throw TOSPQError.invalidInput }
+        if let failure = receiver.failure {
+            if failure is URLError { throw Error.unavailable }
+            if let failure = failure as? Error { throw failure }
+            throw TOSPQError.invalidInput
+        }
         try Self.checkEnvelope(receiver.bytes)
         guard let object = try JSONSerialization.jsonObject(with: receiver.bytes) as? [String: Any],
-              object["jsonrpc"] as? String == "2.0", object["id"] as? String == id, object["error"] == nil,
-              let result = object["result"] as? [String: Any], let reply = result["reply"] as? String,
+              object["jsonrpc"] as? String == "2.0", object["id"] as? String == id else {
+            throw TOSPQError.invalidInput
+        }
+        if object["error"] != nil { throw Error.rpcRejected }
+        guard let result = object["result"] as? [String: Any], let reply = result["reply"] as? String,
               reply.utf8.count <= encodedLimit, let decoded = Data(base64Encoded: reply),
               !decoded.isEmpty, decoded.count <= maximumBytes else { throw TOSPQError.invalidInput }
         return decoded
@@ -71,12 +84,17 @@ public final class TOSQuantumProofHTTPTransport {
         let completed = DispatchSemaphore(value: 0)
         let limit: Int
         var bytes = Data()
-        var failure: Error?
+        var failure: Swift.Error?
         init(limit: Int) { self.limit = limit }
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-                  response.expectedContentLength <= Int64(limit) else {
+            guard let http = response as? HTTPURLResponse else {
+                failure = TOSPQError.invalidInput; completionHandler(.cancel); return
+            }
+            guard (200...299).contains(http.statusCode) else {
+                failure = TOSQuantumProofHTTPTransport.Error.unavailable; completionHandler(.cancel); return
+            }
+            guard response.expectedContentLength <= Int64(limit) else {
                 failure = TOSPQError.invalidInput; completionHandler(.cancel); return
             }
             completionHandler(.allow)
@@ -85,13 +103,13 @@ public final class TOSQuantumProofHTTPTransport {
             guard data.count <= limit - bytes.count else { failure = TOSPQError.invalidInput; dataTask.cancel(); return }
             bytes.append(data)
         }
-        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-            if let error { failure = error }
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Swift.Error?) {
+            if failure == nil, let error { failure = error }
             completed.signal()
         }
         func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-            failure = TOSPQError.invalidInput
+            failure = TOSQuantumProofHTTPTransport.Error.unavailable
             completionHandler(nil)
         }
     }

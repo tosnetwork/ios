@@ -22,6 +22,7 @@ protocol TKInputRecoveryPhraseViewModel: AnyObject {
     var didUpdateSuggests: ((TKInputRecoveryPhraseSuggestsView.Model) -> Void)? { get set }
 
     func viewDidLoad()
+    func clearPhraseInput()
 }
 
 public enum RecoveryPhraseValidationResult {
@@ -63,6 +64,26 @@ final class TKInputRecoveryPhraseViewModelImplementation: TKInputRecoveryPhraseV
 
     func viewDidLoad() {
         setup()
+    }
+
+    func clearPhraseInput() {
+        formValidationTask?.cancel()
+        wordValidationTasks.values.forEach { $0.cancel() }
+        wordValidationTasks.removeAll()
+        suggestsTasks.values.forEach { $0.cancel() }
+        suggestsTasks.removeAll()
+        continueValidationTask?.cancel()
+        updateSuggestTask?.cancel()
+        activeIndex = nil
+
+        let count = phrase.count
+        phrase = Array(repeating: "", count: count)
+        for index in 0 ..< count {
+            didUpdateText?(index, "")
+            didUpdateInputValidationState?(index, true)
+        }
+        didUpdatePasteButtonIsHidden?(false)
+        continueButtonConfiguration.showsLoader = false
     }
 
     // MARK: - State
@@ -156,10 +177,14 @@ private extension TKInputRecoveryPhraseViewModelImplementation {
         var pasteButtonConfiguration = TKButton.Configuration.actionButtonConfiguration(category: .tertiary, size: .medium)
         pasteButtonConfiguration.content.title = .plainString(pasteButtonTitle)
         pasteButtonConfiguration.action = { [weak self] in
+            #if DEBUG
             let environment = ProcessInfo.processInfo.environment
             let injectedValue = environment["TOS_UI_TEST_RESET"] == "1"
                 ? environment["TOS_UI_TEST_PASTEBOARD"]
                 : nil
+            #else
+            let injectedValue: String? = nil
+            #endif
             guard let string = injectedValue ?? UIPasteboard.general.string else { return }
             _ = self?.shouldPaste(text: string, index: 0)
         }

@@ -5,7 +5,7 @@ public extension Wallet {
         }
 
         switch kind {
-        case .regular, .signer, .ledger, .keystone:
+        case .regular, .quantum, .signer, .ledger, .keystone:
             return true
         case .watchonly, .lockup:
             return false

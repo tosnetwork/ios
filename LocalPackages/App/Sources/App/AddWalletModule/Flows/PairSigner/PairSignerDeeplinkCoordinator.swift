@@ -49,6 +49,7 @@ private extension PairSignerDeeplinkCoordinator {
         coordinator.didCancel = { [weak self, weak coordinator] in
             guard let coordinator else { return }
             self?.removeChild(coordinator)
+            self?.didCancel?()
         }
 
         coordinator.didImport = { [weak self] publicKey, revisions, model in

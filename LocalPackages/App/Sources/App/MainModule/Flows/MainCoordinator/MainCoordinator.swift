@@ -441,6 +441,10 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         comment: String?,
         successReturn: URL? = nil
     ) {
+        if wallet.kind == .quantum {
+            openQuantumPayment(wallet: wallet, sendInput: sendInput, recipient: recipient, comment: comment)
+            return
+        }
         let navigationController = TKNavigationController()
         navigationController.setNavigationBarHidden(true, animated: false)
 
@@ -510,6 +514,10 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         comment: String?,
         pushRouter: NavigationControllerRouter
     ) {
+        if wallet.kind == .quantum {
+            openQuantumPayment(wallet: wallet, sendInput: sendInput, recipient: nil, comment: comment, pushRouter: pushRouter)
+            return
+        }
         let sendTokenCoordinator = SendModule(
             dependencies: SendModule.Dependencies(
                 coreAssembly: coreAssembly,
@@ -1127,20 +1135,39 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     func openTonDetails(wallet: Wallet) {
         guard let navigationController = router.rootViewController.navigationController else { return }
 
-        let historyListModule = HistoryModule(
-            dependencies: HistoryModule.Dependencies(
-                coreAssembly: coreAssembly,
-                keeperCoreMainAssembly: keeperCoreMainAssembly
-            )
-        ).createTonHistoryListModule(wallet: wallet)
-
-        historyListModule.output.didSelectEvent = { [weak self] event in
-            switch event {
-            case let .tonEvent(event):
-                self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
-            case let .tronEvent(event):
-                self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+        let historyContent: TokenDetailsListContentViewController
+        if wallet.kind == .quantum {
+            let quantumHistory = TOSQuantumHistoryViewController(wallet: wallet, embedded: true)
+            quantumHistory.didRequestPendingPayment = { [weak self] in
+                self?.openQuantumPayment(wallet: wallet, sendInput: .direct(item: .ton(.token(.ton, amount: 0))), recipient: nil, comment: nil)
             }
+            quantumHistory.didRequestReceive = { [weak self] in
+                self?.openReceive(tokens: [.ton(.ton)], wallet: wallet)
+            }
+            quantumHistory.didRequestConfigureRPC = { [weak quantumHistory] in
+                guard let quantumHistory else { return }
+                TOSRPCNodeEditor.present(from: quantumHistory) { [weak quantumHistory] in
+                    quantumHistory?.refreshAfterRPCConfigurationChange()
+                }
+            }
+            historyContent = quantumHistory
+        } else {
+            let historyListModule = HistoryModule(
+                dependencies: HistoryModule.Dependencies(
+                    coreAssembly: coreAssembly,
+                    keeperCoreMainAssembly: keeperCoreMainAssembly
+                )
+            ).createTonHistoryListModule(wallet: wallet)
+
+            historyListModule.output.didSelectEvent = { [weak self] event in
+                switch event {
+                case let .tonEvent(event):
+                    self?.openHistoryEventDetails(wallet: wallet, event: event, network: wallet.network)
+                case let .tronEvent(event):
+                    self?.openTronEventDetails(wallet: wallet, event: event, network: wallet.network)
+                }
+            }
+            historyContent = historyListModule.view
         }
 
         let module = TokenDetailsAssembly.module(
@@ -1156,8 +1183,8 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
                 ),
                 configuration: keeperCoreMainAssembly.configurationAssembly.configuration
             ),
-            tokenDetailsListContentViewController: historyListModule.view,
-            chartViewControllerProvider: { [keeperCoreMainAssembly, coreAssembly] in
+            tokenDetailsListContentViewController: historyContent,
+            chartViewControllerProvider: wallet.kind == .quantum ? nil : { [keeperCoreMainAssembly, coreAssembly] in
                 ChartAssembly.module(
                     token: .ton(.ton),
                     coreAssembly: coreAssembly,
@@ -2225,6 +2252,37 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             keeperCoreAssembly: keeperCoreMainAssembly,
             coreAssembly: coreAssembly
         )
+    }
+
+    private func openQuantumPayment(wallet: Wallet, sendInput: SendInput, recipient: Recipient?, comment: String?,
+                                    pushRouter: NavigationControllerRouter? = nil) {
+        guard case .direct(.ton(.token(.ton, let amount))) = sendInput,
+              recipient == nil || recipient?.tonRecipient != nil else {
+            showQuantumPaymentUnsupported(); return
+        }
+        if let address = recipient?.tonRecipient?.recipientAddress, case .domain = address {
+            // A resolved alias is not a fresh, network-bound payment grant.
+            // Keep the DNS flow closed until its dedicated validation is wired.
+            showQuantumPaymentUnsupported(); return
+        }
+        let controller = TOSQuantumPaymentViewController(wallet: wallet, amount: amount,
+            recipient: recipient?.tonRecipient, comment: comment,
+            recipientResolver: keeperCoreMainAssembly.loadersAssembly.recipientResolver(), authenticate: { [weak self] in
+                guard let self else { return false }
+                return await getPasscode() != nil
+            })
+        if let pushRouter { pushRouter.push(viewController: controller) }
+        else {
+            let navigation = TKNavigationController(rootViewController: controller)
+            navigation.configureTransparentAppearance()
+            router.present(navigation)
+        }
+    }
+    private func showQuantumPaymentUnsupported() {
+        let alert = UIAlertController(title: "Payment unavailable",
+            message: "This wallet currently supports direct TOS payments to a full wallet address.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        router.present(alert)
     }
 
     private func getPasscode() async -> String? {

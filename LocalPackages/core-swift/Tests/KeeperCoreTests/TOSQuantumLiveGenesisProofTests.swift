@@ -44,12 +44,14 @@ final class TOSQuantumLiveGenesisProofTests: XCTestCase {
             primaryKey: primary, rescueKey: rescue, policy: XCTUnwrap(TOSQuantumPolicy(rawValue: policy)), feeTreeId: tree, feePublicKey: fee, epoch0: epoch0)
         let manifest = try XCTUnwrap(JSONSerialization.jsonObject(with: read("manifest.json")) as? [String: Any])
         let now = try XCTUnwrap(manifest["controlled_now"] as? NSNumber).int64Value
-        func prove(_ role: String) throws -> TOSQuantumProofBridge.BoundRead {
+        func prove(_ role: String, creationRequest: Bool = false) throws -> TOSQuantumProofBridge.BoundRead {
             let session = try TOSQuantumProofSession(walletID: UUID(), locallyProvisionedAnchor: read("anchor.json"), baseDirectory: directory)
-            let names = role == "policy" ? ["masterchain-info.tl", "chain-0000.tl", "config.tl", "account.tl"] : ["chain-0000.tl", "account.tl"]
+            let names = creationRequest ? ["masterchain-info.tl", "chain-0000.tl", "config.tl"] :
+                (role == "policy" ? ["masterchain-info.tl", "chain-0000.tl", "config.tl", "account.tl"] : ["chain-0000.tl", "account.tl"])
             let replies = try names.map { try read(role + "/material/" + $0) }
             var calls = 0
-            let result = try session.enrollBound(request: read(role + "/request.json"), now: now) { _, capacity in
+            let request = try creationRequest ? TOSQuantumSelfPayNetwork.request(maximumAge: 300) : read(role + "/request.json")
+            let result = try session.enrollBound(request: request, now: now) { _, capacity in
                 guard calls < replies.count, replies[calls].count <= capacity else { throw TOSPQError.invalidInput }
                 defer { calls += 1 }; return replies[calls]
             }
@@ -66,6 +68,28 @@ final class TOSQuantumLiveGenesisProofTests: XCTestCase {
         XCTAssertThrowsError(try installed.requireRescueCustody(badRescue, now: now, maximumAge: 300), "Wrong current SLH key accepted")
         XCTAssertThrowsError(try installed.requireRescueCustody(rescue, now: now + 301, maximumAge: 300), "Expired SLH proof accepted")
         let policyProof = try prove("policy")
+        // This older capture proves configuration identity only. It does not
+        // establish that the new self-pay contract ran on this captured chain.
+        let creationProof = try prove("policy", creationRequest: true)
+        let networkContext = try TOSQuantumSelfPayNetwork(proof: creationProof, expectedGlobalID: global,
+                                                         now: now, maximumAge: 300)
+        XCTAssertEqual(networkContext.globalID, global)
+        XCTAssertEqual(networkContext.namespace, network)
+        try networkContext.requireSameCheckpoint(walletProof, now: now)
+        let selfPayIdentity = try networkContext.makeIdentity(primaryKey: primary, rescueKey: rescue,
+                                                              walletID: walletID, now: now)
+        try selfPayIdentity.requireNetwork(globalID: global, namespace: network)
+        XCTAssertEqual(selfPayIdentity.wallet.initialAuthority.primaryKey, primary)
+        XCTAssertThrowsError(try TOSQuantumSelfPayNetwork(proof: policyProof, expectedGlobalID: global + 1,
+                                                         now: now, maximumAge: 300), "Wrong selected network accepted")
+        XCTAssertThrowsError(try TOSQuantumSelfPayNetwork(proof: walletProof, expectedGlobalID: global,
+                                                         now: now, maximumAge: 300), "Missing config proof accepted")
+        XCTAssertThrowsError(try TOSQuantumSelfPayNetwork(proof: policyProof, expectedGlobalID: global,
+                                                         now: now + 301, maximumAge: 300), "Stale creation network accepted")
+        XCTAssertThrowsError(try networkContext.makeIdentity(primaryKey: primary, rescueKey: rescue,
+                                                             now: now + 301), "Creation reused expired network")
+        XCTAssertThrowsError(try networkContext.requireSameCheckpoint(walletProof, now: now + 301),
+                             "Expired account binding accepted")
         try installed.requirePrimaryExecution(policyProof: policyProof, now: now, maximumAge: 300)
         try installed.requirePrimaryCustody(primary, policyProof: policyProof, now: now, maximumAge: 300)
         let actions = try Builder().endCell()

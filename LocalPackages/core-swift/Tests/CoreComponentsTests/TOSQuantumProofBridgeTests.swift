@@ -1,6 +1,18 @@
 import XCTest
 @testable import CoreComponents
 final class TOSQuantumProofBridgeTests: XCTestCase {
+    func testProvenHeadJSONIntegerStorageRetainsUnsigned64BitRange() throws {
+        for text in ["0", "9223372036854775808", "18446744073709551615"] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data("{\"lt\":\(text)}".utf8)) as? [String: Any])
+            XCTAssertEqual(try TOSQuantumProofBridge.transactionLogicalTime(object["lt"]), UInt64(text))
+        }
+        for text in ["true", "-1", "1.25", "18446744073709551616", "\"123\""] {
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data("{\"lt\":\(text)}".utf8)) as? [String: Any])
+            XCTAssertThrowsError(try TOSQuantumProofBridge.transactionLogicalTime(object["lt"]))
+        }
+        XCTAssertThrowsError(try TOSQuantumProofBridge.transactionLogicalTime(NSNumber(value: 1.0)))
+    }
+
     func testRealHistoricalProofAndMissingMaterialRefusal() throws {
         let root = try XCTUnwrap(Bundle.module.url(forResource: "quantum-proof", withExtension: nil))
         func bytes(_ path: String) throws -> Data { try Data(contentsOf: root.appendingPathComponent(path)) }
