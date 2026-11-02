@@ -403,19 +403,21 @@ final class TOSQuantumPaymentViewController: UIViewController {
             self.quote = nil; authenticated = false; status.text = "Estimate expired. Re-estimate the saved payment."; render(); return
         }
         run("Submitting the saved signed message…") { [self] in
+            var submissionFailed = false
             do { try await coordinator.submit(quote) }
             catch {
                 record(error)
-                // A cancelled, superseded task cannot overwrite a newer screen.
-                try Task.checkCancellation()
-                self.quote = nil; authenticated = false
-                status.text = "Submission outcome is unknown. Verify the result before another payment."
-                return
+                submissionFailed = true
             }
+            // Both relay acceptance and a lost response can have durably advanced
+            // the authorization. Never render a stale in-memory signed phase.
             try Task.checkCancellation(); self.quote = nil; authenticated = false
+            pending = nil; emptyJournal = false
             let saved = try await coordinator.pending(wallet: wallet)
             try Task.checkCancellation(); pending = saved
-            status.text = "Submission outcome is unknown. Verify the result; relay acceptance is not payment confirmation."
+            status.text = submissionFailed
+                ? "Submission outcome is unknown. Verify the result before another payment."
+                : "Submission outcome is unknown. Verify the result; relay acceptance is not payment confirmation."
         }
     }
     private func verifyResult(continuing: Bool) {
