@@ -36,7 +36,8 @@ struct JettonTokenDetailsConfigurator: TokenDetailsConfigurator {
         var buttons = [
             TokenDetailsModel.Button(
                 iconButton: .send(.ton(.jetton(jettonItem))),
-                isEnable: wallet.isSendAvailable && jettonItem.jettonInfo.isTransferable && jettonAmount > 0
+                isEnable: (wallet.isSendAvailable || wallet.isQuantumSelfPayAvailable)
+                    && jettonItem.jettonInfo.isTransferable && jettonAmount > 0
             ),
             TokenDetailsModel.Button(
                 iconButton: .receive(.ton(.jetton(jettonItem))),

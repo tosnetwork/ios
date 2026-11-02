@@ -3496,6 +3496,7 @@ final class TOSQuantumTokenLiveUITests: XCTestCase {
         let send = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Send")).firstMatch
         XCTAssertTrue(send.waitForExistence(timeout: 15)); send.tap()
         let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(recipientField.waitForExistence(timeout: 15), app.debugDescription)
         XCTAssertTrue(enabled(recipientField)); recipientField.tap(); recipientField.typeText(recipient)
         let amount = app.textFields["quantum.payment.amount"]
         amount.tap(); amount.typeText("1.234567")
