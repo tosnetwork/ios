@@ -2192,23 +2192,31 @@ final class TOSWalletUITests: XCTestCase {
         assertNativeWalletHome()
     }
 
-    func testRPCNodeValidationPersistenceAndRestore() {
-        createNativeWalletToHome()
+    func testRPCNodeValidationPersistenceAndRestore() throws {
+        // This settings journey uses the current Quantum creation path. Missing
+        // trusted test-chain inputs must fail this selected test, never skip it.
+        for key in ["TOS_QUANTUM_GLOBAL_ID", "TOS_QUANTUM_ROOT_HASH", "TOS_QUANTUM_FILE_HASH"] {
+            let value = try XCTUnwrap(ProcessInfo.processInfo.environment[key], "Missing trusted test-chain input: \(key)")
+            guard !value.isEmpty else {
+                XCTFail("Empty trusted test-chain input: \(key)")
+                return
+            }
+        }
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
         openSettings()
         app.cells["settings.RPCNodeItem"].tap()
 
         let endpoint = app.textFields["settings.rpc.endpoint"]
         XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
-        endpoint.tap()
-        endpoint.typeText("not a valid endpoint")
+        replaceNetworkField(in: endpoint, with: "not a valid endpoint")
         app.buttons["Save"].firstMatch.tap()
         XCTAssertTrue(app.alerts["Invalid RPC Node"].waitForExistence(timeout: 5))
         app.alerts["Invalid RPC Node"].buttons["OK"].tap()
 
         app.cells["settings.RPCNodeItem"].tap()
         XCTAssertTrue(endpoint.waitForExistence(timeout: 5))
-        endpoint.tap()
-        endpoint.typeText("127.0.0.1:18645/jsonRPC")
+        replaceNetworkField(in: endpoint, with: "127.0.0.1:18645/jsonRPC")
         app.buttons["Save"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["http://127.0.0.1:18645"].waitForExistence(timeout: 5))
 
@@ -2217,15 +2225,30 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
         try? setProxyMode("normal", resetCounts: true)
         app.launch()
-        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10))
-        enterPasscode("1234")
+        // Lock screen is optional; Quantum wallets do not need the legacy
+        // missing-token login. Keep the same restart handling as payment tests.
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 2) {
+            enterPasscode("1234")
+        }
+        assertNativeWalletHome()
         XCTAssertTrue(waitForAnyProxyCount(greaterThan: 0))
         openSettings()
         XCTAssertTrue(app.staticTexts["http://127.0.0.1:18645"].waitForExistence(timeout: 5))
 
         app.cells["settings.RPCNodeItem"].tap()
         app.buttons["Restore Default"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["Default node"].waitForExistence(timeout: 5))
+        // This UI target is a Debug simulator app. With no launch override,
+        // removing the custom value restores the bundled Debug endpoint.
+        let defaultEndpoint = "http://127.0.0.1:18545"
+        XCTAssertTrue(app.staticTexts[defaultEndpoint].waitForExistence(timeout: 5))
+        app.terminate()
+        app.launch()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 2) {
+            enterPasscode("1234")
+        }
+        assertNativeWalletHome()
+        openSettings()
+        XCTAssertTrue(app.staticTexts[defaultEndpoint].waitForExistence(timeout: 5))
     }
 
     func testDeleteWalletRequiresAcknowledgementAndCanBeCancelled() {
