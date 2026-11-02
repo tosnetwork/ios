@@ -1,7 +1,7 @@
 import Foundation
 import CoreComponents
 
-/// Bounded untrusted transaction relay. A successful JSON-RPC response is never
+/// Bounded untrusted transaction and Token discovery relay. A successful JSON-RPC response is never
 /// a payment receipt; raw transaction cells still need proof-anchored hashes.
 internal final class TOSQuantumRPCTransport {
     private let endpoint: URL
@@ -19,7 +19,7 @@ internal final class TOSQuantumRPCTransport {
 
     func call(method: String, params: [String: Any], maximumBytes: Int = 2_097_152,
               isCancelled: () -> Bool = { Thread.current.isCancelled }) throws -> Any {
-        guard !Thread.isMainThread, ["getTransactions", "sendBocReturnHash", "estimateFee"].contains(method),
+        guard !Thread.isMainThread, ["getTransactions", "sendBocReturnHash", "estimateFee", "getAccountTokens", "getTokenData"].contains(method),
               (1...2_097_152).contains(maximumBytes), !isCancelled() else { throw TOSPQError.invalidInput }
         let id = UUID().uuidString
         let bytes = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "method": method, "params": params])

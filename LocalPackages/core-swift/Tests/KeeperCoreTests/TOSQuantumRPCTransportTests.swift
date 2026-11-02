@@ -25,6 +25,12 @@ final class TOSQuantumRPCTransportTests: XCTestCase {
                 let id = try XCTUnwrap(request["id"] as? String)
                 var reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": Self.mode == "wrongID" ? "wrong" : id,
                     "result": [["data": "PUBLIC"]]])
+                if Self.mode == "tokens" {
+                    reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "result": ["@type": "wallet.accountTokens", "tokens": []]])
+                }
+                if Self.mode == "metadata" {
+                    reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "result": ["@type": "ext.tokens.tokenMasterData"]])
+                }
                 if Self.mode == "trailing" { reply.append(Data("{}".utf8)) }
                 if Self.mode == "large" { reply = Data(repeating: 32, count: 2048) }
                 if Self.mode == "deep" {
@@ -60,4 +66,21 @@ final class TOSQuantumRPCTransportTests: XCTestCase {
             wait(for: [done], timeout: 5)
         }
     }
+    func testTokenDiscoveryAndMetadataUseTheBoundedRelay() throws {
+        for (method, mode, expected) in [("getAccountTokens", "tokens", "wallet.accountTokens"), ("getTokenData", "metadata", "ext.tokens.tokenMasterData")] {
+            Fixture.mode = mode
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [Fixture.self]
+            let relay = try TOSQuantumRPCTransport(endpoint: URL(string: "https://relay.example/jsonRPC")!, configuration: config, timeout: 0.3)
+            let done = expectation(description: method)
+            DispatchQueue.global().async {
+                defer { done.fulfill() }
+                do {
+                    let result = try relay.call(method: method, params: ["address": "0:" + String(repeating: "0", count: 64)])
+                    XCTAssertEqual((result as? [String: Any])?["@type"] as? String, expected)
+                } catch { XCTFail("Valid Token relay refused: \(error)") }
+            }
+            wait(for: [done], timeout: 5)
+        }
+    }
+
 }
