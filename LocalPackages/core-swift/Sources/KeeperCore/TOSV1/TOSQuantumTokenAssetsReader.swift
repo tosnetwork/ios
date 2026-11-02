@@ -78,10 +78,15 @@ internal final class TOSQuantumTokenAssetsReader {
             do {
                 observed = try accounts.observeToken(owner: owner, master: Address.parse(hint.master), wallet: Address.parse(hint.wallet))
             } catch { try cancellation.check(); unread += 1; continue }
-            guard let content = try? TOSTokenContent.decode(observed.masterState.content),
-                  let decimals = content.decimals else { unresolved += 1; continue }
+            guard let content = try? TOSTokenContent.decode(observed.masterState.content) else { unresolved += 1; continue }
+            var remote: TOSTokenMetadata?
+            if let uri = content.uri, content.name == nil || content.symbol == nil || content.decimals == nil {
+                remote = try? TOSTokenMetadata.read(uri, isCancelled: cancellation.stopped)
+                try cancellation.check()
+            }
+            guard let decimals = content.decimals ?? remote?.decimals else { unresolved += 1; continue }
             let info = JettonInfo(isTransferable: false, hasCustomPayload: false, address: observed.master,
-                fractionDigits: decimals, name: content.name ?? "Token", symbol: content.symbol,
+                fractionDigits: decimals, name: content.name ?? remote?.name ?? "Token", symbol: content.symbol ?? remote?.symbol,
                 verification: .none, imageURL: nil)
             tokens.append(JettonBalance(item: JettonItem(jettonInfo: info, walletAddress: observed.wallet),
                                         quantity: observed.balance, rates: [:]))
