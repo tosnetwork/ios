@@ -1,0 +1,21 @@
+{
+  "source_revision": "bb2b07a40d838940bc16efa6cf72d24bc343c148",
+  "tol_binary_sha256": "80f187f675e83a9e62e0d83f60ba2783d87427a7c28f7c0abdfaed57c48ee324",
+  "fift_binary_sha256": "4d14d4aec10d3c5d4809fb3932fc306a8c7ce5f1844ddf780a451d6a894d5eb1",
+  "contracts": [
+    {
+      "contract": "token-wallet",
+      "boc_bytes": 1087,
+      "boc_sha256": "6e73034b825789c68190667d16f752b85e0504c08139719d17a58d4a1222b889",
+      "source_sha256": "6eef5658e21ee9b4fe01ddc1eef5c284c015ca71568959aad5169772f35bc156"
+    },
+    {
+      "contract": "token-minter",
+      "boc_bytes": 715,
+      "boc_sha256": "fcca6d118928a30bc062d486f40db9617b51f8bdc52194449ae2b8289b76d48a",
+      "source_sha256": "2df7e4786635a567a5ca02686f54387869fcd1fcf5a70d446abf765a522e6837"
+    }
+  ],
+  "repeated_compilation_byte_identical": true,
+  "expected_wallet": "0:5c2e7defab4c288bc81524d1594af7a14a984c4d789ac2acf28a4e8b589f9293"
+}

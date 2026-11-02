@@ -189,10 +189,11 @@ internal final class TOSQuantumAccountReader {
         }
     }
 
-    /// Reference-family implementation. Other code families require explicit local support.
-    internal func observeReferenceToken(owner: Observation, master: Address, wallet: Address) throws -> TokenObservation {
-        let code = try TOSTokenContractCodes.referenceWallet()
-        let masterCode = try TOSTokenContractCodes.referenceMaster()
+    /// Choose a locally supported code family from the owner/master-derived address.
+    internal func observeToken(owner: Observation, master: Address, wallet: Address) throws -> TokenObservation {
+        let family = try TOSTokenContractCodes.family(owner: owner.identity.address, master: master, wallet: wallet)
+        let code = family.wallet
+        let masterCode = family.master
         try owner.requireFresh(now: now())
         guard wallet == (try TOSTokenWalletState.address(owner: owner.identity.address, master: master, walletCode: code)) else {
             throw TOSPQError.keyBinding

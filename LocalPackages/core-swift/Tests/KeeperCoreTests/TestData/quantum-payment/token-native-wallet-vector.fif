@@ -1,0 +1,7 @@
+"token-wallet-tol.boc" file>B B>boc constant token-code
+<b 4 3 u, 0 8 i, 0x1111111111111111111111111111111111111111111111111111111111111111 256 u, b> constant owner
+<b 4 3 u, 0 8 i, 0x2222222222222222222222222222222222222222222222222222222222222222 256 u, b> constant master
+<b 0 4 u, owner <s s, master <s s, token-code ref, b> constant wallet-data
+<b 0 2 u, token-code dict, wallet-data dict, 0 1 u, b> dup hashu . cr
+2 boc+>B "token-native-wallet-init.boc" B>file
+wallet-data 2 boc+>B "token-native-wallet-data.boc" B>file
