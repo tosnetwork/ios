@@ -300,6 +300,96 @@ final class TOSWalletUITests: XCTestCase {
             alreadyDeployed: true)
     }
 
+    func testQuantumHomeSendRejectsInsufficientFundsAndCancelsFeeWithoutBroadcast() throws {
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        func control(_ route: String) throws -> [String: Any] {
+            var request = URLRequest(url: try XCTUnwrap(URL(string: proxyEndpoint + route)))
+            request.httpMethod = "POST"; request.httpBody = Data("{}".utf8)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let timeout: TimeInterval = route.hasSuffix("/fund") ? 75 : 10
+            request.timeoutInterval = timeout
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: synchronousData(
+                request: request, description: "home send public fixture", timeout: timeout)) as? [String: Any])
+        }
+        func tap(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            for _ in 0..<6 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
+            XCTAssertTrue(button.waitForExistence(timeout: 10)); XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func assertNoBroadcast() throws {
+            XCTAssertEqual((try control("/__quantum_payment/status")["events"] as? [[String: Any]])?.count, 0)
+        }
+        func enabled(_ element: XCUIElement) -> Bool {
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                element.exists && element.isEnabled
+            }, object: element)
+            return XCTWaiter.wait(for: [ready], timeout: 60) == .completed
+        }
+        let original = try control("/__quantum_balance/snapshot")
+        let address = try XCTUnwrap(original["address"] as? String)
+        XCTAssertEqual(try rpcBalance(address: address), 0)
+        app.descendants(matching: .any)["Send"].tap()
+        let recipient = app.textFields["quantum.payment.recipient"]
+        let amount = app.textFields["quantum.payment.amount"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 10))
+        XCTAssertTrue(enabled(recipient))
+        recipient.tap(); recipient.typeText("invalid-address")
+        amount.tap(); amount.typeText("1.000000001")
+        tap("review")
+        let status = app.staticTexts["quantum.payment.status"]
+        XCTAssertTrue(status.label.hasPrefix("Check the full address"))
+        XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+        try assertNoBroadcast()
+
+        let target = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0"
+        replaceText(in: recipient, with: target)
+        tap("review")
+        let insufficient = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            status.exists && status.label.hasPrefix("Insufficient TOS balance")
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [insufficient], timeout: 30), .completed,
+                       "An unfunded Quantum wallet must explain the balance error: " + status.label)
+        XCTAssertTrue(recipient.isEnabled); XCTAssertTrue(amount.isEnabled)
+        XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+        XCTAssertEqual(try control("/__quantum_payment/pending")["has_signed_boc"] as? Bool, false)
+        try assertNoBroadcast()
+
+        let funding = try control("/__quantum_balance/fund")
+        XCTAssertEqual(funding["address"] as? String, address)
+        let funded = try rpcBalance(address: address)
+        XCTAssertEqual(funded, 10_000_000_000)
+        tap("review")
+        let sign = app.buttons["quantum.payment.sign"]
+        XCTAssertTrue(enabled(sign))
+        let details = app.staticTexts["quantum.payment.details"]
+        XCTAssertTrue(details.label.contains(target)); XCTAssertTrue(details.label.contains("1.000000001 TOS"))
+        tap("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 10)); enterPasscode("1234")
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.send"]))
+        let signed = try control("/__quantum_payment/pending")
+        XCTAssertEqual(signed["phase"] as? String, "signed")
+        XCTAssertEqual(signed["fee_confirmed"] as? Bool, false)
+        let operation = try XCTUnwrap(signed["operation_id"] as? String)
+        let boc = try XCTUnwrap(signed["signed_boc_sha256"] as? String)
+        try assertNoBroadcast()
+        app.navigationBars.buttons.firstMatch.tap()
+        assertNativeWalletHome()
+        app.descendants(matching: .any)["Send"].tap()
+        XCTAssertTrue(app.buttons["quantum.payment.estimate"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+        let retained = try control("/__quantum_payment/pending")
+        XCTAssertEqual(retained["operation_id"] as? String, operation)
+        XCTAssertEqual(retained["signed_boc_sha256"] as? String, boc)
+        XCTAssertEqual(retained["fee_confirmed"] as? Bool, false)
+        XCTAssertEqual(try rpcBalance(address: address), funded)
+        try assertNoBroadcast()
+        retainScreenshot(named: "Quantum home Send retains unconfirmed fee without broadcasting")
+    }
+
     private func quantumAppPaymentJourney(restoredIdentity: String? = nil,
         recipient: String = "0:8cd34918c9b179b3f22da35bf741c9713f2b19642871e03f777280db2594bbd0",
         alreadyDeployed: Bool = false) throws {

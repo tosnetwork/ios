@@ -284,7 +284,15 @@ final class TOSQuantumPaymentViewController: UIViewController {
             run("Verifying recipient, account and payment…") { [self] in
                 guard try await validateRecipient(text, expected: address, body: body) else { return }
                 let intent = try TOSQuantumPaymentIntent(recipient: address, amount: value, bounce: selectedBounce, comment: body)
-                let value = try await preparation.prepare(wallet: wallet, intent: intent)
+                let value: TOSQuantumPreparedPayment
+                do {
+                    value = try await preparation.prepare(wallet: wallet, intent: intent)
+                } catch TOSQuantumPreparedPayment.Error.insufficientValue {
+                    // Preparation is read-only: no signature or journal reservation
+                    // exists yet, so the user can safely correct the amount.
+                    status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
+                    return
+                }
                 try Task.checkCancellation(); prepared = value; show(value.intent)
                 details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"
                 status.text = "Review these details. Signing and estimating locally will not broadcast."
