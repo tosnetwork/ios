@@ -66,10 +66,12 @@ final class TOSQuantumPaymentViewController: UIViewController {
         super.viewDidLoad(); title = "Quantum payment"; view.backgroundColor = .systemBackground
         navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(close))
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.accessibilityIdentifier = "quantum.payment.form"
+        scroll.keyboardDismissMode = .interactive
         let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 14; stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll); scroll.addSubview(stack)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), scroll.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), scroll.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20), stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 20), stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -20),
@@ -282,7 +284,15 @@ final class TOSQuantumPaymentViewController: UIViewController {
             run("Verifying recipient, account and payment…") { [self] in
                 guard try await validateRecipient(text, expected: address, body: body) else { return }
                 let intent = try TOSQuantumPaymentIntent(recipient: address, amount: value, bounce: selectedBounce, comment: body)
-                let value = try await preparation.prepare(wallet: wallet, intent: intent)
+                let value: TOSQuantumPreparedPayment
+                do {
+                    value = try await preparation.prepare(wallet: wallet, intent: intent)
+                } catch TOSQuantumPreparedPayment.Error.insufficientValue {
+                    // Preparation is read-only: no signature or journal reservation
+                    // exists yet, so the user can safely correct the amount.
+                    status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
+                    return
+                }
                 try Task.checkCancellation(); prepared = value; show(value.intent)
                 details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"
                 status.text = "Review these details. Signing and estimating locally will not broadcast."

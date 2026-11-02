@@ -2,10 +2,284 @@ import XCTest
 import Darwin
 import BigInt
 import TonSwift
-import CoreComponents
+@testable import CoreComponents
+import CryptoKit
 @testable import KeeperCore
 
 final class TOSQuantumPaymentCoordinatorTests: XCTestCase {
+    func testBackupClassificationRequiresFreshBoundObservation() async throws {
+        let f = try Fixture()
+        let reader = TOSQuantumAccountReader(baseDirectory: f.base, transport: { f.query }, now: { f.clock })
+        let observation = try reader.observeEnrolled(id: f.id, identity: f.identity, profile: f.profile,
+            configIndices: [8, 19, 48])
+        guard case .active(let state) = observation.snapshot.status else { return XCTFail("Expected active fixture") }
+        let password = "public classification password"
+        let seed = Data(repeating: 0x11, count: 32)
+        let role = TOSQuantumBackupPayload.Role(role: 1, account: 0, generation: 0, seed: seed,
+            publicKeyHash: Data(SHA256.hash(data: state.authority.primaryKey)), sourceProfile: 1,
+            wordIndices: [], phrasePassword: Data(), master: Data())
+        func encrypt(_ birth: TOSQuantumSelfPayIdentity) throws -> Data {
+            var plaintext = try TOSQuantumBackupPayload.encodeUnverified(globalID: f.profile.globalID,
+                root: Data(hex: f.profile.rootHash), file: Data(hex: f.profile.fileHash),
+                namespace: state.authority.namespace, birth: birth.toBOC(), authority: state.authority.cell.toBoc(), roles: [role])
+            defer { plaintext.resetBytes(in: 0..<plaintext.count) }
+            return try TOSQuantumBackupCipher.encrypt(plaintext, password: password)
+        }
+        func inspect(_ birth: TOSQuantumSelfPayIdentity) throws -> TOSQuantumBackupInspection {
+            try TOSQuantumBackupInspection(encrypted: encrypt(birth), password: password,
+                profile: f.profile, expectedNamespace: state.authority.namespace)
+        }
+        let encryptedFile = try encrypt(f.identity)
+        let backup = try TOSQuantumBackupInspection(encrypted: encryptedFile, password: password,
+            profile: f.profile, expectedNamespace: state.authority.namespace)
+        let matches = try backup.classify(observation: observation, now: f.clock)
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches[0].role, .primary)
+        XCTAssertEqual(matches[0].match, .matchesCurrent)
+        let initial = try f.outbox.prepareBackupImport(backup)
+        XCTAssertEqual(initial.phase, .boundSecrets)
+        XCTAssertTrue(try f.outbox.requiresRecovery(f.identity))
+        let ordinaryPayment = try f.payment()
+        XCTAssertThrowsError(try f.outbox.reserve(payment: ordinaryPayment, now: f.clock)) { error in
+            if case .recoveryRequired? = error as? TOSQuantumOutbox.Error { return }
+            XCTFail("Expected recovery isolation rejection, got \(error)")
+        }
+        let reopened = try TOSQuantumOutbox(baseDirectory: f.base.appendingPathComponent("outbox"))
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        let observed = try reopened.observeBackupImport(backup, observation: observation, now: f.clock)
+        XCTAssertEqual(observed[0].match, .matchesCurrent)
+        let progressed = try reopened.prepareBackupImport(backup)
+        XCTAssertEqual(progressed.id, initial.id)
+        XCTAssertEqual(progressed.phase, .observedRoles)
+        // A different encrypted export of the same wallet cannot overwrite a pending transaction.
+        XCTAssertThrowsError(try reopened.prepareBackupImport(inspect(f.identity)))
+        let name = f.identity.cell.hash().map { String(format: "%02x", $0) }.joined() + ".import"
+        let canonical = f.base.appendingPathComponent("outbox/" + name)
+        let original = try Data(contentsOf: canonical)
+        let stage = canonical.appendingPathExtension("next")
+        try original.write(to: stage)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.path)
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stage.path))
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        var jumped = try XCTUnwrap(JSONSerialization.jsonObject(with: original) as? [String: Any])
+        jumped["phase"] = 5
+        try JSONSerialization.data(withJSONObject: jumped).write(to: stage)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: stage.path)
+        XCTAssertThrowsError(try reopened.prepareBackupImport(backup))
+        XCTAssertEqual(try Data(contentsOf: canonical), original)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        try FileManager.default.removeItem(at: stage)
+        XCTAssertThrowsError(try backup.classify(observation: observation, now: f.clock + 301))
+        XCTAssertThrowsError(try reopened.observeBackupImport(backup, observation: observation, now: f.clock + 301))
+        let otherBirth = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(
+            authority: f.identity.wallet.initialAuthority, walletID: 1))
+        let other = try inspect(otherBirth)
+        XCTAssertThrowsError(try other.classify(observation: observation, now: f.clock))
+        var time = f.clock
+        var writes = 0
+        var captured: TOSQuantumBackupInspectionSession?
+        func store(_ body: (TOSQuantumBackupInspectionSession, UUID, Data, Data, Data) throws -> Void) throws -> TOSQuantumOutbox.BackupImportCheckpoint {
+            try reopened.storeBackupImport(encrypted: encryptedFile, password: password, profile: f.profile,
+                expectedNamespace: state.authority.namespace, observation: observation, now: { time }, persist: body)
+        }
+        XCTAssertThrowsError(try store { session, id, birth, primary, rescue in
+            writes += 1; captured = session
+            XCTAssertEqual(id, initial.id); XCTAssertEqual(birth, f.identity.cell.hash())
+            XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+            XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+            XCTAssertEqual(try session.validateSecrets(primary: primary, rescue: rescue).count, 1)
+            throw NSError(domain: "InjectedProtectedStoreFailure", code: 1)
+        })
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+        XCTAssertThrowsError(try captured?.validateSecrets(primary: state.authority.primaryKey, rescue: state.authority.rescueKey))
+        XCTAssertThrowsError(try store { _, _, _, _, _ in writes += 1; time += 301 })
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .observedRoles)
+        time = f.clock
+        var recoveryFrame = Data()
+        defer { recoveryFrame.resetBytes(in: 0..<recoveryFrame.count) }
+        let stored = try store { _, id, birth, _, _ in
+            writes += 1
+            var material = try TOSQuantumBackupCipher.decrypt(encryptedFile, password: password)
+            defer { material.resetBytes(in: 0..<material.count) }
+            recoveryFrame = try TOSQuantumRecoveryMaterialKeychain.encode(material, id: id,
+                birthHash: birth, encryptedDigest: backup.encryptedDigest)
+        }
+        XCTAssertEqual(stored.id, initial.id); XCTAssertEqual(stored.phase, .protectedStored)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        XCTAssertEqual(writes, 3)
+        let marker = canonical.deletingPathExtension().appendingPathExtension("recovery")
+        try FileManager.default.removeItem(at: marker)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock)) { error in
+            if case .recoveryRequired? = error as? TOSQuantumOutbox.Error { return }
+            XCTFail("Missing marker bypassed import isolation: \(error)")
+        }
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, initial.id)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+        var reads = 0
+        func readMaterial(_ checkpoint: TOSQuantumOutbox.BackupImportCheckpoint) throws -> TOSQuantumBackupInspectionSession {
+            reads += 1
+            var material = try TOSQuantumRecoveryMaterialKeychain.payload(recoveryFrame, id: checkpoint.id,
+                birthHash: checkpoint.identity.cell.hash(), encryptedDigest: checkpoint.encryptedDigest)
+            defer { material.resetBytes(in: 0..<material.count) }
+            return try TOSQuantumBackupInspectionSession(protectedPayload: material, originalDigest: checkpoint.encryptedDigest)
+        }
+        let exported = try reopened.exportBackupImport(backup, observation: observation, selected: [.primary],
+            password: "public second export password", now: { f.clock }, read: readMaterial)
+        let checked = try TOSQuantumBackupInspection(encrypted: exported, password: "public second export password",
+            profile: f.profile, expectedNamespace: state.authority.namespace)
+        XCTAssertEqual(checked.identity.birth.address, f.identity.address)
+        XCTAssertEqual(checked.roles.map(\.role), [.primary])
+        XCTAssertThrowsError(try reopened.exportBackupImport(backup, observation: observation, selected: [.rescue],
+            password: "public second export password", now: { f.clock }, read: readMaterial))
+        XCTAssertEqual(reads, 1)
+        var readCompleted = false, afterReadClockCalls = 0
+        var retainedSession: TOSQuantumBackupInspectionSession?
+        XCTAssertThrowsError(try reopened.exportBackupImport(backup, observation: observation, selected: [.primary],
+            password: "public second export password", now: {
+                if readCompleted { afterReadClockCalls += 1 }
+                return f.clock + (afterReadClockCalls >= 2 ? 301 : 0)
+            }, read: { checkpoint in
+                let session = try readMaterial(checkpoint)
+                retainedSession = session; readCompleted = true
+                return session
+            }))
+        XCTAssertEqual(afterReadClockCalls, 2)
+        XCTAssertThrowsError(try retainedSession?.validateSecrets(primary: state.authority.primaryKey, rescue: state.authority.rescueKey))
+        let publicFile = canonical.deletingPathExtension().appendingPathExtension("recovery-record")
+        XCTAssertThrowsError(try reopened.retainBackupImportRecord(backup, read: { _ in
+            throw NSError(domain: "InjectedProtectedReadFailure", code: 1)
+        }))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publicFile.path))
+        XCTAssertThrowsError(try reopened.retainBackupImportRecord(backup, read: readMaterial, afterRecord: {
+            throw NSError(domain: "InterruptedBeforeCheckpoint", code: 1)
+        }))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: publicFile.path))
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .protectedStored)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        let durable = try reopened.retainBackupImportRecord(backup, read: readMaterial)
+        XCTAssertEqual(durable.id, initial.id)
+        XCTAssertEqual(durable.phase, .publicRecordDurable)
+        let record = try reopened.recoveryRecord(f.identity, id: durable.id)
+        XCTAssertEqual(record.identity, backup.identity.birth)
+        XCTAssertEqual(record.encryptedDigest, backup.encryptedDigest)
+        XCTAssertEqual(record.mode, "recovery_only")
+        let originalRecord = try Data(contentsOf: publicFile)
+        XCTAssertEqual(try reopened.retainBackupImportRecord(backup, read: readMaterial).id, durable.id)
+        XCTAssertEqual(try Data(contentsOf: publicFile), originalRecord)
+        var conflicting = try XCTUnwrap(JSONSerialization.jsonObject(with: originalRecord) as? [String: Any])
+        conflicting["encryptedDigest"] = Data(repeating: 0, count: 32).base64EncodedString()
+        let conflictBytes = try JSONSerialization.data(withJSONObject: conflicting)
+        try conflictBytes.write(to: publicFile)
+        XCTAssertThrowsError(try reopened.retainBackupImportRecord(backup, read: readMaterial))
+        XCTAssertEqual(try Data(contentsOf: publicFile), conflictBytes)
+        try Data("{".utf8).write(to: publicFile)
+        XCTAssertThrowsError(try reopened.retainBackupImportRecord(backup, read: readMaterial))
+        XCTAssertEqual(try Data(contentsOf: publicFile), Data("{".utf8))
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        try originalRecord.write(to: publicFile)
+        XCTAssertEqual(try reopened.retainBackupImportRecord(backup, read: readMaterial).id, durable.id)
+        let durableJournal = try Data(contentsOf: canonical)
+        try FileManager.default.removeItem(at: canonical)
+        try FileManager.default.removeItem(at: marker)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock))
+        try durableJournal.write(to: canonical)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: canonical.path)
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).id, durable.id)
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock))
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        let restoredObservation = try reader.observeRecoveryImport(durable, expectedNamespace: state.authority.namespace)
+        XCTAssertEqual(restoredObservation.id, durable.id)
+        XCTAssertThrowsError(try reader.observeRecoveryImport(durable, expectedNamespace: Data(repeating: 0, count: 32)))
+        let registry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("restored-registry"))))
+        let metadata = WalletMetaData(label: "Public restored fixture", tintColor: .defaultColor, icon: .icon(.wallet))
+        let conflictRegistry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("existing-registry"))))
+        try await conflictRegistry.addWallets([f.wallet()])
+        do {
+            try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                setupSettings: WalletSetupSettings(), walletsStore: conflictRegistry)
+            XCTFail("Existing birth identity was replaced with another UUID")
+        } catch { }
+        XCTAssertEqual(try conflictRegistry.registeredWallets().map(\.id), [f.id.uuidString])
+        let racingRegistry = WalletsStore(keeperInfoStore: KeeperInfoStore(keeperInfoRepository:
+            FileSystemVault<KeeperInfo, String>(fileManager: .default, directory: f.base.appendingPathComponent("racing-registry"))))
+        let competing = TOSQuantumOutbox.RecoveryRecord(version: 1, id: UUID(), identity: record.identity,
+            profile: record.profile, encryptedDigest: record.encryptedDigest, mode: "recovery_only")
+        @Sendable func attempt(_ candidate: TOSQuantumOutbox.RecoveryRecord) async -> Bool {
+            do {
+                try await WalletAddController.publishQuantumRecoveryRecord(candidate, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: racingRegistry)
+                return true
+            } catch { return false }
+        }
+        async let first = attempt(record)
+        async let second = attempt(competing)
+        let accepted = await [first, second].filter { $0 }
+        XCTAssertEqual(accepted.count, 1)
+        XCTAssertEqual(try racingRegistry.registeredWallets().count, 1)
+        var published = 0
+        let cancelled = Task { () -> Bool in
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { _ in
+                    XCTFail("Cancelled publication reached registry")
+                }
+                return false
+            } catch is CancellationError { return true }
+            catch { return false }
+        }
+        let cancellationRejected = await cancelled.value
+        XCTAssertTrue(cancellationRejected)
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: observation, now: { f.clock }) { _ in
+                published += 1; XCTFail("Observation for another UUID reached publication")
+            }
+            XCTFail("Wrong enrollment UUID accepted")
+        } catch { }
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { _ in
+                throw NSError(domain: "RegistryWriteFailure", code: 1)
+            }
+            XCTFail("Failed registry write advanced checkpoint")
+        } catch { }
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .publicRecordDurable)
+        var publishTime = f.clock
+        do {
+            _ = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { publishTime }) { record in
+                try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: registry)
+                published += 1; publishTime += 301
+            }
+            XCTFail("Expired post-publication proof advanced checkpoint")
+        } catch { }
+        XCTAssertEqual(try registry.registeredWallets().count, 1)
+        XCTAssertEqual(try reopened.prepareBackupImport(backup).phase, .publicRecordDurable)
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+        for _ in 0..<2 {
+            let complete = try await reopened.publishBackupImport(backup, observation: restoredObservation, now: { f.clock }) { record in
+                try await WalletAddController.publishQuantumRecoveryRecord(record, metaData: metadata,
+                    setupSettings: WalletSetupSettings(), walletsStore: registry)
+                published += 1
+            }
+            XCTAssertEqual(complete.id, durable.id)
+            XCTAssertEqual(complete.phase, .publishedRecoveryOnly)
+        }
+        XCTAssertEqual(published, 3)
+        let imported = try XCTUnwrap(registry.registeredWallets().first)
+        XCTAssertEqual(imported.id, durable.id.uuidString)
+        XCTAssertEqual(try registry.registeredWallets().count, 1)
+        XCTAssertThrowsError(try TOSQuantumCreationRecord.load(id: durable.id, baseDirectory: f.base))
+        let restoredBalance = try await reader.read(wallet: imported)
+        XCTAssertEqual(restoredBalance.balance, observation.snapshot.balance)
+        XCTAssertThrowsError(try reader.readStored(id: UUID(), identity: f.identity))
+        XCTAssertThrowsError(try reopened.reserve(payment: ordinaryPayment, now: f.clock))
+        XCTAssertTrue(try reopened.requiresRecovery(f.identity))
+    }
+
     private final class Fixture {
         let base: URL, outbox: TOSQuantumOutbox, assets: URL, id = UUID()
         let profile: TOSQuantumNetworkProfile, identity: TOSQuantumSelfPayIdentity

@@ -20,7 +20,8 @@ public final class TOSQuantumPaymentCoordinator {
             let relay = try TOSQuantumProofHTTPTransport(endpoint: endpoint)
             return { try relay.query($0, maximumBytes: $1, isCancelled: cancelled) }
         }, signer: { entry, id, context in
-            try custody.sign(id: id, role: entry.role, context: context, expectedPublicKey: entry.signingPublicKey,
+            try custody.signRegistered(id: id, role: entry.role, network: context.network, globalID: context.globalID,
+                expectedPublicKey: entry.signingPublicKey,
                 purpose: .selfPay, digest: entry.requestHash)
         }, broadcaster: { bytes, cancelled in
             let rpc = try TOSQuantumRPCTransport(endpoint: Self.endpoint())

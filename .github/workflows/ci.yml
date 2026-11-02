@@ -100,6 +100,20 @@ jobs:
             TEST_ONLY=TOSCustodyHostedTests/TOSQuantumKeychainHostedTests \
             TEST_DESTINATION="$TEST_DESTINATION" TEST_DIAGNOSTICS=never
 
+      - name: Package unsigned release candidate
+        run: |
+          test -d "build/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app"
+          COPYFILE_DISABLE=1 tar -czf build/TOSWallet-unsigned.xcarchive.tar.gz \
+            -C build/release-archive TOSWallet.xcarchive
+
+      - name: Retain unsigned release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-unsigned-release-${{ github.sha }}
+          path: build/TOSWallet-unsigned.xcarchive.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Retain build and test evidence
         if: always()
         uses: actions/upload-artifact@v4

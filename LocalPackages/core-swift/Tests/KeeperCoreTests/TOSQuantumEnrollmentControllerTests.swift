@@ -5,6 +5,30 @@ import TronSwift
 @testable import KeeperCore
 
 final class TOSQuantumEnrollmentControllerTests: XCTestCase {
+    func testEncryptedBackupPreviewDoesNotEnrollWalletOrTouchPhraseVault() async throws {
+        let fixture = try Fixture()
+        let resource = try XCTUnwrap(Bundle.module.url(forResource: "quantum-backup-exchange-v1", withExtension: nil))
+        let encrypted = try Data(contentsOf: resource.appendingPathComponent("android-public-mixed-role-v1.tosqbk"))
+        let profile = try TOSQuantumNetworkProfile(globalID: -239, rootHash: String(repeating: "03", count: 32),
+            fileHash: String(repeating: "04", count: 32))
+        let namespace = Data((32..<64).map(UInt8.init))
+        let preview = try await fixture.controller.inspectQuantumBackup(encrypted: encrypted,
+            password: "public exchange password 😀", profile: profile, expectedNamespace: namespace)
+        XCTAssertEqual(preview.address, "0:cb22fd34552d9cbd1de8069de7faa9122faa393fbc308014e204e7947519ae2e")
+        XCTAssertTrue(preview.containsPrimary); XCTAssertTrue(preview.containsRescue)
+        do {
+            _ = try await fixture.controller.inspectQuantumBackup(encrypted: encrypted,
+                password: "wrong public exchange password", profile: profile, expectedNamespace: namespace)
+            XCTFail("Wrong password produced a preview")
+        } catch { }
+        let retried = try await fixture.controller.inspectQuantumBackup(encrypted: encrypted,
+            password: "public exchange password 😀", profile: profile, expectedNamespace: namespace)
+        XCTAssertEqual(retried.address, preview.address)
+        XCTAssertTrue(try fixture.store.registeredWallets().isEmpty)
+        XCTAssertTrue(fixture.roles.isEmpty); XCTAssertTrue(fixture.checkpoints.isEmpty)
+        XCTAssertEqual(fixture.mnemonics.reads, 0); XCTAssertEqual(fixture.mnemonics.checks, 0)
+        XCTAssertEqual(try TOSQuantumCreationRecord.loadAll(baseDirectory: fixture.base).count, 1)
+    }
     private enum Failure: Swift.Error { case injected }
     private final class Mnemonics: MnemonicsRepository {
         var hasVault = true, valid = true, reads = 0, checks = 0, removed = [String]()

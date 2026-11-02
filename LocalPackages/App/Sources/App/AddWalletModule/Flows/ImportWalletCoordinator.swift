@@ -56,6 +56,8 @@ private extension ImportWalletCoordinator {
             suggestsProvider: AddWalletInputRecoveryPhraseSuggestsProvider()
         )
         recoveryPhraseInputViewController = inputRecoveryPhrase.viewController
+        inputRecoveryPhrase.viewController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "Backup file", style: .plain, target: self, action: #selector(openEncryptedBackup))
 
         inputRecoveryPhrase.output.didInputRecoveryPhrase = { [weak self] phrase, completion in
             guard let self = self else { return }
@@ -78,6 +80,14 @@ private extension ImportWalletCoordinator {
             },
             completion: nil
         )
+    }
+
+    @objc func openEncryptedBackup() {
+        recoveryPhraseInputViewController?.clearRecoveryPhraseInput()
+        mnemonicFormat = nil; importsQuantumWallet = false; quantumRecoveryProfile = nil
+        let screen = TOSQuantumBackupImportViewController(controller: walletsUpdateAssembly.walletAddController())
+        screen.didImport = { [weak self] in self?.didImportWallets?() }
+        router.push(viewController: screen, animated: true)
     }
 
     func chooseMnemonicFormat(phrase: [String], completion: @escaping () -> Void) {
