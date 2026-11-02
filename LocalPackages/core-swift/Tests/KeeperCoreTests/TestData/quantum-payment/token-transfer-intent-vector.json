@@ -1,0 +1,19 @@
+{
+  "purpose": "independent standard TEP-74 body, bounceable sender Token-wallet message and fixed-value action list; not execution or balance proof",
+  "owner": "0:1111111111111111111111111111111111111111111111111111111111111111",
+  "master": "0:2222222222222222222222222222222222222222222222222222222222222222",
+  "wallet": "0:5c2e7defab4c288bc81524d1594af7a14a984c4d789ac2acf28a4e8b589f9293",
+  "recipient": "0:3333333333333333333333333333333333333333333333333333333333333333",
+  "units": "9007199254740993",
+  "queryId": "18446744073709551615",
+  "attachedTos": "100000000",
+  "forwardTos": "0",
+  "decimals": 6,
+  "fift_sha256": "4d14d4aec10d3c5d4809fb3932fc306a8c7ce5f1844ddf780a451d6a894d5eb1",
+  "files": {
+    "token-transfer-intent-vector.fif": "1fc6bfb41e0981975c8b3ee66654d17f3030c96ff9fc1bf04a45aaeb92f59df6",
+    "token-transfer-intent-body.boc": "c93e2e20a4042c4c6997f04c08b96e2029847423e8a91d20f62c74d15fc3832f",
+    "token-transfer-intent-message.boc": "6913ad2ef2aeaa029d634bf4d82928622937e20af48e28d05f5bce173f01228b",
+    "token-transfer-intent-actions.boc": "6e2603c6cb7c63bd14c31cf8d8ec92c3072d178546a5632807b5afd97d7eebfe"
+  }
+}
