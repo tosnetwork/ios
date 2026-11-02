@@ -48,6 +48,24 @@ final class TOSQuantumTokenTransferIntentTests: XCTestCase {
         XCTAssertNotEqual(base, precision)
         XCTAssertEqual(try base.actions().hash(), try precision.actions().hash())
     }
+    func testPaymentIntentPersistsTokenAndRejectsConflictingOuterEnvelope() throws {
+        let token = try intent()
+        let payment = TOSQuantumPaymentIntent(tokenTransfer: token)
+        XCTAssertEqual(try payment.actions().hash(), try token.actions().hash())
+        let data = try JSONEncoder().encode(payment)
+        XCTAssertEqual(try JSONDecoder().decode(TOSQuantumPaymentIntent.self, from: data), payment)
+        let original = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        for (key, bad) in [("recipient", try address("33").toRaw() as Any),
+                           ("amount", "1" as Any), ("bounce", false as Any), ("comment", "unexpected" as Any)] {
+            var changed = original; changed[key] = bad
+            XCTAssertThrowsError(try JSONDecoder().decode(TOSQuantumPaymentIntent.self,
+                from: JSONSerialization.data(withJSONObject: changed)))
+        }
+        let native = try TOSQuantumPaymentIntent(recipient: address("33"), amount: 1, bounce: false)
+        XCTAssertNil(try JSONDecoder().decode(TOSQuantumPaymentIntent.self,
+            from: JSONEncoder().encode(native)).tokenTransfer)
+    }
+
     func testInvalidAmountsWalletAndWorkchainDoNotProduceRequests() throws {
         XCTAssertThrowsError(try intent(units: 0))
         XCTAssertThrowsError(try intent(units: BigUInt(1) << 120))
