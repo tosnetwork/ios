@@ -3781,4 +3781,71 @@ final class TOSQuantumTokenLiveUITests: XCTestCase {
         app.alerts["RPC Node"].buttons["Cancel"].tap()
     }
 
+
+    func testRetainedQuantumURITokenIdentityAndUnavailableRPC() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555", env["TOS_TOKEN_URI_IDENTITY_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit retained URI Token identity/network QA required")
+        }
+        let originalMaster = try XCTUnwrap(env["TOS_TOKEN_MASTER_RAW"])
+        let twinMaster = try XCTUnwrap(env["TOS_TOKEN_TWIN_MASTER_RAW"])
+        let originalBalance = try XCTUnwrap(env["TOS_TOKEN_ORIGINAL_DISPLAY"])
+        XCTAssertNotEqual(originalMaster, twinMaster)
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func setRPC(_ value: String) {
+            XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 30))
+            app.descendants(matching: .any)["wallet.settings"].tap(); app.cells["settings.RPCNodeItem"].tap()
+            let endpoint = app.textFields["settings.rpc.endpoint"]; endpoint.tap()
+            let clear = endpoint.buttons.firstMatch; XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap(); endpoint.tap()
+            endpoint.typeText(value)
+            app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+            app.terminate(); app.launch(); unlock()
+        }
+        func capture(_ name: String, _ text: String) {
+            let attachment = XCTAttachment(string: text); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        app.launch(); unlock()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let original = list.cells.containing(.staticText, identifier: originalBalance).firstMatch
+        let twin = list.cells.containing(.staticText, identifier: "42.123456").firstMatch
+        XCTAssertTrue(original.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(twin.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(original.staticTexts["CR"].exists); XCTAssertTrue(twin.staticTexts["CR"].exists)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "CR").count, 2)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "TOS").count, 1)
+        capture("public-two-same-symbol-token-balances", list.debugDescription)
+        for (balance, master) in [(originalBalance, originalMaster), ("42.123456", twinMaster)] {
+            let row = list.cells.containing(.staticText, identifier: balance).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
+            let info = app.staticTexts["Unverified token"].firstMatch
+            XCTAssertTrue(info.waitForExistence(timeout: 15)); info.tap()
+            let alert = app.alerts.firstMatch
+            XCTAssertTrue(alert.waitForExistence(timeout: 10))
+            XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", master)).firstMatch.exists)
+            capture("public-master-for-balance-" + balance, alert.debugDescription)
+            alert.buttons["OK"].tap()
+            let back = app.buttons["Back"].firstMatch; XCTAssertTrue(back.waitForExistence(timeout: 10)); back.tap()
+            XCTAssertTrue(list.waitForExistence(timeout: 15))
+        }
+        setRPC("http://127.0.0.1:18558")
+        XCTAssertTrue(app.staticTexts["Balance unavailable"].waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Verified ")).firstMatch.exists)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "CR").count, 0)
+        capture("public-unavailable-rpc-no-stale-token-balances", list.debugDescription)
+        setRPC("http://127.0.0.1:18555")
+        XCTAssertTrue(original.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(twin.waitForExistence(timeout: 45), list.debugDescription)
+        capture("public-uri-token-balances-after-rpc-restoration", list.debugDescription)
+    }
+
 }
