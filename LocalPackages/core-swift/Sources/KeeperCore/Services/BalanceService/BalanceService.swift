@@ -43,19 +43,29 @@ final class BalanceServiceImplementation: BalanceService {
         currency: Currency,
         includingTransferFees: Bool
     ) async throws -> WalletBalance {
-        let tonBalance = try await tonBalanceService.loadBalance(wallet: wallet)
-
-        let balance = Balance(
-            tonBalance: tonBalance,
-            jettonsBalance: []
-        )
+        let balance: Balance
+        var tokenNotice: String?
+        if wallet.kind == .quantum {
+            let observed = try await TOSQuantumTokenAssetsReader().read(wallet: wallet)
+            balance = Balance(tonBalance: TonBalance(amount: observed.native.balance), jettonsBalance: observed.tokens)
+            if observed.discoveryFailed {
+                tokenNotice = "Token balances could not be loaded. Pull down to retry."
+            } else if observed.unreadPositions > 0 || observed.reachedRowLimit || !observed.nodeReportsComplete {
+                tokenNotice = "The Token list may be incomplete. Pull down to retry or select another node."
+            } else if observed.unresolvedPrecision > 0 {
+                tokenNotice = "Some Tokens have unavailable precision and cannot yet display a balance."
+            }
+        } else {
+            balance = Balance(tonBalance: try await tonBalanceService.loadBalance(wallet: wallet), jettonsBalance: [])
+        }
 
         let walletBalance = WalletBalance(
             date: Date(),
             balance: balance,
             stacking: [],
             batteryBalance: nil,
-            tronBalance: nil
+            tronBalance: nil,
+            tokenNotice: tokenNotice
         )
 
         if wallet.kind != .quantum {
