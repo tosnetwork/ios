@@ -2271,8 +2271,14 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
 
     private func openQuantumPayment(wallet: Wallet, sendInput: SendInput, recipient: Recipient?, comment: String?,
                                     pushRouter: NavigationControllerRouter? = nil) {
-        guard case .direct(.ton(.token(.ton, let amount))) = sendInput,
-              recipient == nil || recipient?.tonRecipient != nil else {
+        let amount: BigUInt
+        let token: JettonItem?
+        switch sendInput {
+        case .direct(.ton(.token(.ton, let value))): amount = value; token = nil
+        case .direct(.ton(.token(.jetton(let item), let value))): amount = value; token = item
+        default: showQuantumPaymentUnsupported(); return
+        }
+        guard recipient == nil || recipient?.tonRecipient != nil else {
             showQuantumPaymentUnsupported(); return
         }
         if let address = recipient?.tonRecipient?.recipientAddress, case .domain = address {
@@ -2281,7 +2287,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             showQuantumPaymentUnsupported(); return
         }
         let controller = TOSQuantumPaymentViewController(wallet: wallet, amount: amount,
-            recipient: recipient?.tonRecipient, comment: comment,
+            recipient: recipient?.tonRecipient, comment: comment, token: token,
             recipientResolver: keeperCoreMainAssembly.loadersAssembly.recipientResolver(), authenticate: { [weak self] in
                 guard let self else { return false }
                 return await getPasscode() != nil

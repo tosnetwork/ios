@@ -85,7 +85,7 @@ internal final class TOSQuantumTokenAssetsReader {
                 try cancellation.check()
             }
             guard let decimals = content.decimals ?? remote?.decimals else { unresolved += 1; continue }
-            let info = JettonInfo(isTransferable: false, hasCustomPayload: false, address: observed.master,
+            let info = JettonInfo(isTransferable: true, hasCustomPayload: false, address: observed.master,
                 fractionDigits: decimals, name: content.name ?? remote?.name ?? "Token", symbol: content.symbol ?? remote?.symbol,
                 verification: .none, imageURL: nil)
             tokens.append(JettonBalance(item: JettonItem(jettonInfo: info, walletAddress: observed.wallet),
