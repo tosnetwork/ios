@@ -5,10 +5,14 @@ import TonSwift
 import BigInt
 import TKLogging
 
-/// Dedicated native-coin flow. Signing consent and final fee confirmation are
+/// Dedicated native-coin and standard Token flow. Signing consent and final fee confirmation are
 /// separate actions. A relay response never becomes a successful payment.
 @MainActor
 final class TOSQuantumPaymentViewController: UIViewController {
+    private var tokenItem: JettonItem?
+    private let attachment = UITextField()
+    private let attachmentTitle = UILabel()
+    private let bounceRow = UIStackView()
     private let wallet: Wallet
     private let authenticate: @MainActor () async -> Bool
     private let recipientResolver: RecipientResolver
@@ -45,9 +49,10 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private var reloadOnAppearance = true
 
     init(wallet: Wallet, amount initialAmount: BigUInt, recipient initialRecipient: TonRecipient?,
-         comment initialComment: String?, recipientResolver: RecipientResolver,
+         comment initialComment: String?, token: JettonItem? = nil, recipientResolver: RecipientResolver,
          authenticate: @escaping @MainActor () async -> Bool) {
         self.wallet = wallet; self.authenticate = authenticate; self.recipientResolver = recipientResolver
+        self.tokenItem = token
         self.initialRecipient = initialRecipient
         requiresComment = initialRecipient?.isMemoRequired == true
         flaggedRecipient = initialRecipient?.isScam == true
@@ -57,7 +62,9 @@ final class TOSQuantumPaymentViewController: UIViewController {
         if initialAmount > 0, let formatted = TOSQuantumHistoryRecord.formatNano(String(initialAmount)) {
             amount.text = String(formatted.dropLast(4))
         }
-        comment.text = initialComment
+        if let token, initialAmount > 0 { amount.text = try? TOSTokenAmount.format(initialAmount, decimals: token.jettonInfo.fractionDigits) }
+        attachment.text = "0.1"
+        comment.text = token == nil ? initialComment : nil
     }
     required init?(coder: NSCoder) { return nil }
     deinit { operation?.cancel() }
@@ -87,6 +94,12 @@ final class TOSQuantumPaymentViewController: UIViewController {
             field.adjustsFontForContentSizeCategory = true; field.autocorrectionType = .no; field.autocapitalizationType = .none
             field.accessibilityIdentifier = "quantum.payment." + id; stack.addArrangedSubview(field)
         }
+        if tokenItem != nil { amount.placeholder = "Token amount" }
+        attachment.placeholder = "Attached TOS"; attachment.borderStyle = .roundedRect
+        attachment.keyboardType = .decimalPad; attachment.accessibilityIdentifier = "quantum.payment.attachment"
+        attachmentTitle.text = "Attached TOS for Token execution (unused TOS may return separately)"
+        attachmentTitle.numberOfLines = 0; stack.addArrangedSubview(attachmentTitle)
+        stack.addArrangedSubview(attachment); attachment.isHidden = tokenItem == nil
         amount.keyboardType = .decimalPad; recipient.keyboardType = .asciiCapable
         commentTitle.font = .preferredFont(forTextStyle: .body); commentTitle.adjustsFontForContentSizeCategory = true
         commentTitle.text = requiresComment ? "Comment (required)" : "Comment (optional)"; stack.addArrangedSubview(commentTitle)
@@ -94,7 +107,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         comment.layer.borderWidth = 1; comment.layer.borderColor = UIColor.separator.cgColor; comment.layer.cornerRadius = 8
         comment.accessibilityIdentifier = "quantum.payment.comment"; comment.heightAnchor.constraint(greaterThanOrEqualToConstant: 96).isActive = true
         stack.addArrangedSubview(comment)
-        let bounceRow = UIStackView(arrangedSubviews: [label("Return funds if recipient cannot accept"), bounce]); stack.addArrangedSubview(bounceRow)
+        bounceRow.addArrangedSubview(label("Return funds if recipient cannot accept")); bounceRow.addArrangedSubview(bounce); stack.addArrangedSubview(bounceRow)
         bounce.accessibilityIdentifier = "quantum.payment.bounce"
         warningRow.addArrangedSubview(label("This recipient is flagged as potentially unsafe. I understand the risk."))
         warningRow.addArrangedSubview(acknowledge); warningRow.isHidden = !flaggedRecipient
@@ -168,7 +181,11 @@ final class TOSQuantumPaymentViewController: UIViewController {
     }
     private func render() {
         let editable = !busy && emptyJournal && prepared == nil && pending == nil && ended == nil
-        recipient.isEnabled = editable; amount.isEnabled = editable; comment.isEditable = editable; bounce.isEnabled = editable
+        recipient.isEnabled = editable; amount.isEnabled = editable; attachment.isEnabled = editable
+        attachment.isHidden = tokenItem == nil; attachmentTitle.isHidden = tokenItem == nil
+        bounceRow.isHidden = tokenItem != nil
+        comment.isEditable = editable && tokenItem == nil; comment.isHidden = tokenItem != nil
+        commentTitle.isHidden = tokenItem != nil; bounce.isEnabled = editable && tokenItem == nil
         acknowledge.isEnabled = !busy && (editable || pending?.phase == .signed)
         review.isHidden = pending != nil || prepared != nil || ended != nil; review.isEnabled = editable
         sign.isHidden = prepared == nil || pending != nil; sign.isEnabled = !busy && wallet.isQuantumSelfPayAvailable
@@ -215,6 +232,10 @@ final class TOSQuantumPaymentViewController: UIViewController {
         Log.e("Quantum payment action failed", extraInfo: info)
     }
     private func show(_ intent: TOSQuantumPaymentIntent) {
+        if let token = intent.tokenTransfer {
+            details.text = "Token master: \(token.master.toRaw())\nRecipient: \(token.recipient.toRaw())\nToken amount: \((try? TOSTokenAmount.format(token.units, decimals: token.decimals)) ?? String(token.units))\nRaw Token units: \(token.units)\nSender Token wallet: \(token.wallet.toRaw())\nAttached TOS: \(TOSQuantumHistoryRecord.formatNano(String(token.attachedTos)) ?? String(token.attachedTos))\nForwarded TOS: \(TOSQuantumHistoryRecord.formatNano(String(token.forwardTos)) ?? String(token.forwardTos))\nQuery ID: \(token.queryId)"
+            return
+        }
         details.text = "Recipient: \(intent.recipient.toRaw())\nAmount: \(TOSQuantumHistoryRecord.formatNano(String(intent.amount)) ?? String(intent.amount))\nReturn on rejection: \(intent.bounce ? "Yes" : "No")\nComment: \(intent.comment ?? "None")"
     }
     private func loadJournal() {
@@ -241,8 +262,17 @@ final class TOSQuantumPaymentViewController: UIViewController {
             pending = value; emptyJournal = value == nil && ended == nil; prepared = nil; quote = nil; authenticated = false; cursor = nil
             if let value {
                 if let intent = value.paymentIntent {
-                    recipient.text = intent.recipient.toRaw()
-                    if let formatted = TOSQuantumHistoryRecord.formatNano(String(intent.amount)) { amount.text = String(formatted.dropLast(4)) }
+                    if let token = intent.tokenTransfer {
+                        tokenItem = JettonItem(jettonInfo: JettonInfo(isTransferable: true, hasCustomPayload: false,
+                            address: token.master, fractionDigits: token.decimals, name: "Token", symbol: nil,
+                            verification: .none, imageURL: nil), walletAddress: token.wallet)
+                        recipient.text = token.recipient.toRaw()
+                        amount.text = try TOSTokenAmount.format(token.units, decimals: token.decimals)
+                        if let text = TOSQuantumHistoryRecord.formatNano(String(token.attachedTos)) { attachment.text = String(text.dropLast(4)) }
+                    } else {
+                        tokenItem = nil; recipient.text = intent.recipient.toRaw()
+                        if let formatted = TOSQuantumHistoryRecord.formatNano(String(intent.amount)) { amount.text = String(formatted.dropLast(4)) }
+                    }
                     comment.text = intent.comment; bounce.isOn = intent.bounce; show(intent)
                 }
                 else { details.text = "A wallet authorization is already pending." }
@@ -278,12 +308,24 @@ final class TOSQuantumPaymentViewController: UIViewController {
                 guard !friendly.isTestOnly || wallet.network == .testnet else { throw TOSPQError.invalidInput }
                 bounce.isOn = friendly.isBounceable
             }
-            let value = try TOSQuantumPaymentIntent.parseAmount((amount.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
-            let body = comment.text ?? ""
+            let amountText = (amount.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = try tokenItem.map { try TOSTokenAmount.parse(amountText, decimals: $0.jettonInfo.fractionDigits) }
+                ?? TOSQuantumPaymentIntent.parseAmount(amountText)
+            let attached = tokenItem == nil ? BigUInt(0) : try TOSQuantumPaymentIntent.parseAmount(attachment.text ?? "")
+            let body = tokenItem == nil ? (comment.text ?? "") : ""
             let selectedBounce = bounce.isOn
             run("Verifying recipient, account and payment…") { [self] in
                 guard try await validateRecipient(text, expected: address, body: body) else { return }
-                let intent = try TOSQuantumPaymentIntent(recipient: address, amount: value, bounce: selectedBounce, comment: body)
+                let intent: TOSQuantumPaymentIntent
+                if let tokenItem, case .Quantum(let identity) = wallet.identity.kind {
+                    guard let tokenWallet = tokenItem.walletAddress else { throw TOSPQError.keyBinding }
+                    let token = try TOSQuantumTokenTransferIntent(owner: identity.address, master: tokenItem.jettonInfo.address,
+                        wallet: tokenWallet, recipient: address, units: value,
+                        decimals: tokenItem.jettonInfo.fractionDigits, queryId: UInt64.random(in: .min ... .max), attachedTos: attached)
+                    intent = TOSQuantumPaymentIntent(tokenTransfer: token)
+                } else {
+                    intent = try TOSQuantumPaymentIntent(recipient: address, amount: value, bounce: selectedBounce, comment: body)
+                }
                 let value: TOSQuantumPreparedPayment
                 do {
                     value = try await preparation.prepare(wallet: wallet, intent: intent)
@@ -292,13 +334,16 @@ final class TOSQuantumPaymentViewController: UIViewController {
                     // exists yet, so the user can safely correct the amount.
                     status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
                     return
+                } catch TOSQuantumPreparedPayment.Error.insufficientTokenBalance {
+                    status.text = "Insufficient Token balance. Edit the amount or receive more Tokens."
+                    return
                 }
                 try Task.checkCancellation(); prepared = value; show(value.intent)
                 details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"
                 status.text = "Review these details. Signing and estimating locally will not broadcast."
             }
         } catch {
-            status.text = "Check the full address, positive TOS amount (at most 9 decimal places), required comment and recipient warning. Comments are limited to 4096 UTF-8 bytes."
+            status.text = "Check the full address, positive amount and asset precision, attached TOS, required comment and recipient warning. Comments are limited to 4096 UTF-8 bytes."
         }
     }
     private func validateRecipient(_ text: String, expected: Address, body: String) async throws -> Bool {
@@ -312,7 +357,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         flaggedRecipient = resolved.isScam || (originalMatches && initialRecipient?.isScam == true)
         commentTitle.text = requiresComment ? "Comment (required)" : "Comment (optional)"
         warningRow.isHidden = !flaggedRecipient
-        if requiresComment && body.isEmpty {
+        if requiresComment && (body.isEmpty || tokenItem != nil) {
             status.text = "This recipient requires a comment. A saved signed message cannot be edited or replaced automatically."
             return false
         }
@@ -335,6 +380,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
     }
     private func showQuote(_ value: TOSQuantumPaymentQuote) {
         quote = value; show(value.intent)
+        if value.intent.tokenTransfer != nil { details.text = (details.text ?? "") + "\nThe fee below covers sender wallet execution. Initial debit includes attached TOS; Token execution and refunds are separate." }
         details.text = (details.text ?? "") + "\nEstimated fee: \(TOSQuantumHistoryRecord.formatNano(String(value.estimatedFee)) ?? String(value.estimatedFee))\nEstimated total debit: \(TOSQuantumHistoryRecord.formatNano(String(value.estimatedDebit)) ?? String(value.estimatedDebit))\nEstimate expires: \(Date(timeIntervalSince1970: TimeInterval(value.expiresAt)).formatted())"
         status.text = "Not sent. Confirm this estimated fee to send the saved signed message. Fees are an estimate."
     }
@@ -342,7 +388,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
         guard wallet.isQuantumSelfPayAvailable, pending?.phase == .signed, let coordinator else { return }
         run("Checking the saved recipient…") { [self] in
             guard let intent = pending?.paymentIntent,
-                  try await validateRecipient(intent.recipient.toRaw(), expected: intent.recipient, body: intent.comment ?? "") else { return }
+                  try await validateRecipient((intent.tokenTransfer?.recipient ?? intent.recipient).toRaw(), expected: intent.tokenTransfer?.recipient ?? intent.recipient, body: intent.comment ?? "") else { return }
             let approved = await authenticate(); try Task.checkCancellation()
             guard approved else { status.text = "Authentication cancelled. Saved authorization retained."; return }
             authenticated = true
@@ -357,19 +403,21 @@ final class TOSQuantumPaymentViewController: UIViewController {
             self.quote = nil; authenticated = false; status.text = "Estimate expired. Re-estimate the saved payment."; render(); return
         }
         run("Submitting the saved signed message…") { [self] in
+            var submissionFailed = false
             do { try await coordinator.submit(quote) }
             catch {
                 record(error)
-                // A cancelled, superseded task cannot overwrite a newer screen.
-                try Task.checkCancellation()
-                self.quote = nil; authenticated = false
-                status.text = "Submission outcome is unknown. Verify the result before another payment."
-                return
+                submissionFailed = true
             }
+            // Both relay acceptance and a lost response can have durably advanced
+            // the authorization. Never render a stale in-memory signed phase.
             try Task.checkCancellation(); self.quote = nil; authenticated = false
+            pending = nil; emptyJournal = false
             let saved = try await coordinator.pending(wallet: wallet)
             try Task.checkCancellation(); pending = saved
-            status.text = "Submission outcome is unknown. Verify the result; relay acceptance is not payment confirmation."
+            status.text = submissionFailed
+                ? "Submission outcome is unknown. Verify the result before another payment."
+                : "Submission outcome is unknown. Verify the result; relay acceptance is not payment confirmation."
         }
     }
     private func verifyResult(continuing: Bool) {
@@ -398,7 +446,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
             show(receipt.intent)
             let hash = receipt.transactionHash.map { String(format: "%02x", $0) }.joined()
             details.text = (details.text ?? "") + "\nTransaction: \(hash)\nLogical time: \(receipt.logicalTime)"
-            status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact transfer. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
+            status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact request. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
         } else {
             status.text = page.authorizationExpired ? "Authorization expired according to verified chain time. Payment outcome is unverified; authorization retained." : "Payment outcome is unverified. Authorization retained."
         }
@@ -426,7 +474,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
                 details.text = "Original authorization deadline: \(Date(timeIntervalSince1970: TimeInterval(value.deadline)).formatted())\nVerified shard time: \(Date(timeIntervalSince1970: TimeInterval(value.provenShardTime)).formatted())"
                 switch value.outcome {
                 case .expiredUnverified: status.text = "Authorization expired; payment outcome remains unverified. Ending it does not prove the payment was unpaid. Confirm to end the saved authorization."
-                case .senderSent: status.text = "Verified: this wallet sent the exact transfer. Recipient credit is not verified here. Confirm to end the expired authorization."
+                case .senderSent: status.text = "Verified: this wallet sent the exact request. Recipient credit is not verified here. Confirm to end the expired authorization."
                 case .includedWithoutExactTransfer: status.text = "The exact request was included without confirming the exact transfer. Confirm to end the expired authorization."
                 }
             } catch TOSQuantumExpiredAuthorization.Error.notExpired(let deadline, let shardTime) {
@@ -451,7 +499,7 @@ final class TOSQuantumPaymentViewController: UIViewController {
                 let outcome: String
                 switch row.outcome {
                 case .expiredUnverified: outcome = "Expired; payment outcome unverified"
-                case .senderSent: outcome = "Exact transfer sent by this wallet"
+                case .senderSent: outcome = "Exact request sent by this wallet"
                 case .includedWithoutExactTransfer: outcome = "Request included; exact transfer unconfirmed"
                 }
                 let state = row.publication == .releaseCompleted ? "Authorization ended" : "Ending incomplete"

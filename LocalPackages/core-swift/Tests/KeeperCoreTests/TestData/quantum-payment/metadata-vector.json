@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "name": "Sample Credit",
+    "symbol": "CR",
+    "decimals": 6
+  },
+  "uri": "https://example.invalid/token.json",
+  "files": {
+    "token-metadata-vector.fif": "462eb0358b1da13918763ef6ec996909a1a7a72c38daf20a37871c736cc5eae9",
+    "token-content-onchain.boc": "f9c086e730ad96d14be722780ef88e2ab235e04c75a933aa20f96da0605c3e6a",
+    "token-content-uri.boc": "0243246ab00a2dba181bddafe811065938425e3c356ae28440f750355b0ea07d"
+  }
+}

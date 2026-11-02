@@ -5,12 +5,12 @@ import CoreComponents
 
 final class TOSQuantumRPCTransportTests: XCTestCase {
     private final class Fixture: URLProtocol {
-        nonisolated(unsafe) static var mode = "valid"
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
             do {
-                if Self.mode == "stall" { return }
+                let mode = self.request.value(forHTTPHeaderField: "X-TOS-Test-Mode") ?? "missing-fixture-mode"
+                if mode == "stall" { return }
                 var raw = request.httpBody ?? Data()
                 if let stream = request.httpBodyStream {
                     stream.open(); defer { stream.close() }
@@ -23,15 +23,21 @@ final class TOSQuantumRPCTransportTests: XCTestCase {
                 }
                 let request = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: Any])
                 let id = try XCTUnwrap(request["id"] as? String)
-                var reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": Self.mode == "wrongID" ? "wrong" : id,
+                var reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": mode == "wrongID" ? "wrong" : id,
                     "result": [["data": "PUBLIC"]]])
-                if Self.mode == "trailing" { reply.append(Data("{}".utf8)) }
-                if Self.mode == "large" { reply = Data(repeating: 32, count: 2048) }
-                if Self.mode == "deep" {
+                if mode == "tokens" {
+                    reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "result": ["@type": "wallet.accountTokens", "tokens": []]])
+                }
+                if mode == "metadata" {
+                    reply = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "result": ["@type": "ext.tokens.tokenMasterData"]])
+                }
+                if mode == "trailing" { reply.append(Data("{}".utf8)) }
+                if mode == "large" { reply = Data(repeating: 32, count: 2048) }
+                if mode == "deep" {
                     reply = Data(("{\"jsonrpc\":\"2.0\",\"id\":\"" + id + "\",\"result\":" +
                         String(repeating: "[", count: 70) + "0" + String(repeating: "]", count: 70) + "}").utf8)
                 }
-                let response = try XCTUnwrap(HTTPURLResponse(url: self.request.url!, statusCode: Self.mode == "redirect" ? 302 : 200,
+                let response = try XCTUnwrap(HTTPURLResponse(url: self.request.url!, statusCode: mode == "redirect" ? 302 : 200,
                     httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"]))
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
                 client?.urlProtocol(self, didLoad: reply)
@@ -43,8 +49,7 @@ final class TOSQuantumRPCTransportTests: XCTestCase {
 
     func testBoundedTransactionRelayRejectsMismatchedUnboundedAndCancelledReplies() throws {
         for mode in ["valid", "wrongID", "trailing", "large", "deep", "redirect", "cancelled", "stall", "unsupported"] {
-            Fixture.mode = mode
-            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [Fixture.self]
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [Fixture.self]; config.httpAdditionalHeaders = ["X-TOS-Test-Mode": mode]
             let relay = try TOSQuantumRPCTransport(endpoint: URL(string: "https://relay.example/jsonRPC")!, configuration: config, timeout: 0.3)
             let done = expectation(description: mode)
             DispatchQueue.global().async {
@@ -60,4 +65,20 @@ final class TOSQuantumRPCTransportTests: XCTestCase {
             wait(for: [done], timeout: 5)
         }
     }
+    func testTokenDiscoveryAndMetadataUseTheBoundedRelay() throws {
+        for (method, mode, expected) in [("getAccountTokens", "tokens", "wallet.accountTokens"), ("getTokenData", "metadata", "ext.tokens.tokenMasterData")] {
+            let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [Fixture.self]; config.httpAdditionalHeaders = ["X-TOS-Test-Mode": mode]
+            let relay = try TOSQuantumRPCTransport(endpoint: URL(string: "https://relay.example/jsonRPC")!, configuration: config, timeout: 0.3)
+            let done = expectation(description: method)
+            DispatchQueue.global().async {
+                defer { done.fulfill() }
+                do {
+                    let result = try relay.call(method: method, params: ["address": "0:" + String(repeating: "0", count: 64)])
+                    XCTAssertEqual((result as? [String: Any])?["@type"] as? String, expected)
+                } catch { XCTFail("Valid Token relay \(method) / \(mode) refused: \(error)") }
+            }
+            wait(for: [done], timeout: 5)
+        }
+    }
+
 }

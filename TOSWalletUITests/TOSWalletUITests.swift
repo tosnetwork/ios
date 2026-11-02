@@ -3355,3 +3355,497 @@ final class TOSWalletUITests: XCTestCase {
     }
 
 }
+
+
+/// Opt-in inspection of a retained local QA wallet. This never resets its data.
+final class TOSQuantumTokenLiveUITests: XCTestCase {
+    func testAddQuantumTokenQAAccountPreservingExistingWallet() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555" else { throw XCTSkip("Local retained Token QA only") }
+        let fields = [("Network ID", "TOS_QUANTUM_GLOBAL_ID"), ("Genesis root hash", "TOS_QUANTUM_ROOT_HASH"),
+                      ("Genesis file hash", "TOS_QUANTUM_FILE_HASH")]
+        for (_, key) in fields { XCTAssertFalse(try XCTUnwrap(env[key]).isEmpty) }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 3) {
+                for key in ["1", "2", "3", "4"] { app.buttons[key].tap() }
+            }
+        }
+        func replace(_ field: XCUIElement, _ text: String) {
+            field.tap()
+            let current = field.value as? String ?? ""
+            if !current.isEmpty && current != field.placeholderValue {
+                let clear = field.buttons.firstMatch
+                XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap(); field.tap()
+            }
+            field.typeText(text)
+            XCTAssertEqual(field.value as? String, text)
+        }
+        app.launch(); unlock()
+        XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 20))
+        app.descendants(matching: .any)["wallet.settings"].tap()
+        app.cells["settings.RPCNodeItem"].tap()
+        app.alerts["RPC Node"].buttons["settings.rpc.quantumNetwork"].firstMatch.tap()
+        for (name, key) in fields { replace(app.textFields[name], try XCTUnwrap(env[key])) }
+        app.alerts["Trusted Quantum Network"].buttons["Save"].tap()
+        app.cells["settings.RPCNodeItem"].tap()
+        replace(app.textFields["settings.rpc.endpoint"], "http://127.0.0.1:18555")
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        app.terminate(); app.launch(); unlock()
+        XCTAssertTrue(app.buttons["wallet.switch"].waitForExistence(timeout: 20)); app.buttons["wallet.switch"].tap()
+        let add = app.staticTexts["Add Wallet"]; XCTAssertTrue(add.waitForExistence(timeout: 10)); add.tap()
+        let create = app.cells.containing(.staticText, identifier: "New Wallet").firstMatch
+        XCTAssertTrue(create.waitForExistence(timeout: 10)); create.tap(); unlock()
+        if app.alerts["Resume wallet creation"].waitForExistence(timeout: 2) {
+            app.alerts["Resume wallet creation"].buttons["Create another wallet"].tap()
+        }
+        let next = app.descendants(matching: .any)["Continue"].firstMatch
+        XCTAssertTrue(next.waitForExistence(timeout: 60)); next.tap()
+        XCTAssertTrue(app.staticTexts["Recovery phrase"].waitForExistence(timeout: 10))
+        // Do not print recovery words. XCTest typeText activities contain them;
+        // retain raw logs and result bundles only in restricted local QA storage.
+        var words = [Int: String]()
+        for index in 1...24 {
+            let word = app.descendants(matching: .any)["recovery.word.\(index)"]
+            XCTAssertTrue(word.exists); words[index] = try XCTUnwrap(word.value as? String)
+        }
+        next.tap()
+        XCTAssertTrue(app.staticTexts["Backup Check"].waitForExistence(timeout: 10))
+        let challenges = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "backup.check.input.")).allElementsBoundByIndex
+        XCTAssertEqual(challenges.count, 3)
+        for field in challenges {
+            let index = try XCTUnwrap(Int(field.identifier.split(separator: ".").last ?? ""))
+            field.tap(); field.typeText(try XCTUnwrap(words[index]))
+        }
+        words.removeAll()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap(); next.tap()
+        XCTAssertTrue(app.staticTexts["Customize your Wallet"].waitForExistence(timeout: 30)); next.tap()
+        XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 30))
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")).firstMatch.tap()
+        let address = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10)); print("TOKEN_QA_NEW_QUANTUM_OWNER=" + address.label)
+    }
+
+    func testInspectRetainedWalletForTokenAcceptance() throws {
+        guard ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555" else {
+            throw XCTSkip("Requires the retained local Token acceptance environment")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        app.launch()
+        let passcode = app.staticTexts["Enter passcode"]
+        if passcode.waitForExistence(timeout: 8) {
+            // Existing disposable simulator QA credential, shared with the native MVP tests.
+            for key in ["1", "2", "3", "4"] { app.buttons[key].tap() }
+        }
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 25), "Retained wallet must open without reset")
+        print("TOKEN_QA_PUBLIC_HOME=" + list.debugDescription)
+        let receive = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Receive")).firstMatch
+        XCTAssertTrue(receive.waitForExistence(timeout: 10)); receive.tap()
+        let address = app.staticTexts.matching(
+            NSPredicate(format: "label MATCHES %@", "[UE]Q[A-Za-z0-9_-]{46}")).firstMatch
+        XCTAssertTrue(address.waitForExistence(timeout: 10))
+        print("TOKEN_QA_PUBLIC_OWNER=" + address.label)
+    }
+
+    func testRetainedQuantumTokenPaymentAndRestart() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555",
+              env["TOS_TOKEN_PAYMENT_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit disposable local Token payment environment required")
+        }
+        let recipient = try XCTUnwrap(env["TOS_TOKEN_RECIPIENT"])
+        let recipientRaw = try XCTUnwrap(env["TOS_TOKEN_RECIPIENT_RAW"])
+        let master = try XCTUnwrap(env["TOS_TOKEN_MASTER_RAW"])
+        XCTAssertTrue(recipientRaw.hasPrefix("0:")); XCTAssertTrue(master.hasPrefix("0:"))
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func enabled(_ element: XCUIElement, timeout: TimeInterval = 90) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+                NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)], timeout: timeout) == .completed
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            XCTAssertTrue(enabled(button))
+            for _ in 0..<8 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
+            XCTAssertTrue(button.isHittable); button.tap()
+        }
+        app.launch(); unlock()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let token = list.cells.containing(.staticText, identifier: "CR").firstMatch
+        XCTAssertTrue(token.waitForExistence(timeout: 30)); token.tap()
+        let send = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Send")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 15)); send.tap()
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(recipientField.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(enabled(recipientField)); recipientField.tap(); recipientField.typeText(recipient)
+        let amount = app.textFields["quantum.payment.amount"]
+        amount.tap(); amount.typeText("1.234567")
+        XCTAssertEqual(app.textFields["quantum.payment.attachment"].value as? String, "0.1")
+        tapPayment("review")
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.sign"]))
+        let details = app.staticTexts["quantum.payment.details"]
+        XCTAssertTrue(details.label.contains("Token master: " + master))
+        XCTAssertTrue(details.label.contains("Recipient: " + recipientRaw))
+        XCTAssertTrue(details.label.contains("Raw Token units: 1234567"))
+        tapPayment("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 15)); unlock()
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.send"]))
+        XCTAssertTrue(details.label.contains("Estimated fee:"))
+        XCTAssertTrue(details.label.contains("Token execution and refunds are separate"))
+        tapPayment("send")
+        let status = app.staticTexts["quantum.payment.status"]
+        let deadline = Date().addingTimeInterval(120)
+        repeat {
+            tapPayment("verify")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+            if status.label.hasPrefix("Verified: this wallet sent the exact request.") { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+        } while Date() < deadline
+        XCTAssertTrue(status.label.hasPrefix("Verified: this wallet sent the exact request."))
+        XCTAssertTrue(details.label.contains("Transaction:"))
+        let receipt = details.label
+        let attachment = XCTAttachment(string: receipt)
+        attachment.name = "public-token-sender-receipt"; attachment.lifetime = .keepAlways; add(attachment)
+        app.terminate(); app.launch(); unlock()
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let publicHome = XCTAttachment(string: list.debugDescription)
+        publicHome.name = "public-token-home-after-payment-restart"; publicHome.lifetime = .keepAlways; add(publicHome)
+        // Independent chain reads must additionally establish recipient Token credit.
+    }
+
+
+    func testRetainedQuantumTokenInvalidAmountsAndAuthenticationCancel() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555",
+              env["TOS_TOKEN_NEGATIVES_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit disposable local Token negative acceptance required")
+        }
+        let recipient = try XCTUnwrap(env["TOS_TOKEN_RECIPIENT"])
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func enabled(_ element: XCUIElement) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+                NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)], timeout: 60) == .completed
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]
+            XCTAssertTrue(enabled(button))
+            for _ in 0..<8 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
+            XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func showFields() {
+            for _ in 0..<8 {
+                if app.textFields["quantum.payment.recipient"].isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeDown()
+            }
+        }
+        func replace(_ field: XCUIElement, _ value: String) {
+            XCTAssertTrue(field.isEnabled); field.tap()
+            let text = field.value as? String ?? ""
+            let current = text == field.placeholderValue ? "" : text
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count) + value)
+            XCTAssertEqual(field.value as? String, value)
+        }
+        app.launch(); unlock()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let token = list.cells.containing(.staticText, identifier: "CR").firstMatch
+        XCTAssertTrue(token.waitForExistence(timeout: 45)); token.tap()
+        let send = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Send")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 15)); send.tap()
+        XCTAssertTrue(app.textFields["quantum.payment.recipient"].waitForExistence(timeout: 15), app.debugDescription)
+        // End only the previous, already proven authorization through the actual
+        // expiry/confirmation UI. Never remove a journal or signing key in test setup.
+        if app.buttons["quantum.payment.end"].exists {
+            tapPayment("verify"); XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            tapPayment("end"); XCTAssertTrue(enabled(app.buttons["quantum.payment.confirmEnd"]))
+            tapPayment("confirmEnd")
+        }
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+        tapPayment("startAnother"); showFields()
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        XCTAssertTrue(enabled(recipientField)); replace(recipientField, recipient)
+        let amount = app.textFields["quantum.payment.amount"]
+        let attached = app.textFields["quantum.payment.attachment"]
+        for (quantity, attachment, marker) in [
+            ("2000", "0.1", "insufficient_token"), ("0.0000001", "0.1", "excess_precision"),
+            ("0", "0.1", "zero_token"), ("1", "0", "zero_attachment"), ("1", "100", "insufficient_tos")
+        ] {
+            showFields(); replace(amount, quantity); replace(attached, attachment); tapPayment("review")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.review"]))
+            XCTAssertTrue(amount.isEnabled, app.staticTexts["quantum.payment.status"].label)
+            XCTAssertFalse(app.buttons["quantum.payment.sign"].exists)
+            XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+            XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+            print("TOKEN_QA_NEGATIVE_PASSED=" + marker)
+        }
+        showFields(); replace(amount, "1"); replace(attached, "0.1"); tapPayment("review")
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.sign"]))
+        tapPayment("sign")
+        XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 15))
+        let close = app.buttons.matching(identifier: "Close").allElementsBoundByIndex.first(where: { $0.isHittable })
+        XCTAssertNotNil(close); close?.tap()
+        let status = app.staticTexts["quantum.payment.status"]
+        let cancelled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            status.exists && status.label == "Authentication cancelled. Nothing was signed or sent."
+        }, object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [cancelled], timeout: 15), .completed)
+        XCTAssertFalse(app.buttons["quantum.payment.send"].exists)
+        print("TOKEN_QA_AUTHENTICATION_CANCEL_PASSED")
+        app.terminate(); app.launch(); unlock()
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let home = XCTAttachment(string: list.debugDescription)
+        home.name = "public-token-home-after-negative-restart"; home.lifetime = .keepAlways; add(home)
+    }
+
+
+    func testRetainedQuantumTokenLostResponseKeepsOneAuthorization() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555", env["TOS_TOKEN_LOSS_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit retained local Token response-loss acceptance required")
+        }
+        let recipient = try XCTUnwrap(env["TOS_TOKEN_RECIPIENT"])
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func enabled(_ element: XCUIElement) -> Bool {
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+                NSPredicate { _, _ in element.exists && element.isEnabled }, object: element)], timeout: 60) == .completed
+        }
+        func tapPayment(_ id: String) {
+            let button = app.buttons["quantum.payment." + id]; XCTAssertTrue(enabled(button))
+            for _ in 0..<8 {
+                if button.isHittable { break }
+                app.scrollViews["quantum.payment.form"].swipeUp()
+            }
+            XCTAssertTrue(button.isHittable); button.tap()
+        }
+        func openPayment() {
+            let list = app.collectionViews["wallet.balance.list"]
+            XCTAssertTrue(list.waitForExistence(timeout: 30))
+            let token = list.cells.containing(.staticText, identifier: "CR").firstMatch
+            XCTAssertTrue(token.waitForExistence(timeout: 45)); token.tap()
+            let send = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Send")).firstMatch
+            XCTAssertTrue(send.waitForExistence(timeout: 15)); send.tap()
+            XCTAssertTrue(app.textFields["quantum.payment.recipient"].waitForExistence(timeout: 15), app.debugDescription)
+        }
+        func checkpoint(_ stage: String) throws -> [String: Any] {
+            let done = expectation(description: "Host relay and durable journal checkpoint " + stage)
+            var result: Result<Data, Error>?
+            URLSession.shared.dataTask(with: URL(string: "http://127.0.0.1:18653/checkpoint-" + stage)!) { data, response, error in
+                defer { done.fulfill() }
+                do {
+                    if let error { throw error }
+                    guard (response as? HTTPURLResponse)?.statusCode == 200, let data else { throw URLError(.badServerResponse) }
+                    result = .success(data)
+                } catch { result = .failure(error) }
+            }.resume()
+            wait(for: [done], timeout: 10)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(result).get()) as? [String: Any])
+        }
+        func snapshot(_ value: [String: Any], _ stage: String) throws -> [String: Any] {
+            try XCTUnwrap((value["checkpoints"] as? [String: Any])?[stage] as? [String: Any])
+        }
+        app.launch(); unlock()
+        XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 30))
+        app.descendants(matching: .any)["wallet.settings"].tap(); app.cells["settings.RPCNodeItem"].tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]; endpoint.tap()
+        let clear = endpoint.buttons.firstMatch; XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap(); endpoint.tap()
+        endpoint.typeText("http://127.0.0.1:18653")
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        app.terminate(); app.launch(); unlock(); openPayment()
+        let recipientField = app.textFields["quantum.payment.recipient"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            recipientField.isEnabled ||
+                (app.buttons["quantum.payment.startAnother"].exists && app.buttons["quantum.payment.startAnother"].isEnabled) ||
+                (app.buttons["quantum.payment.end"].exists && app.buttons["quantum.payment.end"].isEnabled)
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 60), .completed)
+        if app.buttons["quantum.payment.end"].exists {
+            tapPayment("verify"); XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+            XCTAssertTrue(app.staticTexts["quantum.payment.status"].label.hasPrefix("Verified: this wallet sent"))
+            tapPayment("end"); XCTAssertTrue(enabled(app.buttons["quantum.payment.confirmEnd"]))
+            tapPayment("confirmEnd")
+            XCTAssertTrue(enabled(app.buttons["quantum.payment.startAnother"]))
+        }
+        if app.buttons["quantum.payment.startAnother"].exists { tapPayment("startAnother") }
+        XCTAssertTrue(enabled(recipientField))
+        for _ in 0..<8 {
+            if recipientField.isHittable { break }
+            app.scrollViews["quantum.payment.form"].swipeDown()
+        }
+        recipientField.tap(); recipientField.typeText(recipient)
+        let amount = app.textFields["quantum.payment.amount"]; amount.tap(); amount.typeText("2")
+        tapPayment("review"); XCTAssertTrue(enabled(app.buttons["quantum.payment.sign"]))
+        XCTAssertTrue(app.staticTexts["quantum.payment.details"].label.contains("Raw Token units: 2000000"))
+        XCTAssertTrue(app.staticTexts["quantum.payment.details"].label.contains("Token master: " + (try XCTUnwrap(env["TOS_TOKEN_MASTER_RAW"]))))
+        XCTAssertTrue(app.staticTexts["quantum.payment.details"].label.contains("Recipient: " + (try XCTUnwrap(env["TOS_TOKEN_RECIPIENT_RAW"]))))
+        tapPayment("sign"); XCTAssertTrue(app.staticTexts["Enter passcode"].waitForExistence(timeout: 15)); unlock()
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.send"]))
+        let signed = try snapshot(checkpoint("signed"), "signed")
+        XCTAssertEqual(signed["phase"] as? String, "signed"); XCTAssertEqual(signed["units"] as? String, "2000000")
+        tapPayment("send")
+        let status = app.staticTexts["quantum.payment.status"]
+        let unknown = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            status.exists && status.label.hasPrefix("Submission outcome is unknown.")
+        }, object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [unknown], timeout: 30), .completed)
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+        let immediateEstimateVisible = app.buttons["quantum.payment.estimate"].exists
+        let submittedState = try checkpoint("submitted"), submitted = try snapshot(submittedState, "submitted")
+        XCTAssertEqual(submitted["phase"] as? String, "unknown")
+        let broadcasts = try XCTUnwrap(submittedState["broadcasts"] as? [[String: Any]])
+        XCTAssertEqual(broadcasts.count, 1); XCTAssertEqual(broadcasts.first?["forwarded"] as? Bool, true)
+        XCTAssertEqual(broadcasts.first?["response_deliberately_dropped"] as? Bool, true)
+        XCTAssertEqual(((broadcasts.first?["upstream_reply"] as? [String: Any])?["result"] as? [String: Any])?["status"] as? Int, 1)
+        XCTAssertEqual(broadcasts.first?["boc_sha256"] as? String, signed["boc_sha256"] as? String)
+        app.terminate(); app.launch(); unlock(); openPayment()
+        XCTAssertTrue(enabled(app.buttons["quantum.payment.verify"]))
+        XCTAssertFalse(recipientField.isEnabled); XCTAssertFalse(app.textFields["quantum.payment.amount"].isEnabled)
+        for id in ["sign", "send", "estimate", "startAnother", "review"] { XCTAssertFalse(app.buttons["quantum.payment." + id].exists) }
+        let restartedState = try checkpoint("restarted"), restarted = try snapshot(restartedState, "restarted")
+        for key in ["operation_id", "boc_sha256", "units", "query_id"] {
+            XCTAssertEqual(signed[key] as? String, submitted[key] as? String)
+            XCTAssertEqual(submitted[key] as? String, restarted[key] as? String)
+        }
+        XCTAssertEqual(submitted["record_sha256"] as? String, restarted["record_sha256"] as? String)
+        XCTAssertEqual(restarted["phase"] as? String, "unknown")
+        XCTAssertEqual((restartedState["method_counts"] as? [String: Int])?["sendBocReturnHash"], 1)
+        let evidence = XCTAttachment(data: try JSONSerialization.data(withJSONObject: restartedState, options: [.sortedKeys]), uniformTypeIdentifier: "public.json")
+        evidence.name = "public-token-loss-relay-and-journal"; evidence.lifetime = .keepAlways; add(evidence)
+        // Assert after collecting restart evidence, so a baseline UI failure does
+        // not discard the independent no-replacement checks above.
+        XCTAssertFalse(immediateEstimateVisible, "Unknown delivery must hide re-estimation immediately, as well as after restart")
+    }
+
+    func testRestoreRetainedTokenQADirectRPC() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_TOKEN_LOSS_LIVE"] == "1", env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Retained local Token QA cleanup only")
+        }
+        continueAfterFailure = false
+        let app = XCUIApplication(); app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launch()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+            for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+        }
+        XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 30))
+        app.descendants(matching: .any)["wallet.settings"].tap(); app.cells["settings.RPCNodeItem"].tap()
+        let endpoint = app.textFields["settings.rpc.endpoint"]; endpoint.tap()
+        let clear = endpoint.buttons.firstMatch; XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap(); endpoint.tap()
+        endpoint.typeText("http://127.0.0.1:18555")
+        app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+        app.cells["settings.RPCNodeItem"].tap()
+        XCTAssertEqual(app.textFields["settings.rpc.endpoint"].value as? String, "http://127.0.0.1:18555")
+        app.alerts["RPC Node"].buttons["Cancel"].tap()
+    }
+
+
+    func testRetainedQuantumURITokenIdentityAndUnavailableRPC() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["TOS_UI_RPC_URL"] == "http://127.0.0.1:18555", env["TOS_TOKEN_URI_IDENTITY_LIVE"] == "1",
+              env["TOS_QUANTUM_ROOT_HASH"] == "d7e8a7ba64911212f1e4bb8f7da111014adc15dd33133e711bd6361bc8cb28f5" else {
+            throw XCTSkip("Explicit retained URI Token identity/network QA required")
+        }
+        let originalMaster = try XCTUnwrap(env["TOS_TOKEN_MASTER_RAW"])
+        let twinMaster = try XCTUnwrap(env["TOS_TOKEN_TWIN_MASTER_RAW"])
+        let originalBalance = try XCTUnwrap(env["TOS_TOKEN_ORIGINAL_DISPLAY"])
+        XCTAssertNotEqual(originalMaster, twinMaster)
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+        app.launchEnvironment["TOS_RPC_URL"] = "http://127.0.0.1:18555"
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 8) {
+                for digit in ["1", "2", "3", "4"] { app.buttons[digit].tap() }
+            }
+        }
+        func setRPC(_ value: String) {
+            XCTAssertTrue(app.collectionViews["wallet.balance.list"].waitForExistence(timeout: 30))
+            app.descendants(matching: .any)["wallet.settings"].tap(); app.cells["settings.RPCNodeItem"].tap()
+            let endpoint = app.textFields["settings.rpc.endpoint"]; endpoint.tap()
+            let clear = endpoint.buttons.firstMatch; XCTAssertTrue(clear.waitForExistence(timeout: 5)); clear.tap(); endpoint.tap()
+            endpoint.typeText(value)
+            app.alerts["RPC Node"].buttons["settings.rpc.save"].firstMatch.tap()
+            app.terminate(); app.launch(); unlock()
+        }
+        func capture(_ name: String, _ text: String) {
+            let attachment = XCTAttachment(string: text); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+        }
+        app.launch(); unlock()
+        let list = app.collectionViews["wallet.balance.list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 30))
+        let original = list.cells.containing(.staticText, identifier: originalBalance).firstMatch
+        let twin = list.cells.containing(.staticText, identifier: "42.123456").firstMatch
+        XCTAssertTrue(original.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(twin.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(original.staticTexts["CR"].exists); XCTAssertTrue(twin.staticTexts["CR"].exists)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "CR").count, 2)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "TOS").count, 1)
+        capture("public-two-same-symbol-token-balances", list.debugDescription)
+        for (balance, master) in [(originalBalance, originalMaster), ("42.123456", twinMaster)] {
+            let row = list.cells.containing(.staticText, identifier: balance).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 15)); row.tap()
+            let info = app.staticTexts["Unverified token"].firstMatch
+            XCTAssertTrue(info.waitForExistence(timeout: 15)); info.tap()
+            let alert = app.alerts.firstMatch
+            XCTAssertTrue(alert.waitForExistence(timeout: 10))
+            XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", master)).firstMatch.exists)
+            capture("public-master-for-balance-" + balance, alert.debugDescription)
+            alert.buttons["OK"].tap()
+            let back = app.buttons["Back"].firstMatch; XCTAssertTrue(back.waitForExistence(timeout: 10)); back.tap()
+            XCTAssertTrue(list.waitForExistence(timeout: 15))
+        }
+        setRPC("http://127.0.0.1:18558")
+        XCTAssertTrue(app.staticTexts["Balance unavailable"].waitForExistence(timeout: 45), app.debugDescription)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Verified ")).firstMatch.exists)
+        XCTAssertEqual(list.cells.containing(.staticText, identifier: "CR").count, 0)
+        capture("public-unavailable-rpc-no-stale-token-balances", list.debugDescription)
+        setRPC("http://127.0.0.1:18555")
+        XCTAssertTrue(original.waitForExistence(timeout: 45), list.debugDescription)
+        XCTAssertTrue(twin.waitForExistence(timeout: 45), list.debugDescription)
+        capture("public-uri-token-balances-after-rpc-restoration", list.debugDescription)
+    }
+
+}

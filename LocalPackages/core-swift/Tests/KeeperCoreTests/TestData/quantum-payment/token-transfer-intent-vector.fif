@@ -1,0 +1,10 @@
+<b 4 3 u, 0 8 i, 0x1111111111111111111111111111111111111111111111111111111111111111 256 u, b> constant owner
+<b 4 3 u, 0 8 i, 0x3333333333333333333333333333333333333333333333333333333333333333 256 u, b> constant recipient
+<b 4 3 u, 0 8 i, 0x5c2e7defab4c288bc81524d1594af7a14a984c4d789ac2acf28a4e8b589f9293 256 u, b> constant wallet
+<b 0x0f8a7ea5 32 u, 18446744073709551615 64 u, 7 4 u, 9007199254740993 56 u,
+recipient <s s, owner <s s, 0 1 u, 0 4 u, 0 1 u, b> constant body
+body 2 boc+>B "token-transfer-intent-body.boc" B>file
+<b 24 6 u, wallet <s s, 4 4 u, 100000000 32 u, 0 1 u,
+0 4 u, 0 4 u, 0 64 u, 0 32 u, 0 1 u, 1 1 u, body ref, b> constant message
+message 2 boc+>B "token-transfer-intent-message.boc" B>file
+<b 0x0ec3c86d 32 u, 3 8 u, <b b> ref, message ref, b> 2 boc+>B "token-transfer-intent-actions.boc" B>file

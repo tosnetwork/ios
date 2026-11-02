@@ -245,16 +245,21 @@ public final class ProcessedBalanceStore: Store<ProcessedBalanceStore.Event, Pro
         items.append(contentsOf: jettonItems.map { .jetton($0) })
         items.append(.ethena(ethenaItem))
 
+        // PQ Tokens are independent assets; do not extract legacy staking/Ethena identities.
+        let quantumTokens = wallet.kind == .quantum ? walletBalance.balance.jettonsBalance.map {
+            processJettonBalance($0, currency: currency)
+        } : []
         let processedBalance = ProcessedBalance(
-            items: wallet.kind == .quantum ? [.ton(tonItem)] : items,
+            items: wallet.kind == .quantum ? [.ton(tonItem)] + quantumTokens.map { .jetton($0) } : items,
             tonItem: tonItem,
             tronUSDTItem: tronUSDTItem,
-            jettonItems: jettonItems,
+            jettonItems: wallet.kind == .quantum ? quantumTokens : jettonItems,
             stakingItems: stakingItems,
             batteryBalance: walletBalance.batteryBalance,
             ethenaItem: ethenaItem,
             currency: currency,
-            date: walletBalance.date
+            date: walletBalance.date,
+            tokenNotice: walletBalance.tokenNotice
         )
 
         switch balanceState {

@@ -1,7 +1,7 @@
 import Foundation
 import CoreComponents
 
-/// Bounded untrusted transaction relay. A successful JSON-RPC response is never
+/// Bounded untrusted transaction and Token discovery relay. A successful JSON-RPC response is never
 /// a payment receipt; raw transaction cells still need proof-anchored hashes.
 internal final class TOSQuantumRPCTransport {
     private let endpoint: URL
@@ -19,7 +19,7 @@ internal final class TOSQuantumRPCTransport {
 
     func call(method: String, params: [String: Any], maximumBytes: Int = 2_097_152,
               isCancelled: () -> Bool = { Thread.current.isCancelled }) throws -> Any {
-        guard !Thread.isMainThread, ["getTransactions", "sendBocReturnHash", "estimateFee"].contains(method),
+        guard !Thread.isMainThread, ["getTransactions", "sendBocReturnHash", "estimateFee", "getAccountTokens", "getTokenData"].contains(method),
               (1...2_097_152).contains(maximumBytes), !isCancelled() else { throw TOSPQError.invalidInput }
         let id = UUID().uuidString
         let bytes = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": id, "method": method, "params": params])
@@ -48,7 +48,36 @@ internal final class TOSQuantumRPCTransport {
         return result
     }
 
-    private static func checkJSON(_ bytes: Data) throws {
+    /// Isolated issuer JSON read. No RPC configuration, credentials or cookies are forwarded.
+    static func readTokenMetadata(url: URL, configuration: URLSessionConfiguration = .ephemeral,
+                                  timeout: TimeInterval = 3,
+                                  isCancelled: () -> Bool = { Thread.current.isCancelled }) throws -> Data {
+        guard !Thread.isMainThread, url.scheme == "https", url.host != nil,
+              url.user == nil, url.password == nil, url.fragment == nil,
+              timeout > 0, timeout <= 3 else { throw TOSPQError.invalidInput }
+        if isCancelled() { throw CancellationError() }
+        let config = configuration.copy() as! URLSessionConfiguration
+        config.httpAdditionalHeaders = nil; config.httpCookieStorage = nil; config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil; config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let receiver = Receiver(limit: TOSTokenMetadata.maximumBytes)
+        let session = URLSession(configuration: config, delegate: receiver, delegateQueue: nil)
+        let task = session.dataTask(with: request)
+        defer { task.cancel(); session.invalidateAndCancel() }
+        task.resume()
+        let deadline = DispatchTime.now() + timeout
+        while receiver.completed.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
+            if isCancelled() { throw CancellationError() }
+            guard DispatchTime.now() < deadline else { throw TOSPQError.invalidInput }
+        }
+        if isCancelled() { throw CancellationError() }
+        guard receiver.failure == nil else { throw TOSPQError.invalidInput }
+        return receiver.bytes
+    }
+
+    static func checkJSON(_ bytes: Data, maximumDepth: Int = 64) throws {
         var stack = [UInt8](), quoted = false, escaped = false, started = false, finished = false
         for byte in bytes {
             if !quoted && stack.isEmpty {
@@ -63,7 +92,7 @@ internal final class TOSQuantumRPCTransport {
                 case 34: quoted = true
                 case 123, 91:
                     stack.append(byte)
-                    guard stack.count <= 64 else { throw TOSPQError.invalidInput }
+                    guard stack.count <= maximumDepth else { throw TOSPQError.invalidInput }
                 case 125, 93:
                     guard stack.popLast() == (byte == 125 ? 123 : 91) else { throw TOSPQError.invalidInput }
                     if stack.isEmpty { finished = true }

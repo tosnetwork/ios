@@ -117,7 +117,12 @@ public final class TOSQuantumPaymentCoordinator {
                 }
             }, now: now)
             let observation = try accounts.observeEnrolled(id: id, identity: identity, profile: entry.profile, configIndices: [8, 19, 48])
-            let payment = try TOSQuantumPreparedPayment(recovering: entry, observation: observation, now: now())
+            let tokenObservation = try entry.paymentIntent?.tokenTransfer.map {
+                try accounts.observeToken(owner: observation, master: $0.master, wallet: $0.wallet)
+            }
+            try job.check()
+            let payment = try TOSQuantumPreparedPayment(recovering: entry, observation: observation, now: now(),
+                tokenObservation: tokenObservation)
             let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: entry.profile.anchor(), baseDirectory: baseDirectory)
             let simulation = try session.simulate(request: payment.simulationRequest(), now: now(), signedMessage: bytes) { query, capacity in
                 try job.check(); let data = try relay(query, capacity); try job.check(); return data

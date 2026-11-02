@@ -1,0 +1,7 @@
+variable metadata
+dictnew metadata !
+<b <b 0 8 u, "Sample Credit" $>B B, b> ref, 59089242681608890680090686026688704441792375738894456860693970539822503415433 metadata @ 256 b>udict! not abort"metadata insert failed" metadata !
+<b <b 0 8 u, "CR" $>B B, b> ref, 82961397245523513629401799123410942652413991882008909918554405086738284660097 metadata @ 256 b>udict! not abort"metadata insert failed" metadata !
+<b <b 0 8 u, "6" $>B B, b> ref, 107878361799212983662495570378745491379550006934010968359181619763835345146430 metadata @ 256 b>udict! not abort"metadata insert failed" metadata !
+<b 0 8 u, metadata @ dict, b> 2 boc+>B "token-content-onchain.boc" B>file
+<b 1 8 u, "https://example.invalid/token.json" $>B B, b> 2 boc+>B "token-content-uri.boc" B>file

@@ -1,0 +1,14 @@
+{
+  "owner": "0:1111111111111111111111111111111111111111111111111111111111111111",
+  "master": "0:2222222222222222222222222222222222222222222222222222222222222222",
+  "expected_wallet": "0:4377841593b86fb71d29b1306cebd8b1dcaf7071e4a32ed206c5932388c60dae",
+  "source": "TOS SDK generated FunC Token code at bb2b07a40; Fift reference StateInit",
+  "files": {
+    "token-wallet-code.boc": "8261ef2f1dc066fe103d100f2d274ee8a1b7eced3425f6ee5829068ee5277625",
+    "token-wallet-init.boc": "bfccf6a6fc7e99e354e65daecfb81ae7d9be3a3408c9d75fb856b4906bb824c7",
+    "token-wallet-data.boc": "332bbe885bcce0fc56facc08703440a9947ea589edda307b9a5c716f91794a2a",
+    "token-wallet-vector.fif": "9fb3ff77422b2f8e5ede648746b124ec47582c417be9ee8b59d0d1451dd50033"
+  },
+  "source_revision": "bb2b07a40d838940bc16efa6cf72d24bc343c148",
+  "fift_binary_sha256": "4d14d4aec10d3c5d4809fb3932fc306a8c7ce5f1844ddf780a451d6a894d5eb1"
+}

@@ -24,6 +24,7 @@ final class WalletBalanceBalanceModel {
         let items: [Item]
         let canManage: Bool
         let isSecure: Bool
+        var tokenNotice: String? = nil
     }
 
     var didUpdateItems: ((BalanceListItems) -> Void)?
@@ -176,7 +177,8 @@ final class WalletBalanceBalanceModel {
             wallet: wallet,
             items: filteredItems,
             canManage: balance.isManagable,
-            isSecure: isSecureMode
+            isSecure: isSecureMode,
+            tokenNotice: balance.tokenNotice
         )
     }
 

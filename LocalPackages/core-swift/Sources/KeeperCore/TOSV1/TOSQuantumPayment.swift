@@ -3,13 +3,14 @@ import BigInt
 import TonSwift
 import CoreComponents
 
-/// Exact user-visible native-coin intent. This contains no fee estimate or signing
+/// Exact user-visible native-coin or standard Token intent. This contains no fee estimate or signing
 /// authority. Amounts are persisted as canonical decimal strings, never Doubles.
 public struct TOSQuantumPaymentIntent: Codable, Equatable {
     public let recipient: Address
     public let amount: BigUInt
     public let bounce: Bool
     public let comment: String?
+    public let tokenTransfer: TOSQuantumTokenTransferIntent?
     public static let maximumCommentBytes = 4096
 
     public init(recipient: Address, amount: BigUInt, bounce: Bool, comment: String? = nil) throws {
@@ -17,6 +18,13 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
               (comment?.utf8.count ?? 0) <= Self.maximumCommentBytes else { throw TOSPQError.invalidInput }
         self.recipient = recipient; self.amount = amount; self.bounce = bounce
         self.comment = comment?.isEmpty == true ? nil : comment
+        self.tokenTransfer = nil
+    }
+
+    public init(tokenTransfer: TOSQuantumTokenTransferIntent) {
+        self.tokenTransfer = tokenTransfer
+        recipient = tokenTransfer.wallet; amount = tokenTransfer.attachedTos
+        bounce = true; comment = nil
     }
 
     /// Exact TOS decimal input, without locale, exponent or floating-point conversion.
@@ -45,14 +53,18 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
     }
 
     internal func internalMessage() throws -> MessageRelaxed {
-        try comment.map {
+        if let tokenTransfer {
+            return try MessageRelaxed.internal(to: tokenTransfer.wallet, value: tokenTransfer.attachedTos,
+                bounce: true, body: tokenTransfer.body())
+        }
+        return try comment.map {
             try MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, textPayload: $0)
         } ?? MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, body: Builder().endCell())
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.recipient == rhs.recipient && lhs.amount == rhs.amount && lhs.bounce == rhs.bounce &&
-            lhs.comment.map { Data($0.utf8) } == rhs.comment.map { Data($0.utf8) }
+            lhs.comment.map { Data($0.utf8) } == rhs.comment.map { Data($0.utf8) } && lhs.tokenTransfer == rhs.tokenTransfer
     }
 
     internal func requireBound(request: Cell, role: TOSQuantumRole) throws {
@@ -66,14 +78,23 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         guard try s.loadUint(bits: 8) == 0 else { throw TOSPQError.keyBinding }
     }
 
-    private enum CodingKeys: String, CodingKey { case version, recipient, amount, bounce, comment }
+    private enum CodingKeys: String, CodingKey { case version, recipient, amount, bounce, comment, tokenTransfer }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let decimal = try c.decode(String.self, forKey: .amount)
         guard try c.decode(UInt8.self, forKey: .version) == 1, decimal.utf8.count <= 37,
               let amount = BigUInt(decimal), String(amount) == decimal else { throw TOSPQError.invalidInput }
-        try self.init(recipient: Address.parse(c.decode(String.self, forKey: .recipient)), amount: amount,
-            bounce: c.decode(Bool.self, forKey: .bounce), comment: c.decodeIfPresent(String.self, forKey: .comment))
+        let recipient = try Address.parse(c.decode(String.self, forKey: .recipient))
+        let bounce = try c.decode(Bool.self, forKey: .bounce)
+        let comment = try c.decodeIfPresent(String.self, forKey: .comment)
+        if let token = try c.decodeIfPresent(TOSQuantumTokenTransferIntent.self, forKey: .tokenTransfer) {
+            guard recipient == token.wallet, amount == token.attachedTos, bounce, comment == nil else {
+                throw TOSPQError.keyBinding
+            }
+            self.init(tokenTransfer: token)
+        } else {
+            try self.init(recipient: recipient, amount: amount, bounce: bounce, comment: comment)
+        }
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -82,13 +103,14 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         try c.encode(String(amount), forKey: .amount)
         try c.encode(bounce, forKey: .bounce)
         try c.encodeIfPresent(comment, forKey: .comment)
+        try c.encodeIfPresent(tokenTransfer, forKey: .tokenTransfer)
     }
 }
 
 /// A proof-bound unsigned payment, for the dedicated confirmation flow. The
 /// balance here is not spendable-after-fees and this type does not approve fees.
 public struct TOSQuantumPreparedPayment {
-    public enum Error: Swift.Error { case insufficientValue, frozenAccount, expired }
+    public enum Error: Swift.Error { case insufficientValue, insufficientTokenBalance, frozenAccount, expired }
     public let intent: TOSQuantumPaymentIntent
     public let identity: TOSQuantumSelfPayIdentity
     public let profile: TOSQuantumNetworkProfile
@@ -98,6 +120,7 @@ public struct TOSQuantumPreparedPayment {
     public let expiresAt: UInt32
     private let observation: TOSQuantumAccountReader.Observation
     private let network: TOSQuantumSelfPayNetwork
+    private let tokenObservation: TOSQuantumAccountReader.TokenObservation?
     internal var walletID: UUID { observation.id }
 
     internal func simulationRequest() throws -> Data {
@@ -108,7 +131,7 @@ public struct TOSQuantumPreparedPayment {
     }
 
     internal init(observation: TOSQuantumAccountReader.Observation, intent: TOSQuantumPaymentIntent,
-                  now: Int64, ttl: UInt32) throws {
+                  now: Int64, ttl: UInt32, tokenObservation: TOSQuantumAccountReader.TokenObservation? = nil) throws {
         guard now > 0, now <= Int64(UInt32.max), (1...3600).contains(ttl) else { throw TOSPQError.invalidInput }
         try observation.requireFresh(now: now)
         let network = try TOSQuantumSelfPayNetwork(proof: observation.network,
@@ -123,6 +146,21 @@ public struct TOSQuantumPreparedPayment {
             requiresDeployment = true
         case .frozen: throw Error.frozenAccount
         }
+        if let token = intent.tokenTransfer {
+            guard let checked = tokenObservation, token.owner == observation.identity.address,
+                  checked.owner.id == observation.id, checked.owner.identity == observation.identity,
+                  checked.master == token.master, checked.wallet == token.wallet else { throw TOSPQError.keyBinding }
+            try observation.network.requireSameCheckpoint(checked.owner.proof)
+            try checked.requireFresh(now: now)
+            let content = try TOSTokenContent.decode(checked.masterState.content)
+            let decimals: Int
+            if let value = content.decimals { decimals = value }
+            else if let uri = content.uri { decimals = try TOSTokenMetadata.read(uri, isCancelled: { false }).decimals }
+            else { throw TOSPQError.invalidInput }
+            guard decimals == token.decimals else { throw TOSPQError.keyBinding }
+            guard checked.balance >= token.units else { throw Error.insufficientTokenBalance }
+        } else if tokenObservation != nil { throw TOSPQError.keyBinding }
+        self.tokenObservation = tokenObservation
         guard observation.snapshot.balance >= intent.amount else { throw Error.insufficientValue }
         let accountTime = try observation.proof.provenAccountTime(expectedAddress: observation.identity.address.toRaw())
         let time = max(UInt32(now), max(try observation.network.masterchainTime(), accountTime))
@@ -139,7 +177,8 @@ public struct TOSQuantumPreparedPayment {
     /// Rebuild only the same request from current authenticated state. A consumed,
     /// expired or reconfigured authorization cannot become a replacement request.
     internal init(recovering entry: TOSQuantumOutbox.Entry,
-                  observation: TOSQuantumAccountReader.Observation, now: Int64) throws {
+                  observation: TOSQuantumAccountReader.Observation, now: Int64,
+                  tokenObservation: TOSQuantumAccountReader.TokenObservation? = nil) throws {
         guard entry.identity == observation.identity, entry.profile == observation.profile,
               let intent = entry.paymentIntent, entry.signedBOC != nil,
               entry.phase == .signed, now > 0, now <= Int64(UInt32.max) else {
@@ -149,7 +188,7 @@ public struct TOSQuantumPreparedPayment {
         let time = max(UInt32(now), max(try observation.network.masterchainTime(),
             try observation.proof.provenAccountTime(expectedAddress: entry.identity.address.toRaw())))
         guard deadline > time else { throw Error.expired }
-        try self.init(observation: observation, intent: intent, now: now, ttl: deadline - time)
+        try self.init(observation: observation, intent: intent, now: now, ttl: deadline - time, tokenObservation: tokenObservation)
         guard request.digest == entry.requestHash,
               requiresDeployment == entry.deploy else { throw TOSPQError.keyBinding }
     }
@@ -157,6 +196,7 @@ public struct TOSQuantumPreparedPayment {
     public func requireFresh(now: Int64) throws {
         try observation.requireFresh(now: now)
         try network.requireSameCheckpoint(observation.proof, now: now)
+        try tokenObservation?.requireFresh(now: now)
         guard now > 0, now < Int64(expiresAt) else { throw Error.expired }
     }
 }
@@ -178,6 +218,11 @@ public final class TOSQuantumPaymentService {
               wallet.identity.networkGlobalId == identity.wallet.initialAuthority.globalID else { throw TOSPQError.keyBinding }
         let observation = try await reader.observe(wallet: wallet, configIndices: [8, 19, 48])
         try Task.checkCancellation()
-        return try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: now(), ttl: ttl)
+        let tokenObservation = try intent.tokenTransfer.map {
+            try reader.observeToken(owner: observation, master: $0.master, wallet: $0.wallet)
+        }
+        try Task.checkCancellation()
+        return try TOSQuantumPreparedPayment(observation: observation, intent: intent, now: now(), ttl: ttl,
+            tokenObservation: tokenObservation)
     }
 }

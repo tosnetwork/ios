@@ -1,5 +1,7 @@
 import Foundation
 import CoreComponents
+import BigInt
+import TonSwift
 
 /// Read-only observation through the original enrollment. A balance is neither
 /// signing authority nor a spendable-amount or fee estimate.
@@ -164,4 +166,63 @@ internal final class TOSQuantumAccountReader {
         return try Observation(id: id, identity: identity, profile: profile, network: network,
                                proof: proof, account: account, now: now())
     }
+    /// Raw index rows never establish ownership, code support or a balance.
+    internal struct TokenObservation {
+        let owner: Observation
+        let master: Address
+        let wallet: Address
+        let masterState: TOSTokenMasterState
+        let state: TOSTokenWalletState?
+        fileprivate let masterProof: TOSQuantumProofBridge.BoundRead
+        fileprivate let walletProof: TOSQuantumProofBridge.BoundRead
+        var balance: BigUInt { state?.balance ?? 0 }
+
+        func requireFresh(now: Int64) throws {
+            try owner.requireFresh(now: now)
+            for (proof, address) in [(masterProof, master), (walletProof, wallet)] {
+                try proof.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
+                try owner.network.requireSameCheckpoint(proof)
+                guard (-60...TOSQuantumAccountReader.maximumAge).contains(now - Int64(try proof.provenAccountTime(expectedAddress: address.toRaw()))) else {
+                    throw TOSPQError.invalidInput
+                }
+            }
+        }
+    }
+
+    /// Choose a locally supported code family from the owner/master-derived address.
+    internal func observeToken(owner: Observation, master: Address, wallet: Address) throws -> TokenObservation {
+        let family = try TOSTokenContractCodes.family(owner: owner.identity.address, master: master, wallet: wallet)
+        let code = family.wallet
+        let masterCode = family.master
+        try owner.requireFresh(now: now())
+        guard wallet == (try TOSTokenWalletState.address(owner: owner.identity.address, master: master, walletCode: code)) else {
+            throw TOSPQError.keyBinding
+        }
+        let session = try TOSQuantumProofSession(walletID: owner.id, locallyProvisionedAnchor: owner.profile.anchor(), baseDirectory: baseDirectory)
+        let relay = try transport()
+        func read(_ address: Address) throws -> TOSQuantumProofBridge.BoundRead {
+            let request = try owner.network.requestAtCheckpoint(account: address.toRaw(), maximumAge: Self.maximumAge)
+            let proof = try session.readBound(request: request, now: now(), transport: relay)
+            try owner.network.requireSameCheckpoint(proof)
+            try proof.requireLive(now: now(), maximumAge: Self.maximumAge)
+            return proof
+        }
+        let masterProof = try read(master)
+        let masterBytes = try masterProof.accountState(expectedAddress: master.toRaw(), expectedCodeHash: masterCode.hash())
+        let masterData = try TOSQuantumAccountState.data(masterBytes, expectedAddress: master, expectedCode: masterCode)
+        let masterState = try TOSTokenMasterState.decode(masterData, expectedWalletCode: code)
+        let walletProof = try read(wallet)
+        let state: TOSTokenWalletState?
+        if try walletProof.provenAccountState(expectedAddress: wallet.toRaw()) == nil { state = nil }
+        else {
+            let bytes = try walletProof.accountState(expectedAddress: wallet.toRaw(), expectedCodeHash: code.hash())
+            let data = try TOSQuantumAccountState.data(bytes, expectedAddress: wallet, expectedCode: code)
+            state = try TOSTokenWalletState.decode(data, wallet: wallet, owner: owner.identity.address, master: master, walletCode: code)
+        }
+        let result = TokenObservation(owner: owner, master: master, wallet: wallet, masterState: masterState,
+                                      state: state, masterProof: masterProof, walletProof: walletProof)
+        try result.requireFresh(now: now())
+        return result
+    }
+
 }
