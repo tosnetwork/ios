@@ -45,9 +45,14 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
             let identity = try TOSQuantumSelfPayIdentity(wallet: TOSQuantumSelfPayWallet(authority:
                 TOSQuantumSelfPayAuthority(globalID: 3, namespace: namespace,
                     primaryKey: publicKey(.primary, material: .primary), rescueKey: publicKey(.rescue, material: .rescue))))
-            let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: base) }
-            let id = UUID()
+            let recoveryRun = try (config["recovery_run"] as? String).map { try XCTUnwrap(UUID(uuidString: $0)) }
+            let recovering = config["recover_only"] as? Bool == true
+            guard !recovering || recoveryRun != nil else { throw TOSPQError.invalidInput }
+            let id = recoveryRun ?? UUID()
+            let base = FileManager.default.temporaryDirectory.appendingPathComponent("privacy-read-test-" + id.uuidString)
+            defer {
+                if recoveryRun == nil { try? FileManager.default.removeItem(at: base) }
+            }
             let wallet = Wallet(id: id.uuidString,
                 identity: WalletIdentity(network: .mainnet, kind: .Quantum(identity), networkGlobalId: 3),
                 metaData: WalletMetaData(label: "Isolated privacy read test", tintColor: .defaultColor, icon: .icon(.wallet)),
@@ -56,9 +61,11 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
             let transport: TOSQuantumProofBridge.Transport = { try relay.query($0, maximumBytes: $1) }
             func now() -> Int64 { Int64(Date().timeIntervalSince1970) }
             let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: profile.anchor(), baseDirectory: base)
-            _ = try session.enrollBound(request: JSONSerialization.data(withJSONObject:
-                ["mode": "live", "max_age_seconds": 300, "config_params": [19, 21]]), now: now(), transport: transport)
-            try TOSQuantumCreationRecord(id: id, profile: profile, identity: identity).save(baseDirectory: base)
+            if !recovering {
+                _ = try session.enrollBound(request: JSONSerialization.data(withJSONObject:
+                    ["mode": "live", "max_age_seconds": 300, "config_params": [19, 21]]), now: now(), transport: transport)
+                try TOSQuantumCreationRecord(id: id, profile: profile, identity: identity).save(baseDirectory: base)
+            }
             let selection = try TOSPrivacyPoolSelection(profile: profile,
                 address: Address(workchain: 0, hash: hash("pool_account")),
                 codeBOC: XCTUnwrap(Data(base64Encoded: string("code_boc"))), profileHash: hash("profile_hash"),
@@ -70,7 +77,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 else { TOSRPCSettings.reset() }
             }
             try TOSRPCSettings.setCustomEndpoint(url.absoluteString)
-            let namespaceID = "privacy-read-test-" + UUID().uuidString
+            let namespaceID = "privacy-read-test-" + id.uuidString
             let vault = MnemonicsVault(keychainVault: TKKeychainVaultImplementation(keychain: TKKeychainImplementation()),
                 seedProvider: { namespaceID })
             var stage = "save isolated encrypted mnemonic"
@@ -80,7 +87,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
             }
             do {
                 let password = "public isolated test password"
-                try await vault.saveMnemonic(mnemonic, wallet: wallet, password: password)
+                if !recovering { try await vault.saveMnemonic(mnemonic, wallet: wallet, password: password) }
                 stage = "prepare original wallet"
                 let service = TOSPrivacyWalletService(mnemonics: vault, baseDirectory: base,
                     outboxDirectory: base.appendingPathComponent("outbox"), privacyStoreParent: base, now: now)
@@ -107,7 +114,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 XCTAssertEqual(result.summary.totalOutputs, expectedOutputs)
                 XCTAssertGreaterThan(result.provenShardTime, 0)
                 stage = "issue consecutive private receipts"
-                let checkReceiptIndices = config["payment_recipient"] == nil && config["verify_balance_only"] as? Bool != true
+                let checkReceiptIndices = !recovering && config["payment_recipient"] == nil && config["verify_balance_only"] as? Bool != true
                 for expected in (checkReceiptIndices ? [UInt64(0), 1] : []) {
                     let descriptor = try await service.receive(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection)
@@ -146,7 +153,9 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
                             selection: selection, input: encodedRecipient)
                         let loseResponse = config["verify_lost_response"] as? Bool == true
-                        let startingBalance = loseResponse ? "899999999" : "1000000000"
+                        let startingBalance = recoveryRun != nil && loseResponse ? "799999998"
+                            : (loseResponse ? "899999999" : "1000000000")
+                        let endingBalance = String(try XCTUnwrap(UInt64(startingBalance)) - 100_000_001)
                         guard valid, result.summary.unspentBalance == startingBalance else {
                             throw TOSPQError.invalidInput
                         }
@@ -174,7 +183,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         for _ in 0..<30 {
                             let current = try await service.read(wallet: wallet, authorization: authorization,
                                 selection: selection)
-                            if current.summary.unspentBalance == (loseResponse ? "799999998" : "899999999") {
+                            if current.summary.unspentBalance == endingBalance {
                                 confirmed = true
                                 break
                             }
@@ -183,13 +192,23 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         XCTAssertTrue(confirmed, "Expected the confirmed amount and fee to debit the sender")
                     }
                 }
+                if recovering {
+                    stage = "recover confirmed payment after process restart"
+                    let relay = try XCTUnwrap(config["approved_relay"] as? [String: Any])
+                    let request = try JSONSerialization.data(withJSONObject: relay.filter { $0.key != "lifetime" })
+                    let recovered = try await service.recoverPayment(wallet: wallet, authorization: .appPasscode(password),
+                        selection: selection, approvedRelay: request)
+                    XCTAssertNil(recovered, "A confirmed payment must not become eligible for resubmission")
+                }
+                if recoveryRun != nil && !recovering { return }
                 stage = "remove isolated vault"
                 try await vault.deleteAll()
                 XCTAssertFalse(vault.hasMnemonics())
+                if recovering { try FileManager.default.removeItem(at: base) }
             } catch {
                 let failure = error
                 XCTFail("Hosted privacy read failed at \(stage): \(diagnostic(failure))")
-                do { try await vault.deleteAll() }
+                do { if recoveryRun == nil { try await vault.deleteAll() } }
                 catch { XCTFail("Isolated vault cleanup failed: \(diagnostic(error))") }
                 throw failure
             }
