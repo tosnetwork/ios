@@ -90,6 +90,17 @@ public enum TOSPrivacyNative {
         deinit { tos_shielded_payment_prover_free(handle) }
     }
 
+    public struct RelayOfferDetails: Decodable {
+        public let identity: String
+        public let fee: String
+        public let validUntil: String
+
+        private enum CodingKeys: String, CodingKey {
+            case identity, fee
+            case validUntil = "valid_until"
+        }
+    }
+
     public final class RelayOffer {
         fileprivate var handle: OpaquePointer?
 
@@ -98,10 +109,11 @@ public enum TOSPrivacyNative {
             if let handle { tos_shielded_relay_offer_free(handle) }
         }
 
-        public func details() throws -> Data {
+        public func details() throws -> RelayOfferDetails {
             TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
             guard let handle else { throw Failure.invalidInput }
-            return try TOSPrivacyNative.copyAndRelease(tos_shielded_relay_offer_info(handle))
+            let bytes = try TOSPrivacyNative.copyAndRelease(tos_shielded_relay_offer_info(handle))
+            return try JSONDecoder().decode(RelayOfferDetails.self, from: bytes)
         }
     }
 
