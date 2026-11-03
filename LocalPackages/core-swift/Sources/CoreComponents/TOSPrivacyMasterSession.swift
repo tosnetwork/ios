@@ -71,7 +71,24 @@ public final class TOSPrivacyMasterSession {
         }
     }
 
-    internal func withSeedAndClose<T>(binding: Binding, operation: (inout Data) throws -> T) throws -> T {
+    public func stagePaymentAndClose(
+        history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
+        prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer, request: Data
+    ) throws -> TOSPrivacyNative.PaymentSubmission {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.stagePaymentAndWipeSeed(seed: &seed, prover: prover, offer: offer, request: request)
+        }
+    }
+
+    public func recoverPaymentAndClose(
+        history: TOSPrivacyHistoryWalk.Completed, binding: Binding, request: Data
+    ) throws -> TOSPrivacyNative.PaymentSubmission? {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.recoverPaymentAndWipeSeed(seed: &seed, request: request)
+        }
+    }
+
+    private func withSeedAndClose<T>(binding: Binding, operation: (inout Data) throws -> T) throws -> T {
         guard !Thread.isMainThread else { close(); throw TOSPrivacyNative.Failure.requiresWorker }
         lock.lock(); defer { lock.unlock() }
         defer { discardMaster() }

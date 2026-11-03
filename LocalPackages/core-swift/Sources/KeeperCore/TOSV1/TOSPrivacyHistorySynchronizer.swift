@@ -102,9 +102,8 @@ internal enum TOSPrivacyHistorySynchronizer {
                 "quote_identity": quoteIdentity,
                 "proven_time": try observation.provenShardTime(now: now()),
             ])
-            let payment = try master.withSeedAndClose(binding: binding) { seed in
-                try history.stagePaymentAndWipeSeed(seed: &seed, prover: prover, offer: offer, request: request)
-            }
+            let payment = try master.stagePaymentAndClose(history: history, binding: binding,
+                prover: prover, offer: offer, request: request)
             try observation.requireFresh(now: now())
             return payment
         }
@@ -119,9 +118,7 @@ internal enum TOSPrivacyHistorySynchronizer {
             guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
                   binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
             try observation.requireFresh(now: now())
-            let payment = try master.withSeedAndClose(binding: binding) { seed in
-                try history.recoverPaymentAndWipeSeed(seed: &seed, request: request)
-            }
+            let payment = try master.recoverPaymentAndClose(history: history, binding: binding, request: request)
             try observation.requireFresh(now: now())
             return payment
         }
