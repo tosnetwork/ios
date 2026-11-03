@@ -21,6 +21,7 @@ SOURCE_PATHS = [
     "tools/bonded-relayer/client",
     "tools/bonded-relayer/bond-codec",
     "crypto/poseidon2",
+    "crypto/smartcont",
     "tosctl/src/block",
     "tosctl/src/lockfree",
     "tosctl/src/common",
