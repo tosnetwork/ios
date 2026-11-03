@@ -43,12 +43,13 @@ tonconnect_generate:
 
 BUILD_DIR := ./build
 BUILD_JOBS ?= 4
+TOS_PRIVACY_PROVING ?= 0
 
 prepare_quantum_fee_state:
 	python3 scripts/build_quantum_fee_state.py
 
 prepare_privacy_native:
-	python3 scripts/build_privacy_native.py --platform ios
+	python3 scripts/build_privacy_native.py --platform ios $(if $(filter 1,$(TOS_PRIVACY_PROVING)),--proving)
 
 prepare_quantum_proof:
 	python3 scripts/build_quantum_proof.py
