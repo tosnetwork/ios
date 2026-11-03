@@ -33,6 +33,13 @@ public enum TOSPrivacyHistoryWalk {
         /// batch balances. Recheck the original proof before and after native work;
         /// callbacks must not reenter this owner. No result survives cancellation
         /// or a failed final proof recheck. The caller still persists reservations.
+        public func receiveAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                       requireCurrent: () throws -> Void) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            return try replay.receiveAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                                requireCurrent: requireCurrent)
+        }
+
         public func summaryAndWipeSeed(seed: inout Data, stopped: () -> Bool,
                                        recheck: () throws -> Void) throws -> Data {
             defer { seed.resetBytes(in: 0..<seed.count) }

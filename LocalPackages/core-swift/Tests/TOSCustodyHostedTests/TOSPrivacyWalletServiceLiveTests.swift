@@ -83,7 +83,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 try await vault.saveMnemonic(mnemonic, wallet: wallet, password: password)
                 stage = "prepare original wallet"
                 let service = TOSPrivacyWalletService(mnemonics: vault, baseDirectory: base,
-                    outboxDirectory: base.appendingPathComponent("outbox"), now: now)
+                    outboxDirectory: base.appendingPathComponent("outbox"), privacyStoreParent: base, now: now)
                 let preparation = try await service.prepare(wallet: wallet)
                 XCTAssertEqual(preparation.profile, profile)
                 XCTAssertEqual(preparation.access, .appPasscode)
@@ -105,6 +105,15 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 XCTAssertEqual(result.summary.unspentBalance, "0")
                 XCTAssertEqual(result.summary.totalOutputs, 0)
                 XCTAssertGreaterThan(result.provenShardTime, 0)
+                stage = "issue consecutive private receipts"
+                for expected in UInt64(0)...1 {
+                    let descriptor = try await service.receive(wallet: wallet,
+                        authorization: .appPasscode(password), selection: selection)
+                    XCTAssertEqual(descriptor.count, 2573)
+                    XCTAssertEqual(Array(descriptor.prefix(4)), [0x53, 0x48, 0x44, 0x31])
+                    let index = descriptor.dropFirst(37).prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+                    XCTAssertEqual(index, expected)
+                }
                 stage = "remove isolated vault"
                 try await vault.deleteAll()
                 XCTAssertFalse(vault.hasMnemonics())

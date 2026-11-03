@@ -180,12 +180,18 @@ internal final class TOSQuantumAccountReader {
         fileprivate let proof: TOSQuantumProofBridge.BoundRead
         fileprivate let poolDataBOC: Data
         fileprivate let accountRoot: Data
+        fileprivate let receiptBinding: Data
+
+        func receiveBinding(now: Int64) throws -> Data {
+            try requireFresh(now: now)
+            return receiptBinding
+        }
         func provenShardTime(now: Int64) throws -> UInt32 {
             try requireFresh(now: now)
             return try proof.provenAccountTime(expectedAddress: address.toRaw())
         }
         /// These values come exclusively from this verified same-checkpoint observation.
-        func replayRequest(now: Int64) throws -> Data {
+        func replayRequest(now: Int64, forReceive: Bool = false) throws -> Data {
             try requireFresh(now: now)
             let raw = address.toRaw()
             guard raw.hasPrefix("0:"), accountRoot.count == 32 else { throw TOSPQError.keyBinding }
@@ -194,11 +200,13 @@ internal final class TOSQuantumAccountReader {
             let gasRoot = try TOSRPCOrdinaryBOC.decode(gas.base64EncodedString())
             let dataRoot = try TOSRPCOrdinaryBOC.decode(poolDataBOC.base64EncodedString())
             func hex(_ value: Data) -> String { value.map { String(format: "%02x", $0) }.joined() }
-            return try JSONSerialization.data(withJSONObject: ["version": 1, "global_id": profile.globalID,
+            var request: [String: Any] = ["version": 1, "global_id": profile.globalID,
                 "account_id": String(raw.dropFirst(2)), "last_hash": hex(head.hash), "last_lt": String(head.logicalTime),
                 "account_root": hex(accountRoot), "shard_time": String(try proof.provenAccountTime(expectedAddress: raw)),
                 "pool_state_boc": poolDataBOC.base64EncodedString(), "pool_data_hash": hex(dataRoot.hash()),
-                "gas_boc": gas.base64EncodedString(), "gas_hash": hex(gasRoot.hash())])
+                "gas_boc": gas.base64EncodedString(), "gas_hash": hex(gasRoot.hash())]
+            if forReceive { request["receive_binding"] = hex(receiptBinding) }
+            return try JSONSerialization.data(withJSONObject: request)
         }
         func requireFresh(now: Int64) throws {
             try network.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
@@ -237,10 +245,27 @@ internal final class TOSQuantumAccountReader {
               object["poseidon_manifest_hash"] as? String == hex(manifestHash),
               object["groth16_vk_hash"] as? String == hex(verifyingKeyHash),
               Data(SHA256.hash(data: key)) == verifyingKeyHash else { throw TOSPQError.keyBinding }
+        func hashBytes(_ text: String) throws -> Data {
+            let digits = Array(text.utf8)
+            guard digits.count == 64 else { throw TOSPQError.keyBinding }
+            return try Data(stride(from: 0, to: digits.count, by: 2).map { offset in
+                guard let byte = UInt8(String(decoding: digits[offset..<offset + 2], as: UTF8.self), radix: 16) else {
+                    throw TOSPQError.keyBinding
+                }
+                return byte
+            })
+        }
+        var networkID = profile.globalID.bigEndian
+        var binding = withUnsafeBytes(of: &networkID) { Data($0) }
+        try binding.append(hashBytes(String(address.toRaw().dropFirst(2))))
+        try binding.append(hashBytes(profile.rootHash))
+        try binding.append(hashBytes(profile.fileHash))
+        for hash in [expectedCode.hash(), profileHash, manifestHash, verifyingKeyHash] { binding.append(hash) }
         let result = PoolObservation(id: id, profile: profile, birthHash: identity.cell.hash(),
                                      namespace: identity.wallet.initialAuthority.namespace,
                                      network: network, address: address, stateJSON: decoded, proof: proof,
-                                     poolDataBOC: try data.toBoc(), accountRoot: try TOSRPCOrdinaryBOC.decode(account.base64EncodedString()).hash())
+                                     poolDataBOC: try data.toBoc(), accountRoot: try TOSRPCOrdinaryBOC.decode(account.base64EncodedString()).hash(),
+                                     receiptBinding: binding)
         try result.requireFresh(now: now())
         return result
     }

@@ -58,12 +58,26 @@ public final class TOSPrivacyMasterSession {
     /// recheck that original observation on both sides of native scanning.
     public func summaryAndClose(history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
                                 stopped: () -> Bool, recheck: () throws -> Void) throws -> Data {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.summaryAndWipeSeed(seed: &seed, stopped: stopped, recheck: recheck)
+        }
+    }
+
+    public func receiveAndClose(history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
+                                root: Data, poolBinding: Data, requireCurrent: () throws -> Void) throws -> Data {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.receiveAndWipeSeed(seed: &seed, root: root, binding: poolBinding,
+                                          requireCurrent: requireCurrent)
+        }
+    }
+
+    private func withSeedAndClose(binding: Binding, operation: (inout Data) throws -> Data) throws -> Data {
         guard !Thread.isMainThread else { close(); throw TOSPrivacyNative.Failure.requiresWorker }
         lock.lock(); defer { lock.unlock() }
         defer { discardMaster() }
         guard self.binding == binding else { throw Failure.binding }
         guard var seed = master else { throw Failure.materialUnavailable }
         defer { seed.resetBytes(in: 0..<seed.count) }
-        return try history.summaryAndWipeSeed(seed: &seed, stopped: stopped, recheck: recheck)
+        return try operation(&seed)
     }
 }

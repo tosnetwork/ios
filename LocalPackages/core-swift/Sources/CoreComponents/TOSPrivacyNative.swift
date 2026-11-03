@@ -145,6 +145,36 @@ public enum TOSPrivacyNative {
             guard !stopped() else { throw Failure.stopped }
             return result
         }
+        /// Issue a descriptor only after the native store commits its index.
+        public func receiveAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                      requireCurrent: () throws -> Void) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            guard seed.count == 32, (1...4096).contains(root.count), binding.count == 228 else {
+                throw Failure.invalidInput
+            }
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            try requireCurrent()
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            try requireCurrent()
+            var result = try seed.withUnsafeBytes { key in
+                try root.withUnsafeBytes { path in
+                    try binding.withUnsafeBytes { pins in
+                        try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_receive(
+                            handle, key.bindMemory(to: UInt8.self).baseAddress, key.count,
+                            path.bindMemory(to: UInt8.self).baseAddress, path.count,
+                            pins.bindMemory(to: UInt8.self).baseAddress, pins.count), exactSize: 2573)
+                    }
+                }
+            }
+            do { try requireCurrent() }
+            catch {
+                result.resetBytes(in: 0..<result.count)
+                throw error
+            }
+            return result
+        }
+
         // Caller already owns the shared native TOSPrivacyNative.lock.
         private func discard() {
             if let handle { tos_shielded_replay_free(handle); self.handle = nil }

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Security
 import CoreComponents
@@ -53,14 +54,15 @@ public final class TOSPrivacyWalletService {
     private let mnemonics: MnemonicsRepository
     private let baseDirectory: URL?
     private let outboxDirectory: URL?
+    private let privacyStoreParent: URL?
     private let now: () -> Int64
 
     public convenience init(mnemonics: MnemonicsRepository) {
         self.init(mnemonics: mnemonics, baseDirectory: nil, outboxDirectory: nil,
                   now: { Int64(Date().timeIntervalSince1970) })
     }
-    internal init(mnemonics: MnemonicsRepository, baseDirectory: URL?, outboxDirectory: URL?, now: @escaping () -> Int64) {
-        self.mnemonics = mnemonics; self.baseDirectory = baseDirectory; self.outboxDirectory = outboxDirectory; self.now = now
+    internal init(mnemonics: MnemonicsRepository, baseDirectory: URL?, outboxDirectory: URL?, privacyStoreParent: URL? = nil, now: @escaping () -> Int64) {
+        self.mnemonics = mnemonics; self.baseDirectory = baseDirectory; self.outboxDirectory = outboxDirectory; self.privacyStoreParent = privacyStoreParent; self.now = now
     }
     private func context(_ wallet: Wallet) throws -> Context {
         guard case .Quantum(let identity) = wallet.identity.kind, let id = UUID(uuidString: wallet.id),
@@ -95,6 +97,41 @@ public final class TOSPrivacyWalletService {
         } onCancel: { job.cancel() }
     }
     public func read(wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection) async throws -> Observed {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: false) { completed, master, context, observation, job in
+            let bytes = try completed.summaryAndCloseMaster(master, binding: context.binding,
+                stopped: job.stopped, now: self.now)
+            let summary = try TOSPrivacySummary(nativeJSON: bytes)
+            let time = try observation.provenShardTime(now: self.now())
+            return Observed(walletID: context.id, profile: context.profile, poolAddress: selection.address.toRaw(),
+                summary: summary, provenShardTime: time, observedAt: self.now())
+        }
+    }
+
+    public func receive(wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection) async throws -> Data {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            let parent = try self.privacyStoreParent ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                     appropriateFor: nil, create: true)
+            var root = parent.appendingPathComponent("tos-privacy", isDirectory: true)
+            if mkdir(root.path, 0o700) != 0 && errno != EEXIST { throw POSIXError(.EIO) }
+            let fd = open(parent.path, O_RDONLY | O_DIRECTORY)
+            guard fd >= 0 else { throw POSIXError(.EIO) }
+            defer { close(fd) }
+            guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try root.setResourceValues(values)
+            return try completed.receiveAndCloseMaster(master, binding: context.binding,
+                root: Data(root.path.utf8), stopped: job.stopped, now: self.now)
+        }
+    }
+
+    private func withVerifiedWallet<Value>(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection, forReceive: Bool,
+        operation: @escaping (TOSPrivacyHistorySynchronizer.Completed, TOSPrivacyMasterSession,
+                              Context, TOSQuantumAccountReader.PoolObservation, Job) throws -> Value
+    ) async throws -> Value {
         guard case .Quantum(let identity) = wallet.identity.kind else { throw Failure.unsupportedWallet }
         try Task.checkCancellation()
         let birth = identity.cell.hash()
@@ -155,15 +192,11 @@ public final class TOSPrivacyWalletService {
                         manifestHash: selection.manifestHash, verifyingKeyHash: selection.verifyingKeyHash)
                     try job.check()
                     let completed = try TOSPrivacyHistorySynchronizer.synchronize(observation: observation,
-                        endpoint: url, stopped: job.stopped, now: self.now)
+                        endpoint: url, stopped: job.stopped, now: self.now, forReceive: forReceive)
                     defer { completed.close() }
-                    let bytes = try completed.summaryAndCloseMaster(master, binding: context.binding,
-                        stopped: job.stopped, now: self.now)
-                    let summary = try TOSPrivacySummary(nativeJSON: bytes)
-                    let time = try observation.provenShardTime(now: self.now())
+                    let result = try operation(completed, master, context, observation, job)
                     try context.requireSame(self.context(wallet)); try job.check()
-                    return Observed(walletID: context.id, profile: context.profile, poolAddress: selection.address.toRaw(),
-                        summary: summary, provenShardTime: time, observedAt: self.now())
+                    return result
                 }
             } catch TOSPrivacyMasterSession.Failure.materialUnavailable { throw Failure.materialUnavailable }
         } onCancel: { job.cancel() }
