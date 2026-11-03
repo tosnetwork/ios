@@ -41,6 +41,17 @@ public enum TOSPrivacyHistoryWalk {
             try replay.requestRelayOffer(request: request)
         }
 
+        public func stagePaymentAndWipeSeed(
+            seed: inout Data, prover: TOSPrivacyNative.PaymentProver,
+            offer: TOSPrivacyNative.RelayOffer, request: Data
+        ) throws -> TOSPrivacyNative.PaymentSubmission {
+            try replay.stagePaymentAndWipeSeed(seed: &seed, prover: prover, offer: offer, request: request)
+        }
+
+        public func recoverPaymentAndWipeSeed(seed: inout Data, request: Data) throws -> TOSPrivacyNative.PaymentSubmission? {
+            try replay.recoverPaymentAndWipeSeed(seed: &seed, request: request)
+        }
+
         public func validateRecipient(_ descriptor: Data) throws -> Bool {
             try replay.validateRecipient(descriptor)
         }

@@ -71,7 +71,7 @@ public final class TOSPrivacyMasterSession {
         }
     }
 
-    private func withSeedAndClose(binding: Binding, operation: (inout Data) throws -> Data) throws -> Data {
+    internal func withSeedAndClose<T>(binding: Binding, operation: (inout Data) throws -> T) throws -> T {
         guard !Thread.isMainThread else { close(); throw TOSPrivacyNative.Failure.requiresWorker }
         lock.lock(); defer { lock.unlock() }
         defer { discardMaster() }

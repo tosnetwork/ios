@@ -82,6 +82,50 @@ internal enum TOSPrivacyHistorySynchronizer {
             return valid
         }
 
+        func stagePaymentAndCloseMaster(
+            _ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+            root: URL, recipient: Data, amount: String, fee: String, quoteIdentity: String,
+            prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer,
+            now: () -> Int64
+        ) throws -> TOSPrivacyNative.PaymentSubmission {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard root.isFileURL, binding.globalID == observation.profile.globalID,
+                  binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            let request = try JSONSerialization.data(withJSONObject: [
+                "root": root.path,
+                "recipient": recipient.base64EncodedString(),
+                "amount": amount,
+                "fee": fee,
+                "quote_identity": quoteIdentity,
+                "proven_time": try observation.provenShardTime(now: now()),
+            ])
+            let payment = try master.withSeedAndClose(binding: binding) { seed in
+                try history.stagePaymentAndWipeSeed(seed: &seed, prover: prover, offer: offer, request: request)
+            }
+            try observation.requireFresh(now: now())
+            return payment
+        }
+
+        func recoverPaymentAndCloseMaster(
+            _ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+            request: Data, now: () -> Int64
+        ) throws -> TOSPrivacyNative.PaymentSubmission? {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            try observation.requireFresh(now: now())
+            let payment = try master.withSeedAndClose(binding: binding) { seed in
+                try history.recoverPaymentAndWipeSeed(seed: &seed, request: request)
+            }
+            try observation.requireFresh(now: now())
+            return payment
+        }
+
         func receiveAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
                                    root: Data, stopped: () -> Bool, now: () -> Int64) throws -> Data {
             defer { master.close() }
