@@ -14,6 +14,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
     }
 
     private enum State {
+        case paymentProgress(String), paymentStatus(String)
         case loading, locked, unconfigured, receipt, recipientChecked(Bool), observed(TOSPrivacyWalletService.Observed), failed(String)
     }
     private let paymentConfiguration: PaymentConfiguration?
@@ -34,6 +35,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private var access: TOSPrivacyWalletService.Access?
     private var state = State.loading
     private var operation: Task<Void, Never>?
+    private weak var paymentConfirmation: UIAlertController?
     private var requestID = UUID()
     private var busy = false
 
@@ -116,7 +118,10 @@ final class TOSPrivacyWalletViewController: UIViewController {
             let button = UIButton(type: .system); var config = UIButton.Configuration.tinted(); config.title = title
             button.configuration = config; button.isEnabled = false; stack.addArrangedSubview(button)
         }
-        stack.addArrangedSubview(label("Sending, depositing and withdrawing are still in development."))
+        if paymentConfiguration == nil {
+            stack.addArrangedSubview(label("Private sending requires a configured Tor relay."))
+        }
+        stack.addArrangedSubview(label("Depositing and withdrawing are still in development."))
         stack.addArrangedSubview(label("Balance synchronization uses your configured TOS node. This does not mean wallet traffic is routed through Tor. Leaving this page keeps wallet recovery records."))
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(foregrounded), name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -133,6 +138,8 @@ final class TOSPrivacyWalletViewController: UIViewController {
         if selection == nil && !busy { loadSelection() }
     }
     private func invalidate() {
+        paymentConfirmation?.dismiss(animated: false)
+        paymentConfirmation = nil
         descriptor.text = ""
         recipient.text = ""
         paymentAmount.text = ""
@@ -153,6 +160,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         case .recipientChecked(let valid):
             status.text = valid ? "Recipient descriptor is valid for this pool." : "Invalid recipient descriptor for this pool."
         case .receipt: status.text = "Share this descriptor with the sender."
+        case .paymentProgress(let message), .paymentStatus(let message): status.text = message
         case .loading: status.text = "Loading privacy wallet…"
         case .locked: status.text = "Authenticate to refresh your private balance."
         case .unconfigured: status.text = "No trusted privacy pool is configured for this wallet's network."
@@ -180,7 +188,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
     }
     private func recoverPendingPayment() {
         guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
-        let id = UUID(); requestID = id; busy = true; state = .loading; render()
+        let id = UUID(); requestID = id; busy = true; state = .paymentProgress("Checking the pending payment through Tor…"); render()
         operation = Task { [weak self] in
             guard let self else { return }
             defer { if requestID == id { operation = nil; busy = false; render() } }
@@ -198,12 +206,12 @@ final class TOSPrivacyWalletViewController: UIViewController {
                     selection: selection, approvedRelay: configuration.approvedRecoveryRelay)
                 guard requestID == id else { return }
                 guard let payment else {
-                    state = .failed("No unresolved private payment. Refresh to verify your balance.")
+                    state = .paymentStatus("No unresolved private payment. Refresh to verify your balance.")
                     return
                 }
                 _ = try await service.submitOrRetry(payment)
                 guard requestID == id else { return }
-                state = .failed("Relay responded. Refresh to verify payment confirmation against the chain.")
+                state = .paymentStatus("Relay responded. Refresh to verify payment confirmation against the chain.")
             } catch {
                 guard requestID == id else { return }
                 state = .failed("Unable to resolve the pending payment through Tor. Try checking it again.")
@@ -222,7 +230,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
             render()
             return
         }
-        let id = UUID(); requestID = id; busy = true; state = .loading; render()
+        let id = UUID(); requestID = id; busy = true; state = .paymentProgress("Preparing the private payment and Tor quote…"); render()
         operation = Task { [weak self] in
             guard let self else { return }
             defer { if requestID == id { operation = nil; busy = false; render() } }
@@ -258,6 +266,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
                         amount: value, details: details, prover: prover, offer: offer)
                 })
                 state = .locked
+                paymentConfirmation = confirmation
                 present(confirmation, animated: true)
             } catch {
                 guard requestID == id else { return }
@@ -271,7 +280,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         recipient: Data, amount: String, details: TOSPrivacyNative.RelayOfferDetails,
         prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer
     ) {
-        busy = true; state = .loading; render()
+        busy = true; state = .paymentProgress("Preparing and submitting the private payment through Tor…"); render()
         operation = Task { [weak self] in
             guard let self else { return }
             defer { if requestID == id { operation = nil; busy = false; render() } }
@@ -281,7 +290,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
                     quoteIdentity: details.identity, prover: prover, offer: offer)
                 _ = try await service.submitOrRetry(payment)
                 guard requestID == id else { return }
-                state = .failed("Relay responded. Verify payment confirmation against the chain.")
+                state = .paymentStatus("Relay responded. Verify payment confirmation against the chain.")
             } catch {
                 guard requestID == id else { return }
                 state = .failed("Payment status is uncertain. Check the existing payment before trying again.")
