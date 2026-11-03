@@ -1,6 +1,7 @@
 import UIKit
 import KeeperCore
 import CoreComponents
+import TonSwift
 
 /// Independent privacy mode. No ordinary balance, ordinary receiving QR or
 /// unauthenticated RPC amount is displayed here.
@@ -11,6 +12,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         let ceremony: URL
         let approvedRelay: Data
         let approvedRecoveryRelay: Data
+        let testPool: TOSPrivacyPoolSelection?
 
         static func simulatorFixture() -> Self? {
             #if DEBUG && targetEnvironment(simulator)
@@ -19,15 +21,47 @@ final class TOSPrivacyWalletViewController: UIViewController {
                   let bytes = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe),
                   bytes.count <= 256 * 1024,
                   let fields = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
-                  let phase1 = fields["phase1"] as? String, phase1.hasPrefix("/"),
-                  let ceremony = fields["ceremony"] as? String, ceremony.hasPrefix("/"),
+                  let phase1 = fields["phase1"] as? String,
+                  let ceremony = fields["ceremony"] as? String,
                   let relay = fields["relay"] as? [String: Any],
                   let offer = try? JSONSerialization.data(withJSONObject: relay) else { return nil }
             var recovery = relay
             recovery.removeValue(forKey: "lifetime")
             guard let recovery = try? JSONSerialization.data(withJSONObject: recovery) else { return nil }
-            return Self(phase1: URL(fileURLWithPath: phase1), ceremony: URL(fileURLWithPath: ceremony),
-                        approvedRelay: offer, approvedRecoveryRelay: recovery)
+            let testPool: TOSPrivacyPoolSelection?
+            if let pool = fields["test_pool"] as? [String: String] {
+                func hash(_ key: String) -> Data? {
+                    guard let value = pool[key], value.utf8.count == 64,
+                          value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return nil }
+                    var result = Data()
+                    var index = value.startIndex
+                    while index < value.endIndex {
+                        let end = value.index(index, offsetBy: 2)
+                        guard let byte = UInt8(value[index..<end], radix: 16) else { return nil }
+                        result.append(byte)
+                        index = end
+                    }
+                    return result
+                }
+                guard let root = pool["root_hash"], let file = pool["file_hash"],
+                      let profile = try? TOSQuantumNetworkProfile(globalID: 3, rootHash: root, fileHash: file),
+                      let account = hash("pool_account"),
+                      let codeText = pool["code_boc"], let code = Data(base64Encoded: codeText),
+                      let profileHash = hash("profile_hash"), let manifest = hash("poseidon_manifest_hash"),
+                      let vk = hash("groth16_vk_hash"),
+                      let selection = try? TOSPrivacyPoolSelection(profile: profile, address: Address(workchain: 0, hash: account), codeBOC: code,
+                          profileHash: profileHash, manifestHash: manifest, verifyingKeyHash: vk,
+                          sourceDescription: "Isolated simulator fixture") else { return nil }
+                testPool = selection
+            } else {
+                testPool = nil
+            }
+            let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            func material(_ path: String) -> URL {
+                path.hasPrefix("/") ? URL(fileURLWithPath: path) : home.appendingPathComponent(path, isDirectory: true)
+            }
+            return Self(phase1: material(phase1), ceremony: material(ceremony),
+                        approvedRelay: offer, approvedRecoveryRelay: recovery, testPool: testPool)
             #else
             return nil
             #endif
@@ -75,6 +109,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         view.backgroundColor = UIColor(red: 0.08, green: 0.06, blue: 0.18, alpha: 1)
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Ordinary wallet", style: .plain, target: self, action: #selector(close))
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.keyboardDismissMode = .onDrag
         let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 20; stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll); scroll.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -110,6 +145,13 @@ final class TOSPrivacyWalletViewController: UIViewController {
         stack.addArrangedSubview(descriptor)
         recipient.placeholder = "Private recipient descriptor"
         recipient.accessibilityIdentifier = "privacy.wallet.recipient"
+        #if DEBUG && targetEnvironment(simulator)
+        if paymentConfiguration?.testPool != nil,
+           let fixtureRecipient = ProcessInfo.processInfo.environment["TOS_PRIVACY_TEST_RECIPIENT"],
+           fixtureRecipient.utf8.count == 3432 {
+            recipient.text = fixtureRecipient
+        }
+        #endif
         recipient.autocorrectionType = .no
         recipient.autocapitalizationType = .none
         recipient.borderStyle = .roundedRect
@@ -122,6 +164,15 @@ final class TOSPrivacyWalletViewController: UIViewController {
         stack.addArrangedSubview(checkRecipient)
         paymentAmount.placeholder = "Amount in nanoTOS"
         paymentAmount.keyboardType = .numberPad
+        let amountToolbar = UIToolbar()
+        amountToolbar.items = [
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
+                self?.paymentAmount.resignFirstResponder()
+            })
+        ]
+        amountToolbar.sizeToFit()
+        paymentAmount.inputAccessoryView = amountToolbar
         paymentAmount.borderStyle = .roundedRect
         paymentAmount.accessibilityIdentifier = "privacy.wallet.send.amount"
         paymentAmount.isHidden = paymentConfiguration == nil
@@ -280,9 +331,12 @@ final class TOSPrivacyWalletViewController: UIViewController {
                 let confirmation = UIAlertController(title: "Confirm private payment",
                     message: "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(input.prefix(20))…\(input.suffix(20))",
                     preferredStyle: .alert)
-                confirmation.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                confirmation.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+                    self?.paymentConfirmation = nil
+                })
                 confirmation.addAction(UIAlertAction(title: "Confirm", style: .default) { [weak self] _ in
                     guard let self, requestID == id, !busy else { return }
+                    paymentConfirmation = nil
                     submitPayment(id: id, authorization: authorization, selection: selection, recipient: destination,
                         amount: value, details: details, prover: prover, offer: offer)
                 })

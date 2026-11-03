@@ -626,6 +626,93 @@ final class TOSWalletUITests: XCTestCase {
         }
     }
 
+    func testPrivacyPaymentReviewCanBeCancelled() throws {
+        try privacyPayment(confirm: false)
+    }
+
+    func testPrivacyPaymentCanBeSubmittedThroughTor() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_SUBMIT"] == "1" else {
+            throw XCTSkip("Requires the funded isolated privacy payment chain")
+        }
+        try privacyPayment(confirm: true)
+    }
+
+    private func privacyPayment(confirm: Bool) throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              let recipient = environment["TOS_PRIVACY_TEST_RECIPIENT"],
+              recipient.utf8.count == 3432 else {
+            throw XCTSkip("Requires the isolated privacy payment fixture and recipient")
+        }
+        let launchEnvironment = [
+            "TOS_PRIVACY_PAYMENT_FIXTURE": fixture,
+            "TOS_PRIVACY_TEST_RECIPIENT": recipient
+        ]
+        if confirm {
+            guard let phrase = environment["TOS_PRIVACY_UI_FUNDED_PHRASE"],
+                  phrase.split(separator: " ").count == 24 else {
+                throw XCTSkip("Requires a funded public 24-word TOS fixture")
+            }
+            launchRecoveryPhraseImport(phrase: phrase, configureQuantumNetwork: true,
+                                       additionalEnvironment: launchEnvironment)
+            app.descendants(matching: .any)["mnemonic.continue"].tap()
+            let format = app.alerts["Recovery Phrase Format"]
+            if format.waitForExistence(timeout: 1) {
+                format.buttons["Restore Quantum Wallet"].tap()
+            } else {
+                let quantum = app.alerts["Restore TOS Wallet"].buttons["Quantum Wallet"]
+                guard quantum.waitForExistence(timeout: 5) else {
+                    XCTFail("Funded fixture did not reach Quantum wallet recovery")
+                    return
+                }
+                quantum.tap()
+            }
+            let network = app.alerts["Confirm Recovery Network"]
+            XCTAssertTrue(network.waitForExistence(timeout: 10))
+            network.buttons["Use This Network"].tap()
+            completeImportedWalletToHome()
+        } else {
+            app.terminate()
+            app.launchEnvironment.merge(launchEnvironment) { _, new in new }
+            app.launch()
+            try configureLiveQuantumTestNetwork()
+            createQuantumWalletWithConfirmedBackupToHome()
+        }
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15)); enter.tap()
+        let recipientField = app.textFields["privacy.wallet.recipient"]
+        let amount = app.textFields["privacy.wallet.send.amount"]
+        XCTAssertTrue(recipientField.waitForExistence(timeout: 15))
+        XCTAssertEqual(recipientField.value as? String, recipient)
+        amount.tap(); amount.typeText("100000000")
+        XCTAssertEqual(amount.value as? String, "100000000")
+        let done = app.toolbars.buttons.firstMatch
+        if done.exists && done.isHittable {
+            done.tap()
+        } else {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        let send = app.buttons["privacy.wallet.send"]
+        if !send.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(send.isEnabled); send.tap()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        let review = app.alerts["Confirm private payment"]
+        XCTAssertTrue(review.waitForExistence(timeout: 240))
+        let text = "Amount 100000000 nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
+            recipient.prefix(20) + "…" + recipient.suffix(20)
+        XCTAssertTrue(review.staticTexts[text].exists)
+        review.buttons[confirm ? "Confirm" : "Cancel"].tap()
+        XCTAssertFalse(review.exists)
+        if confirm {
+            let status = app.staticTexts["privacy.wallet.status"]
+            let responded = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", "Relay responded. Verify payment confirmation against the chain."),
+                object: status
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [responded], timeout: 240), .completed, status.label)
+        }
+    }
+
     /// Run only on a dedicated disposable QA simulator: setUp resets its data.
     func testPrivacyWalletIndependentUnconfiguredMode() throws {
         try configureLiveQuantumTestNetwork()
@@ -2705,7 +2792,8 @@ final class TOSWalletUITests: XCTestCase {
         phrase: String,
         comment: String = "TOS automated transfer",
         recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU",
-        configureQuantumNetwork: Bool = false
+        configureQuantumNetwork: Bool = false,
+        additionalEnvironment: [String: String] = [:]
     ) {
         app.terminate()
         app = XCUIApplication()
@@ -2715,6 +2803,7 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = comment
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
+        app.launchEnvironment.merge(additionalEnvironment) { _, new in new }
         app.launch()
         if configureQuantumNetwork {
             do { try configureLiveQuantumTestNetwork() }

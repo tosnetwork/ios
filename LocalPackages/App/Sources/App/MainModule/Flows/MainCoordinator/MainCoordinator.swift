@@ -2317,8 +2317,16 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     }
     private func openPrivacyWallet(wallet: Wallet) {
         let service = TOSPrivacyWalletService(mnemonics: keeperCoreMainAssembly.secureAssembly.mnemonicsRepository())
-        let controller = TOSPrivacyWalletViewController(wallet: wallet, service: service, registry: .shared,
-            paymentConfiguration: .simulatorFixture(),
+        let configuration = TOSPrivacyWalletViewController.PaymentConfiguration.simulatorFixture()
+        let registry: TOSPrivacyPoolRegistry
+        if let pool = configuration?.testPool {
+            registry = TOSPrivacyPoolRegistry()
+            try? registry.registerApproved(pool)
+        } else {
+            registry = .shared
+        }
+        let controller = TOSPrivacyWalletViewController(wallet: wallet, service: service, registry: registry,
+            paymentConfiguration: configuration,
             authenticate: { [weak self] in await self?.getPasscode() })
         let navigation = TKNavigationController(rootViewController: controller)
         navigation.configureTransparentAppearance(); router.present(navigation)
