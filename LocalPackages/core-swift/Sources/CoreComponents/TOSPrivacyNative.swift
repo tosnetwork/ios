@@ -82,6 +82,14 @@ public enum TOSPrivacyNative {
 
     /// Owned provisional replay. Use a verified same-checkpoint creation request.
     /// Free on cancellation; only successful finish enables reads. Call off the UI thread.
+    public final class PaymentProver {
+        fileprivate let handle: OpaquePointer
+
+        fileprivate init(handle: OpaquePointer) { self.handle = handle }
+
+        deinit { tos_shielded_payment_prover_free(handle) }
+    }
+
     public final class Replay {
         private var handle: OpaquePointer?
         public init(request: Data) throws {
@@ -111,6 +119,25 @@ public enum TOSPrivacyNative {
             guard let handle else { throw Failure.invalidInput }
             guard tos_shielded_replay_finish(handle) == 0 else { discard(); throw Failure.operationFailed }
         }
+        public func loadPaymentProver(phase1: URL, ceremony: URL) throws -> PaymentProver {
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            guard phase1.isFileURL, ceremony.isFileURL else { throw Failure.invalidInput }
+            let phase1Bytes = Array(phase1.path.utf8)
+            let ceremonyBytes = Array(ceremony.path.utf8)
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle, tos_shielded_payment_supported() == 1 else { throw Failure.operationFailed }
+            let prover = phase1Bytes.withUnsafeBufferPointer { phase1Path in
+                ceremonyBytes.withUnsafeBufferPointer { ceremonyPath in
+                    tos_shielded_payment_prover_load(
+                        handle, phase1Path.baseAddress, phase1Path.count,
+                        ceremonyPath.baseAddress, ceremonyPath.count
+                    )
+                }
+            }
+            guard let prover else { throw Failure.operationFailed }
+            return PaymentProver(handle: prover)
+        }
+
         public func validateRecipient(_ descriptor: Data) throws -> Bool {
             guard descriptor.count == 2573 else { return false }
             TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
