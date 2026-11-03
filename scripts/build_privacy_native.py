@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--abi", choices=["arm64-v8a", "armeabi-v7a", "x86", "x86_64"])
     parser.add_argument("--ndk", type=Path)
+    parser.add_argument("--proving", action="store_true", help="Build the local payment prover")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     revision = (root / "scripts/privacy-native-revision.txt").read_text().strip()
@@ -116,10 +117,14 @@ def main():
         ]
         if args.platform == "android":
             command += ["--ndk", args.ndk.resolve(), "--abi", args.abi]
+        if args.proving:
+            command.append("--proving")
         run(command)
         provenance = json.loads((destination / "PROVENANCE.json").read_text())
         if provenance["source_commit"] != revision or provenance["source_dirty"]:
             raise RuntimeError("Privacy artifact was not built from the pinned clean source")
+        if provenance["features"] != (["proving"] if args.proving else []):
+            raise RuntimeError("Privacy artifact features do not match the requested build")
         for relative, digest in provenance["files"].items():
             path = (destination / relative).resolve()
             if (
