@@ -637,7 +637,14 @@ final class TOSWalletUITests: XCTestCase {
         try privacyPayment(confirm: true)
     }
 
-    private func privacyPayment(confirm: Bool) throws {
+    func testPrivacyPaymentStopsWhenTorIsUnavailable() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_TOR_UNAVAILABLE"] == "1" else {
+            throw XCTSkip("Requires an isolated fixture with a closed Tor SOCKS port")
+        }
+        try privacyPayment(confirm: false, torUnavailable: true)
+    }
+
+    private func privacyPayment(confirm: Bool, torUnavailable: Bool = false) throws {
         let environment = ProcessInfo.processInfo.environment
         guard let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
               let recipient = environment["TOS_PRIVACY_TEST_RECIPIENT"],
@@ -696,6 +703,16 @@ final class TOSWalletUITests: XCTestCase {
         if !send.isHittable { app.scrollViews.firstMatch.swipeUp() }
         XCTAssertTrue(send.isEnabled); send.tap()
         if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        if torUnavailable {
+            let status = app.staticTexts["privacy.wallet.status"]
+            let failed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", "Unable to prepare the Tor relay quote."),
+                object: status
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [failed], timeout: 240), .completed, status.label)
+            XCTAssertFalse(app.alerts["Confirm private payment"].exists)
+            return
+        }
         let review = app.alerts["Confirm private payment"]
         XCTAssertTrue(review.waitForExistence(timeout: 240))
         let text = "Amount 100000000 nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
