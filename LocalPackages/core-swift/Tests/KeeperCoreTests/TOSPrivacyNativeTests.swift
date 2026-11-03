@@ -1,8 +1,79 @@
 import CoreComponents
+@testable import KeeperCore
 import Foundation
 import XCTest
 
 final class TOSPrivacyNativeTests: XCTestCase {
+    private func historyFixture() throws -> (Data, [Data], String) {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-session", withExtension: "json"))
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let request = try XCTUnwrap(fixture["request"] as? [String: Any])
+        let data = try JSONSerialization.data(withJSONObject: request)
+        let bocs = try XCTUnwrap(fixture["transactions"] as? [String]).map { try XCTUnwrap(Data(base64Encoded: $0)) }
+        return (data, bocs, "0:" + (try XCTUnwrap(request["account_id"] as? String)))
+    }
+    func testHistoryWalkChecksBackwardsThenReplaysOldestFirst() throws {
+        let (request, bocs, address) = try historyFixture()
+        var cursor = bocs.count - 1, checks = 0
+        var previous: UInt64?
+        let completed = try TOSPrivacyHistoryWalk.replay(request: request, query: { raw, lt, hash in
+            XCTAssertEqual(raw, address); XCTAssertEqual(hash.count, 32)
+            if let previous { XCTAssertLessThan(lt, previous) }; previous = lt
+            guard cursor >= 0 else { throw TOSPrivacyHistoryWalk.Failure.incomplete }
+            defer { cursor -= 1 }; return bocs[cursor]
+        }, recheck: { checks += 1 })
+        defer { completed.close() }
+        XCTAssertEqual(checks, 2); XCTAssertEqual(cursor, -1)
+        XCTAssertEqual(try completed.transactions(), bocs)
+        let info = try XCTUnwrap(JSONSerialization.jsonObject(with: completed.info()) as? [String: Any])
+        XCTAssertEqual(info["total_outputs"] as? String, "13")
+        completed.close()
+        XCTAssertThrowsError(try completed.transactions())
+        XCTAssertThrowsError(try completed.info())
+    }
+    func testHistoryWalkRejectsBadRPCAndFailedFinalRecheck() throws {
+        let (request, bocs, _) = try historyFixture()
+        XCTAssertThrowsError(try TOSPrivacyHistoryWalk.replay(request: request, query: { _, _, _ in bocs[0] }, recheck: {}))
+        var cursor = bocs.count - 1, checks = 0
+        XCTAssertThrowsError(try TOSPrivacyHistoryWalk.replay(request: request, query: { _, _, _ in
+            defer { cursor -= 1 }; return bocs[cursor]
+        }, recheck: { checks += 1; if checks == 2 { throw TOSPrivacyHistoryWalk.Failure.incomplete } })) { error in
+            guard case TOSPrivacyHistoryWalk.Failure.incomplete = error else { return XCTFail("Final recheck was not the failure") }
+        }
+        XCTAssertEqual(cursor, -1); XCTAssertEqual(checks, 2)
+    }
+    func testHistoryWalkCancellationAndDeadlineReturnNoLedger() throws {
+        let (request, bocs, _) = try historyFixture()
+        for deadline in [false, true] {
+            var cancelled = false, clock: TimeInterval = 0, queries = 0
+            XCTAssertThrowsError(try TOSPrivacyHistoryWalk.replay(request: request, query: { _, _, _ in
+                queries += 1
+                if deadline { clock = 601 } else { cancelled = true }
+                return bocs[bocs.count - 1]
+            }, stopped: { cancelled }, recheck: {}, uptime: { clock })) { error in
+                guard case TOSPrivacyHistoryWalk.Failure.stopped = error else { return XCTFail("Wrong cancellation/deadline error") }
+            }
+            XCTAssertEqual(queries, 1)
+        }
+    }
+    func testPrivacyHistoryLeaseBoundsAndIdempotentRelease() throws {
+        let a = UUID(), b = UUID(), c = UUID()
+        let first = try TOSPrivacyHistorySynchronizer.Lease(id: a)
+        defer { first.close() }
+        XCTAssertThrowsError(try TOSPrivacyHistorySynchronizer.Lease(id: a))
+        let second = try TOSPrivacyHistorySynchronizer.Lease(id: b)
+        defer { second.close() }
+        XCTAssertThrowsError(try TOSPrivacyHistorySynchronizer.Lease(id: c))
+        first.close()
+        let replacement = try TOSPrivacyHistorySynchronizer.Lease(id: a)
+        defer { replacement.close() }
+        first.close()
+        XCTAssertThrowsError(try TOSPrivacyHistorySynchronizer.Lease(id: c))
+        replacement.close(); second.close()
+        let final = try TOSPrivacyHistorySynchronizer.Lease(id: c)
+        final.close()
+    }
+
     func testReplaySessionRequiresFinishAndReleasesFailedOrClosedOwners() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-session", withExtension: "json"))
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])

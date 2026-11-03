@@ -1,0 +1,78 @@
+import Foundation
+import CoreComponents
+
+/// Proof-backed entry point. Raw history transport never supplies initial expectations.
+internal enum TOSPrivacyHistorySynchronizer {
+    private static let permits = TOSQuantumAccountReader.Permits()
+    final class Lease {
+        let id: UUID
+        private let lock = NSLock()
+        private var active = false
+        init(id: UUID) throws { self.id = id; try permits.enter(id); active = true }
+        deinit { close() }
+        func close() {
+            lock.lock(); defer { lock.unlock() }
+            if active { active = false; permits.leave(id) }
+        }
+    }
+    final class Completed {
+        private let lock = NSLock()
+        private var observation: TOSQuantumAccountReader.PoolObservation?
+        private let history: TOSPrivacyHistoryWalk.Completed
+        private let lease: Lease
+        fileprivate init(observation: TOSQuantumAccountReader.PoolObservation, history: TOSPrivacyHistoryWalk.Completed, lease: Lease) {
+            self.observation = observation; self.history = history; self.lease = lease
+        }
+        deinit { close() }
+        func close() {
+            lock.lock(); defer { lock.unlock() }
+            history.close(); observation = nil; lease.close()
+        }
+        func info(now: Int64) throws -> Data {
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            try observation.requireFresh(now: now); return try history.info()
+        }
+        func transactions() throws -> [Data] {
+            lock.lock(); defer { lock.unlock() }
+            guard observation != nil else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            return try history.transactions()
+        }
+        func scanAndWipeSeed(seed: inout Data, offset: Int, count: Int, now: Int64) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            try observation.requireFresh(now: now)
+            return try history.scanAndWipeSeed(seed: &seed, offset: offset, count: count)
+        }
+    }
+    /// Balance/history reads use the configured RPC. This is not a claim that all wallet traffic uses Tor.
+    static func synchronize(observation: TOSQuantumAccountReader.PoolObservation,
+                            stopped: () -> Bool, now: () -> Int64) throws -> Completed {
+        guard let endpoint = TOSRPCSettings.quantumEndpoint,
+              let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+        let relay = try TOSQuantumRPCTransport(endpoint: url)
+        return try synchronize(observation: observation, query: { address, lt, hash in
+            let result = try relay.call(method: "getTransactions", params: ["address": address,
+                "limit": 1, "lt": String(lt), "hash": hash.base64EncodedString()], isCancelled: stopped)
+            guard let rows = result as? [[String: Any]], rows.count == 1,
+                  let encoded = rows[0]["data"] as? String, encoded.utf8.count <= 1_398_104,
+                  let bytes = Data(base64Encoded: encoded), bytes.base64EncodedString() == encoded else { throw TOSPQError.invalidInput }
+            return bytes
+        }, stopped: stopped, now: now)
+    }
+    /// Query must enforce reception/timeout/cancellation caps, as the existing history transport does.
+    /// Capacity remains held until the completed archive/ledger is closed, not just until fetch returns.
+    static func synchronize(observation: TOSQuantumAccountReader.PoolObservation,
+                            query: (String, UInt64, Data) throws -> Data, stopped: () -> Bool,
+                            now: () -> Int64) throws -> Completed {
+        let lease = try Lease(id: observation.id)
+        var succeeded = false
+        defer { if !succeeded { lease.close() } }
+        let history = try TOSPrivacyHistoryWalk.replay(request: observation.replayRequest(now: now()),
+            query: query, stopped: stopped, recheck: { try observation.requireFresh(now: now()) })
+        let completed = Completed(observation: observation, history: history, lease: lease)
+        succeeded = true
+        return completed
+    }
+}

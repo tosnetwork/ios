@@ -176,6 +176,24 @@ internal final class TOSQuantumAccountReader {
         let address: Address
         let stateJSON: Data
         fileprivate let proof: TOSQuantumProofBridge.BoundRead
+        fileprivate let poolDataBOC: Data
+        fileprivate let accountRoot: Data
+        /// These values come exclusively from this verified same-checkpoint observation.
+        func replayRequest(now: Int64) throws -> Data {
+            try requireFresh(now: now)
+            let raw = address.toRaw()
+            guard raw.hasPrefix("0:"), accountRoot.count == 32 else { throw TOSPQError.keyBinding }
+            let head = try proof.provenTransactionHead(expectedAddress: raw)
+            let gas = try network.provenConfigParam(21)
+            let gasRoot = try TOSRPCOrdinaryBOC.decode(gas.base64EncodedString())
+            let dataRoot = try TOSRPCOrdinaryBOC.decode(poolDataBOC.base64EncodedString())
+            func hex(_ value: Data) -> String { value.map { String(format: "%02x", $0) }.joined() }
+            return try JSONSerialization.data(withJSONObject: ["version": 1, "global_id": profile.globalID,
+                "account_id": String(raw.dropFirst(2)), "last_hash": hex(head.hash), "last_lt": String(head.logicalTime),
+                "account_root": hex(accountRoot), "shard_time": String(try proof.provenAccountTime(expectedAddress: raw)),
+                "pool_state_boc": poolDataBOC.base64EncodedString(), "pool_data_hash": hex(dataRoot.hash()),
+                "gas_boc": gas.base64EncodedString(), "gas_hash": hex(gasRoot.hash())])
+        }
         func requireFresh(now: Int64) throws {
             try network.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
             try network.requireSameCheckpoint(proof)
@@ -213,7 +231,8 @@ internal final class TOSQuantumAccountReader {
               object["poseidon_manifest_hash"] as? String == hex(manifestHash),
               object["groth16_vk_hash"] as? String == hex(verifyingKeyHash),
               Data(SHA256.hash(data: key)) == verifyingKeyHash else { throw TOSPQError.keyBinding }
-        let result = PoolObservation(id: id, profile: profile, network: network, address: address, stateJSON: decoded, proof: proof)
+        let result = PoolObservation(id: id, profile: profile, network: network, address: address, stateJSON: decoded, proof: proof,
+                                     poolDataBOC: try data.toBoc(), accountRoot: try TOSRPCOrdinaryBOC.decode(account.base64EncodedString()).hash())
         try result.requireFresh(now: now())
         return result
     }
