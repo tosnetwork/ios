@@ -127,7 +127,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                     let root = URL(fileURLWithPath: provingDirectory, isDirectory: true)
                     _ = try await service.loadPaymentProver(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection,
-                        phase1: root.appendingPathComponent("phase1-zcash-2m15.bin"),
+                        phase1: root.appendingPathComponent("phase1", isDirectory: true),
                         ceremony: root.appendingPathComponent("ceremony", isDirectory: true))
                 }
                 stage = "remove isolated vault"
