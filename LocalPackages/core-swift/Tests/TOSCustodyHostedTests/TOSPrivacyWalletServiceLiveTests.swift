@@ -153,7 +153,8 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
                             selection: selection, input: encodedRecipient)
                         let loseResponse = config["verify_lost_response"] as? Bool == true
-                        let startingBalance = recoveryRun != nil && loseResponse ? "799999998"
+                        let insufficient = config["verify_insufficient_funds"] as? Bool == true
+                        let startingBalance = insufficient ? "699999997" : recoveryRun != nil && loseResponse ? "799999998"
                             : (loseResponse ? "899999999" : "1000000000")
                         let endingBalance = String(try XCTUnwrap(UInt64(startingBalance)) - 100_000_001)
                         guard valid, result.summary.unspentBalance == startingBalance else {
@@ -166,6 +167,18 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         let details = try offer.details()
                         guard details.fee == "1" else { throw TOSPQError.invalidInput }
                         stage = "prove and stage isolated payment"
+                        if insufficient {
+                            do {
+                                _ = try await service.stagePayment(wallet: wallet, authorization: authorization,
+                                    selection: selection, recipient: recipient, amount: startingBalance, fee: details.fee,
+                                    quoteIdentity: details.identity, prover: prover, offer: offer)
+                                XCTFail("Expected amount plus relay fee to exceed the verified balance")
+                            } catch TOSPrivacyNative.Failure.operationFailed { }
+                            let current = try await service.read(wallet: wallet, authorization: authorization, selection: selection)
+                            XCTAssertEqual(current.summary.unspentBalance, startingBalance)
+                            try await vault.deleteAll()
+                            return
+                        }
                         let payment = try await service.stagePayment(wallet: wallet, authorization: authorization,
                             selection: selection, recipient: recipient, amount: "100000000", fee: details.fee,
                             quoteIdentity: details.identity, prover: prover, offer: offer)
