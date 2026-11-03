@@ -6,9 +6,18 @@ import CoreComponents
 /// unauthenticated RPC amount is displayed here.
 @MainActor
 final class TOSPrivacyWalletViewController: UIViewController {
+    struct PaymentConfiguration {
+        let phase1: URL
+        let ceremony: URL
+        let approvedRelay: Data
+    }
+
     private enum State {
         case loading, locked, unconfigured, receipt, recipientChecked(Bool), observed(TOSPrivacyWalletService.Observed), failed(String)
     }
+    private let paymentConfiguration: PaymentConfiguration?
+    private let send = UIButton(type: .system)
+    private let paymentAmount = UITextField()
     private let wallet: Wallet
     private let service: TOSPrivacyWalletService
     private let registry: TOSPrivacyPoolRegistry
@@ -27,7 +36,9 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private var busy = false
 
     init(wallet: Wallet, service: TOSPrivacyWalletService, registry: TOSPrivacyPoolRegistry,
+         paymentConfiguration: PaymentConfiguration? = nil,
          authenticate: @escaping @MainActor () async -> String?) {
+        self.paymentConfiguration = paymentConfiguration
         self.wallet = wallet; self.service = service; self.registry = registry; self.authenticate = authenticate
         super.init(nibName: nil, bundle: nil)
     }
@@ -84,7 +95,17 @@ final class TOSPrivacyWalletViewController: UIViewController {
             read(recipientInput: input)
         }, for: .touchUpInside)
         stack.addArrangedSubview(checkRecipient)
-        for title in ["Send privately", "Deposit TOS", "Withdraw TOS"] {
+        paymentAmount.placeholder = "Amount in nanoTOS"
+        paymentAmount.keyboardType = .numberPad
+        paymentAmount.borderStyle = .roundedRect
+        paymentAmount.accessibilityIdentifier = "privacy.wallet.send.amount"
+        paymentAmount.isHidden = paymentConfiguration == nil
+        stack.addArrangedSubview(paymentAmount)
+        send.setTitle("Send privately through Tor", for: .normal)
+        send.accessibilityIdentifier = "privacy.wallet.send"
+        send.addAction(UIAction { [weak self] _ in self?.reviewPayment() }, for: .touchUpInside)
+        stack.addArrangedSubview(send)
+        for title in ["Deposit TOS", "Withdraw TOS"] {
             let button = UIButton(type: .system); var config = UIButton.Configuration.tinted(); config.title = title
             button.configuration = config; button.isEnabled = false; stack.addArrangedSubview(button)
         }
@@ -107,10 +128,13 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private func invalidate() {
         descriptor.text = ""
         recipient.text = ""
+        paymentAmount.text = ""
         operation?.cancel(); operation = nil; requestID = UUID(); busy = false
     }
     private func render() {
         refresh.isEnabled = !busy && selection != nil
+        send.isEnabled = refresh.isEnabled && paymentConfiguration != nil
+        paymentAmount.isEnabled = send.isEnabled
         receive.isEnabled = refresh.isEnabled
         checkRecipient.isEnabled = refresh.isEnabled
         recipient.isEnabled = !busy && selection != nil
@@ -146,6 +170,84 @@ final class TOSPrivacyWalletViewController: UIViewController {
             }
         }
     }
+    private func reviewPayment() {
+        guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
+        let input = (recipient.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = paymentAmount.text ?? ""
+        guard input.utf8.count == 3432, let destination = Data(base64Encoded: input),
+              destination.count == 2573, destination.base64EncodedString() == input,
+              let amount = UInt64(value), amount > 0, String(amount) == value else {
+            state = .failed("Enter a private recipient and a positive amount in nanoTOS.")
+            render()
+            return
+        }
+        let id = UUID(); requestID = id; busy = true; state = .loading; render()
+        operation = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestID == id { operation = nil; busy = false; render() } }
+            do {
+                let authorization: TOSPrivacyWalletService.Authorization
+                switch access {
+                case .appPasscode:
+                    guard let password = await authenticate() else { return }
+                    try Task.checkCancellation()
+                    authorization = .appPasscode(password)
+                case .devicePresence:
+                    authorization = .devicePresence
+                }
+                guard try await service.validateRecipient(wallet: wallet, authorization: authorization,
+                                                          selection: selection, input: input) else {
+                    state = .recipientChecked(false)
+                    return
+                }
+                let prover = try await service.loadPaymentProver(wallet: wallet, authorization: authorization,
+                    selection: selection, phase1: configuration.phase1, ceremony: configuration.ceremony)
+                let offer = try await service.requestRelayOffer(wallet: wallet, authorization: authorization,
+                    selection: selection, approvedRelay: configuration.approvedRelay)
+                let details = try offer.details()
+                try Task.checkCancellation()
+                guard requestID == id else { return }
+                let confirmation = UIAlertController(title: "Confirm private payment",
+                    message: "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(input.prefix(20))…\(input.suffix(20))",
+                    preferredStyle: .alert)
+                confirmation.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                confirmation.addAction(UIAlertAction(title: "Confirm", style: .default) { [weak self] _ in
+                    guard let self, requestID == id, !busy else { return }
+                    submitPayment(id: id, authorization: authorization, selection: selection, recipient: destination,
+                        amount: value, details: details, prover: prover, offer: offer)
+                })
+                state = .locked
+                present(confirmation, animated: true)
+            } catch {
+                guard requestID == id else { return }
+                state = .failed("Unable to prepare the Tor relay quote.")
+            }
+        }
+    }
+
+    private func submitPayment(
+        id: UUID, authorization: TOSPrivacyWalletService.Authorization, selection: TOSPrivacyPoolSelection,
+        recipient: Data, amount: String, details: TOSPrivacyNative.RelayOfferDetails,
+        prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer
+    ) {
+        busy = true; state = .loading; render()
+        operation = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestID == id { operation = nil; busy = false; render() } }
+            do {
+                let payment = try await service.stagePayment(wallet: wallet, authorization: authorization,
+                    selection: selection, recipient: recipient, amount: amount, fee: details.fee,
+                    quoteIdentity: details.identity, prover: prover, offer: offer)
+                _ = try await service.submitOrRetry(payment)
+                guard requestID == id else { return }
+                state = .failed("Relay responded. Verify payment confirmation against the chain.")
+            } catch {
+                guard requestID == id else { return }
+                state = .failed("Payment status is uncertain. Check the existing payment before trying again.")
+            }
+        }
+    }
+
     private func read(forReceipt: Bool = false, recipientInput: String? = nil) {
         guard !busy, let selection, let access else { return }
         descriptor.text = ""
