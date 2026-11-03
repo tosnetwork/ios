@@ -181,6 +181,21 @@ public final class TOSPrivacyWalletService {
         }
     }
 
+    /// The returned status is the relayer's claim. Wallet balance and payment
+    /// finality must be refreshed independently from verified chain history.
+    public func submitOrRetry(_ payment: TOSPrivacyNative.PaymentSubmission) async throws -> Data {
+        try Task.checkCancellation()
+        let job = Job()
+        return try await withTaskCancellationHandler {
+            try await worker(job) {
+                try job.check()
+                return try payment.submitOrRetry()
+            }
+        } onCancel: {
+            job.cancel()
+        }
+    }
+
     private func privacyStoreRoot() throws -> URL {
         let parent = try privacyStoreParent ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                  appropriateFor: nil, create: true)
