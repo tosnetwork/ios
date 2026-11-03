@@ -53,3 +53,6 @@ LocalPackages/core-swift/Generated/
 
 # Source-built embedded proof dependency cache
 .native/quantum-proof/
+
+# Rebuildable pinned privacy SDK source and artifacts.
+.native/privacy-native/

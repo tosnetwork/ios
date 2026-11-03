@@ -8,6 +8,7 @@ SHELL := /bin/sh
 	setup \
 	tonconnect_generate \
 	compile \
+	prepare_privacy_native \
 	archive_v1_release \
 	test \
 	test_all \
@@ -46,10 +47,13 @@ BUILD_JOBS ?= 4
 prepare_quantum_fee_state:
 	python3 scripts/build_quantum_fee_state.py
 
+prepare_privacy_native:
+	python3 scripts/build_privacy_native.py --platform ios
+
 prepare_quantum_proof:
 	python3 scripts/build_quantum_proof.py
 
-compile: prepare_quantum_fee_state prepare_quantum_proof
+compile: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
@@ -70,7 +74,7 @@ compile: prepare_quantum_fee_state prepare_quantum_proof
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
 		build 2>&1 | tee $(BUILD_DIR)/compile-raw.log | xcbeautify
 
-archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof
+archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(BUILD_DIR)/release-archive
 	@echo 'archiving unsigned TOS Wallet release...' && \
@@ -146,7 +150,7 @@ test_all:
 
 TEST_ACTION ?= $(if $(TEST_RUN_FILE),test-without-building,test)
 
-test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof)
+test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native)
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
