@@ -59,6 +59,27 @@ public enum TOSPrivacyNative {
         return decoded
     }
 
+    /// Expectations must originate in a verified account or the checked newer history link.
+    /// One successful link does not establish history completeness or a private balance.
+    public static func decodeHistoryTransaction(boc: Data, expectedHash: Data, logicalTime: UInt64,
+                                                accountID: Data, postStateHash: Data, maximumTime: UInt32) throws -> Data {
+        guard !boc.isEmpty, boc.count <= maxRequestBytes,
+              [expectedHash, accountID, postStateHash].allSatisfy({ $0.count == 32 }), logicalTime > 0 else {
+            throw Failure.invalidInput
+        }
+        func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+        let request = try JSONSerialization.data(withJSONObject: ["version": 1,
+            "boc": boc.base64EncodedString(), "expected_hash": hex(expectedHash),
+            "expected_lt": String(logicalTime), "account_id": hex(accountID),
+            "post_state_hash": hex(postStateHash), "maximum_time": String(maximumTime)])
+        guard request.count <= maxRequestBytes else { throw Failure.invalidInput }
+        lock.lock()
+        defer { lock.unlock() }
+        return try request.withUnsafeBytes { input in
+            try copyAndRelease(tos_shielded_history_transaction(input.bindMemory(to: UInt8.self).baseAddress, request.count))
+        }
+    }
+
     private static func copyAndRelease(_ response: OpaquePointer?, exactSize: Int? = nil) throws -> Data {
         guard let response else { throw Failure.operationFailed }
         defer { tos_shielded_response_free(response) }

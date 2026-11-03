@@ -3,6 +3,34 @@ import Foundation
 import XCTest
 
 final class TOSPrivacyNativeTests: XCTestCase {
+    func testHistoryTransactionChecksEveryBinding() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-history", withExtension: "json"))
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let request = try XCTUnwrap(fixture["request"] as? [String: Any])
+        func hash(_ name: String) throws -> Data {
+            let text = try XCTUnwrap(request[name] as? String)
+            return Data(try stride(from: 0, to: text.count, by: 2).map { offset in
+                let a = text.index(text.startIndex, offsetBy: offset)
+                return try XCTUnwrap(UInt8(text[a..<text.index(a, offsetBy: 2)], radix: 16))
+            })
+        }
+        let boc = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(request["boc"] as? String)))
+        let lt = try XCTUnwrap(UInt64(try XCTUnwrap(request["expected_lt"] as? String)))
+        let time = try XCTUnwrap(UInt32(try XCTUnwrap(request["maximum_time"] as? String)))
+        let expected = try hash("expected_hash"), account = try hash("account_id"), state = try hash("post_state_hash")
+        let result = try TOSPrivacyNative.decodeHistoryTransaction(boc: boc, expectedHash: expected, logicalTime: lt,
+            accountID: account, postStateHash: state, maximumTime: time)
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: result) as? [String: Any])
+        XCTAssertEqual(decoded["logical_time"] as? String, String(lt))
+        XCTAssertEqual((decoded["event"] as? [String: Any])?["kind"] as? String, "transact")
+        for i in 0..<5 {
+            XCTAssertThrowsError(try TOSPrivacyNative.decodeHistoryTransaction(boc: boc,
+                expectedHash: i == 0 ? Data(repeating: 1, count: 32) : expected, logicalTime: i == 1 ? UInt64.max : lt,
+                accountID: i == 2 ? Data(repeating: 1, count: 32) : account,
+                postStateHash: i == 3 ? Data(repeating: 1, count: 32) : state, maximumTime: i == 4 ? 0 : time))
+        }
+    }
+
     func testNativeDescriptorMatchesRustAndConsumesSeed() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-descriptors", withExtension: "json"))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
