@@ -102,17 +102,24 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 XCTAssertEqual(result.walletID, id)
                 XCTAssertEqual(result.profile, profile)
                 XCTAssertEqual(result.poolAddress, selection.address.toRaw())
-                XCTAssertEqual(result.summary.unspentBalance, "0")
-                XCTAssertEqual(result.summary.totalOutputs, 0)
+                XCTAssertEqual(result.summary.unspentBalance, config["expected_balance"] as? String ?? "0")
+                let expectedOutputs = try XCTUnwrap(UInt64(config["expected_pool_outputs"] as? String ?? "0"))
+                XCTAssertEqual(result.summary.totalOutputs, expectedOutputs)
                 XCTAssertGreaterThan(result.provenShardTime, 0)
                 stage = "issue consecutive private receipts"
-                for expected in UInt64(0)...1 {
+                let checkReceiptIndices = config["payment_recipient"] == nil && config["verify_balance_only"] as? Bool != true
+                for expected in (checkReceiptIndices ? [UInt64(0), 1] : []) {
                     let descriptor = try await service.receive(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection)
                     XCTAssertEqual(descriptor.count, 2573)
                     XCTAssertEqual(Array(descriptor.prefix(4)), [0x53, 0x48, 0x44, 0x31])
                     let index = descriptor.dropFirst(37).prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
                     XCTAssertEqual(index, expected)
+                    if expected == 0, config["export_test_receipt"] as? Bool == true {
+                        stage = "export isolated public receiving descriptor"
+                        let file = FileManager.default.temporaryDirectory.appendingPathComponent("tos-privacy-test-receipt.bin")
+                        try descriptor.write(to: file, options: .atomic)
+                    }
                     let valid = try await service.validateRecipient(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection, input: descriptor.base64EncodedString())
                     XCTAssertTrue(valid)
@@ -124,11 +131,48 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 }
                 if let provingDirectory = ProcessInfo.processInfo.environment["TOS_PRIVACY_LIVE_PROVER_DIRECTORY"] {
                     stage = "audit installed payment proving material"
-                    let root = URL(fileURLWithPath: provingDirectory, isDirectory: true)
-                    _ = try await service.loadPaymentProver(wallet: wallet,
+                    let root = provingDirectory.hasPrefix("/")
+                        ? URL(fileURLWithPath: provingDirectory, isDirectory: true)
+                        : URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                            .appendingPathComponent(provingDirectory, isDirectory: true)
+                    let prover = try await service.loadPaymentProver(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection,
                         phase1: root.appendingPathComponent("phase1", isDirectory: true),
                         ceremony: root.appendingPathComponent("ceremony", isDirectory: true))
+                    if let encodedRecipient = config["payment_recipient"] as? String {
+                        stage = "validate isolated payment recipient"
+                        let recipient = try XCTUnwrap(Data(base64Encoded: encodedRecipient))
+                        let authorization = TOSPrivacyWalletService.Authorization.appPasscode(password)
+                        let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
+                            selection: selection, input: encodedRecipient)
+                        guard valid, result.summary.unspentBalance == "1000000000" else {
+                            throw TOSPQError.invalidInput
+                        }
+                        let approvedRelay = try JSONSerialization.data(withJSONObject: XCTUnwrap(config["approved_relay"]))
+                        stage = "request isolated Tor relay quote"
+                        let offer = try await service.requestRelayOffer(wallet: wallet, authorization: authorization,
+                            selection: selection, approvedRelay: approvedRelay)
+                        let details = try offer.details()
+                        guard details.fee == "1" else { throw TOSPQError.invalidInput }
+                        stage = "prove and stage isolated payment"
+                        let payment = try await service.stagePayment(wallet: wallet, authorization: authorization,
+                            selection: selection, recipient: recipient, amount: "100000000", fee: details.fee,
+                            quoteIdentity: details.identity, prover: prover, offer: offer)
+                        stage = "submit isolated payment through Tor"
+                        _ = try await service.submitOrRetry(payment)
+                        stage = "verify sender debit against authenticated history"
+                        var confirmed = false
+                        for _ in 0..<30 {
+                            let current = try await service.read(wallet: wallet, authorization: authorization,
+                                selection: selection)
+                            if current.summary.unspentBalance == "899999999" {
+                                confirmed = true
+                                break
+                            }
+                            try await Task.sleep(nanoseconds: 1_000_000_000)
+                        }
+                        XCTAssertTrue(confirmed, "Expected the confirmed amount and fee to debit the sender")
+                    }
                 }
                 stage = "remove isolated vault"
                 try await vault.deleteAll()
