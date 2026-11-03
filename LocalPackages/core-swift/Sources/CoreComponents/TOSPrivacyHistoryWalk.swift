@@ -29,6 +29,21 @@ public enum TOSPrivacyHistoryWalk {
         public func scanAndWipeSeed(seed: inout Data, offset: Int, count: Int) throws -> Data {
             try replay.scanAndWipeSeed(seed: &seed, offset: offset, count: count)
         }
+        /// Blocking worker operation over the complete ledger, never a sum of
+        /// batch balances. Recheck the original proof before and after native work;
+        /// callbacks must not reenter this owner. No result survives cancellation
+        /// or a failed final proof recheck. The caller still persists reservations.
+        public func summaryAndWipeSeed(seed: inout Data, stopped: () -> Bool,
+                                       recheck: () throws -> Void) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard archive != nil, !stopped() else { throw Failure.stopped }
+            try recheck()
+            let result = try replay.summaryAndWipeSeed(seed: &seed, stopped: stopped)
+            try recheck()
+            guard !stopped() else { throw Failure.stopped }
+            return result
+        }
     }
 
     /// Blocking worker operation. Query returns ONLY a raw BOC; RPC metadata is ignored.

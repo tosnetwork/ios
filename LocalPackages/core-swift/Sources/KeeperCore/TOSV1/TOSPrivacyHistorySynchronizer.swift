@@ -45,6 +45,18 @@ internal enum TOSPrivacyHistorySynchronizer {
             try observation.requireFresh(now: now)
             return try history.scanAndWipeSeed(seed: &seed, offset: offset, count: count)
         }
+        /// Call on a worker, with the operation's cancellation flag and a live
+        /// clock. The original authenticated observation is checked on both sides
+        /// of the complete native scan, rather than using one frozen time value.
+        /// scan_next_index excludes durable reservations; this does not allocate it.
+        func summaryAndWipeSeed(seed: inout Data, stopped: () -> Bool,
+                               now: () -> Int64) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            return try history.summaryAndWipeSeed(seed: &seed, stopped: stopped,
+                recheck: { try observation.requireFresh(now: now()) })
+        }
     }
     /// Balance/history reads use the configured RPC. This is not a claim that all wallet traffic uses Tor.
     static func synchronize(observation: TOSQuantumAccountReader.PoolObservation,

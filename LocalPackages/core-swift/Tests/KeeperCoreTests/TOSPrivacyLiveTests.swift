@@ -63,6 +63,24 @@ final class TOSPrivacyLiveTests: XCTestCase {
             let info = try XCTUnwrap(JSONSerialization.jsonObject(with: completed.info(now: now())) as? [String: Any])
             XCTAssertEqual(info["total_outputs"] as? String, "0")
             XCTAssertEqual(info["native_liability"] as? String, "0")
+            var seed = Data(repeating: 0x42, count: 32)
+            let summary = try XCTUnwrap(JSONSerialization.jsonObject(with:
+                completed.summaryAndWipeSeed(seed: &seed, stopped: { false }, now: now)) as? [String: Any])
+            XCTAssertEqual(summary["total_outputs"] as? String, "0")
+            XCTAssertEqual(summary["unspent_balance"] as? String, "0")
+            XCTAssertEqual(seed, Data(repeating: 0, count: 32))
+            seed = Data(repeating: 0x42, count: 32)
+            XCTAssertThrowsError(try completed.summaryAndWipeSeed(seed: &seed, stopped: { true }, now: now))
+            XCTAssertEqual(seed, Data(repeating: 0, count: 32))
+            var clockReads = 0
+            let initialTime = now()
+            seed = Data(repeating: 0x42, count: 32)
+            XCTAssertThrowsError(try completed.summaryAndWipeSeed(seed: &seed, stopped: { false }, now: {
+                clockReads += 1
+                return initialTime + (clockReads == 1 ? 0 : 601)
+            }))
+            XCTAssertEqual(clockReads, 2, "The live clock must be sampled after native scanning too")
+            XCTAssertEqual(seed, Data(repeating: 0, count: 32))
             // A positive read above establishes the transport before testing the binding refusal.
             XCTAssertThrowsError(try reader.observePool(id: id, identity: identity, profile: profile, address: address,
                 expectedCode: code, profileHash: Data(repeating: 0, count: 32), manifestHash: manifestHash, verifyingKeyHash: vkHash)) { error in
@@ -70,6 +88,9 @@ final class TOSPrivacyLiveTests: XCTestCase {
             }
             completed.close()
             XCTAssertThrowsError(try completed.info(now: now()))
+            seed = Data(repeating: 0x42, count: 32)
+            XCTAssertThrowsError(try completed.summaryAndWipeSeed(seed: &seed, stopped: { false }, now: now))
+            XCTAssertEqual(seed, Data(repeating: 0, count: 32))
         }.value
     }
 }

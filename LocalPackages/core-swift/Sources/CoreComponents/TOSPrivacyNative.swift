@@ -4,7 +4,7 @@ import TOSShielded
 /// Synchronous crypto over the TOS mnemonic master, before role-specific derivation.
 /// The application must supply authenticated pool state and call off the UI thread.
 public enum TOSPrivacyNative {
-    public enum Failure: Error { case invalidInput, operationFailed, stateBinding }
+    public enum Failure: Error { case invalidInput, operationFailed, stateBinding, requiresWorker, stopped }
     public static let maxRequestBytes = 2 * 1024 * 1024
     public static let maxResponseBytes = 1024 * 1024
     private static let lock = NSLock()
@@ -124,6 +124,26 @@ public enum TOSPrivacyNative {
             return try seed.withUnsafeBytes { input in
                 try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_scan(handle, input.bindMemory(to: UInt8.self).baseAddress, 32, offset, count))
             }
+        }
+        /// Complete Ready-ledger summary with global note-body deduplication and
+        /// spent reconciliation. No note secrets are returned. This synchronous
+        /// operation requires a worker; cancellation is checked before/after the
+        /// serialized native call, which cannot be interrupted while in progress.
+        /// It neither authenticates freshness nor reserves the next receive index.
+        public func summaryAndWipeSeed(seed: inout Data, stopped: () -> Bool) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            guard seed.count == 32 else { throw Failure.invalidInput }
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            guard !stopped() else { throw Failure.stopped }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            guard !stopped() else { throw Failure.stopped }
+            let result = try seed.withUnsafeBytes { input in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_summary(
+                    handle, input.bindMemory(to: UInt8.self).baseAddress, seed.count))
+            }
+            guard !stopped() else { throw Failure.stopped }
+            return result
         }
         // Caller already owns the shared native TOSPrivacyNative.lock.
         private func discard() {
