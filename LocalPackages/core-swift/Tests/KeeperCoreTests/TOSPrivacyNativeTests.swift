@@ -3,6 +3,38 @@ import Foundation
 import XCTest
 
 final class TOSPrivacyNativeTests: XCTestCase {
+    func testReplaySessionRequiresFinishAndReleasesFailedOrClosedOwners() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-session", withExtension: "json"))
+        let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let request = try JSONSerialization.data(withJSONObject: try XCTUnwrap(fixture["request"]))
+        let replay = try TOSPrivacyNative.Replay(request: request)
+        defer { replay.close() }
+        XCTAssertThrowsError(try replay.info())
+        var earlySeed = Data(repeating: 0x42, count: 32)
+        XCTAssertThrowsError(try replay.scanAndWipeSeed(seed: &earlySeed, offset: 0, count: 1))
+        XCTAssertEqual(earlySeed, Data(repeating: 0, count: 32))
+        for encoded in try XCTUnwrap(fixture["transactions"] as? [String]) {
+            try replay.push(boc: try XCTUnwrap(Data(base64Encoded: encoded)))
+        }
+        try replay.finish()
+        let info = try XCTUnwrap(JSONSerialization.jsonObject(with: replay.info()) as? [String: Any])
+        XCTAssertEqual(info["total_outputs"] as? String, (fixture["info"] as? [String: Any])?["total_outputs"] as? String)
+        var seed = Data(repeating: 0x42, count: 32)
+        let page = try XCTUnwrap(JSONSerialization.jsonObject(with: replay.scanAndWipeSeed(seed: &seed, offset: 0, count: 1)) as? [String: Any])
+        XCTAssertEqual(page["output_count"] as? String, "1")
+        XCTAssertEqual(seed, Data(repeating: 0, count: 32))
+        replay.close(); replay.close()
+        XCTAssertThrowsError(try replay.info())
+        let premature = try TOSPrivacyNative.Replay(request: request)
+        defer { premature.close() }
+        XCTAssertThrowsError(try premature.finish())
+        XCTAssertThrowsError(try premature.info())
+        let invalid = try TOSPrivacyNative.Replay(request: request)
+        defer { invalid.close() }
+        XCTAssertThrowsError(try invalid.push(boc: Data()))
+        XCTAssertThrowsError(try invalid.info())
+    }
+
     func testHistoryTransactionChecksEveryBinding() throws {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-history", withExtension: "json"))
         let fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])

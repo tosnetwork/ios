@@ -80,6 +80,57 @@ public enum TOSPrivacyNative {
         }
     }
 
+    /// Owned provisional replay. Use a verified same-checkpoint creation request.
+    /// Free on cancellation; only successful finish enables reads. Call off the UI thread.
+    public final class Replay {
+        private var handle: OpaquePointer?
+        public init(request: Data) throws {
+            guard !request.isEmpty, request.count <= TOSPrivacyNative.maxRequestBytes else { throw Failure.invalidInput }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            handle = request.withUnsafeBytes { input in
+                tos_shielded_replay_create(input.bindMemory(to: UInt8.self).baseAddress, request.count)
+            }
+            guard handle != nil else { throw Failure.operationFailed }
+        }
+        deinit { close() }
+        public func close() {
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            if let handle { tos_shielded_replay_free(handle); self.handle = nil }
+        }
+        public func push(boc: Data) throws {
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            guard !boc.isEmpty, boc.count <= TOSPrivacyNative.maxRequestBytes else { discard(); throw Failure.invalidInput }
+            let status = boc.withUnsafeBytes { input in
+                tos_shielded_replay_push(handle, input.bindMemory(to: UInt8.self).baseAddress, boc.count)
+            }
+            guard status == 0 else { discard(); throw Failure.operationFailed }
+        }
+        public func finish() throws {
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            guard tos_shielded_replay_finish(handle) == 0 else { discard(); throw Failure.operationFailed }
+        }
+        public func info() throws -> Data {
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            return try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_info(handle))
+        }
+        public func scanAndWipeSeed(seed: inout Data, offset: Int, count: Int) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            guard seed.count == 32, offset >= 0, count > 0, count <= 512 else { throw Failure.invalidInput }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            return try seed.withUnsafeBytes { input in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_scan(handle, input.bindMemory(to: UInt8.self).baseAddress, 32, offset, count))
+            }
+        }
+        // Caller already owns the shared native TOSPrivacyNative.lock.
+        private func discard() {
+            if let handle { tos_shielded_replay_free(handle); self.handle = nil }
+        }
+    }
+
     private static func copyAndRelease(_ response: OpaquePointer?, exactSize: Int? = nil) throws -> Data {
         guard let response else { throw Failure.operationFailed }
         defer { tos_shielded_response_free(response) }
