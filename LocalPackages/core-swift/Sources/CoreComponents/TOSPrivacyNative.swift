@@ -90,6 +90,34 @@ public enum TOSPrivacyNative {
         deinit { tos_shielded_payment_prover_free(handle) }
     }
 
+    public final class RelayOffer {
+        fileprivate var handle: OpaquePointer?
+
+        fileprivate init(_ handle: OpaquePointer) { self.handle = handle }
+        deinit {
+            if let handle { tos_shielded_relay_offer_free(handle) }
+        }
+
+        public func details() throws -> Data {
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            return try TOSPrivacyNative.copyAndRelease(tos_shielded_relay_offer_info(handle))
+        }
+    }
+
+    public final class PaymentSubmission {
+        private let handle: OpaquePointer
+
+        fileprivate init(_ handle: OpaquePointer) { self.handle = handle }
+        deinit { tos_shielded_payment_free(handle) }
+
+        public func submitOrRetry() throws -> Data {
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            return try TOSPrivacyNative.copyAndRelease(tos_shielded_payment_submit(handle))
+        }
+    }
+
     public final class Replay {
         private var handle: OpaquePointer?
         public init(request: Data) throws {
@@ -136,6 +164,55 @@ public enum TOSPrivacyNative {
             }
             guard let prover else { throw Failure.operationFailed }
             return PaymentProver(handle: prover)
+        }
+
+        public func requestRelayOffer(request: Data) throws -> RelayOffer {
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            let offer = request.withUnsafeBytes { bytes in
+                tos_shielded_relay_offer_request(handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count)
+            }
+            guard let offer else { throw Failure.operationFailed }
+            return RelayOffer(offer)
+        }
+
+        public func stagePaymentAndWipeSeed(
+            seed: inout Data, prover: PaymentProver, offer: RelayOffer, request: Data
+        ) throws -> PaymentSubmission {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle, let quote = offer.handle, seed.count == 32 else { throw Failure.invalidInput }
+            offer.handle = nil
+            let payment = seed.withUnsafeBytes { key in
+                request.withUnsafeBytes { input in
+                    tos_shielded_payment_stage(
+                        handle, prover.handle, quote, key.bindMemory(to: UInt8.self).baseAddress, key.count,
+                        input.bindMemory(to: UInt8.self).baseAddress, input.count
+                    )
+                }
+            }
+            guard let payment else { throw Failure.operationFailed }
+            return PaymentSubmission(payment)
+        }
+
+        public func recoverPaymentAndWipeSeed(seed: inout Data, request: Data) throws -> PaymentSubmission? {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle, seed.count == 32 else { throw Failure.invalidInput }
+            var payment: OpaquePointer?
+            let status = seed.withUnsafeBytes { key in
+                request.withUnsafeBytes { input in
+                    tos_shielded_payment_recover(
+                        handle, key.bindMemory(to: UInt8.self).baseAddress, key.count,
+                        input.bindMemory(to: UInt8.self).baseAddress, input.count, &payment
+                    )
+                }
+            }
+            guard status == 0 else { throw Failure.operationFailed }
+            return payment.map(PaymentSubmission.init)
         }
 
         public func validateRecipient(_ descriptor: Data) throws -> Bool {
