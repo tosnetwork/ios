@@ -10,12 +10,14 @@ final class TOSPrivacyWalletViewController: UIViewController {
         let phase1: URL
         let ceremony: URL
         let approvedRelay: Data
+        let approvedRecoveryRelay: Data
     }
 
     private enum State {
         case loading, locked, unconfigured, receipt, recipientChecked(Bool), observed(TOSPrivacyWalletService.Observed), failed(String)
     }
     private let paymentConfiguration: PaymentConfiguration?
+    private let retryPayment = UIButton(type: .system)
     private let send = UIButton(type: .system)
     private let paymentAmount = UITextField()
     private let wallet: Wallet
@@ -105,6 +107,11 @@ final class TOSPrivacyWalletViewController: UIViewController {
         send.accessibilityIdentifier = "privacy.wallet.send"
         send.addAction(UIAction { [weak self] _ in self?.reviewPayment() }, for: .touchUpInside)
         stack.addArrangedSubview(send)
+        retryPayment.setTitle("Check or retry pending payment", for: .normal)
+        retryPayment.accessibilityIdentifier = "privacy.wallet.send.retry"
+        retryPayment.isHidden = paymentConfiguration == nil
+        retryPayment.addAction(UIAction { [weak self] _ in self?.recoverPendingPayment() }, for: .touchUpInside)
+        stack.addArrangedSubview(retryPayment)
         for title in ["Deposit TOS", "Withdraw TOS"] {
             let button = UIButton(type: .system); var config = UIButton.Configuration.tinted(); config.title = title
             button.configuration = config; button.isEnabled = false; stack.addArrangedSubview(button)
@@ -135,6 +142,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         refresh.isEnabled = !busy && selection != nil
         send.isEnabled = refresh.isEnabled && paymentConfiguration != nil
         paymentAmount.isEnabled = send.isEnabled
+        retryPayment.isEnabled = send.isEnabled
         receive.isEnabled = refresh.isEnabled
         checkRecipient.isEnabled = refresh.isEnabled
         recipient.isEnabled = !busy && selection != nil
@@ -170,6 +178,39 @@ final class TOSPrivacyWalletViewController: UIViewController {
             }
         }
     }
+    private func recoverPendingPayment() {
+        guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
+        let id = UUID(); requestID = id; busy = true; state = .loading; render()
+        operation = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestID == id { operation = nil; busy = false; render() } }
+            do {
+                let authorization: TOSPrivacyWalletService.Authorization
+                switch access {
+                case .appPasscode:
+                    guard let password = await authenticate() else { state = .locked; return }
+                    try Task.checkCancellation()
+                    authorization = .appPasscode(password)
+                case .devicePresence:
+                    authorization = .devicePresence
+                }
+                let payment = try await service.recoverPayment(wallet: wallet, authorization: authorization,
+                    selection: selection, approvedRelay: configuration.approvedRecoveryRelay)
+                guard requestID == id else { return }
+                guard let payment else {
+                    state = .failed("No unresolved private payment. Refresh to verify your balance.")
+                    return
+                }
+                _ = try await service.submitOrRetry(payment)
+                guard requestID == id else { return }
+                state = .failed("Relay responded. Refresh to verify payment confirmation against the chain.")
+            } catch {
+                guard requestID == id else { return }
+                state = .failed("Unable to resolve the pending payment through Tor. Try checking it again.")
+            }
+        }
+    }
+
     private func reviewPayment() {
         guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
         let input = (recipient.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
