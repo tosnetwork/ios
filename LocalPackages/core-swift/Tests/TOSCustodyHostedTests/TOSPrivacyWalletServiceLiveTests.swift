@@ -122,6 +122,14 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         authorization: .appPasscode(password), selection: selection, input: wrongPool.base64EncodedString())
                     XCTAssertFalse(invalid)
                 }
+                if let provingDirectory = ProcessInfo.processInfo.environment["TOS_PRIVACY_LIVE_PROVER_DIRECTORY"] {
+                    stage = "audit installed payment proving material"
+                    let root = URL(fileURLWithPath: provingDirectory, isDirectory: true)
+                    _ = try await service.loadPaymentProver(wallet: wallet,
+                        authorization: .appPasscode(password), selection: selection,
+                        phase1: root.appendingPathComponent("phase1-zcash-2m15.bin"),
+                        ceremony: root.appendingPathComponent("ceremony", isDirectory: true))
+                }
                 stage = "remove isolated vault"
                 try await vault.deleteAll()
                 XCTAssertFalse(vault.hasMnemonics())
