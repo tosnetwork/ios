@@ -33,6 +33,14 @@ public enum TOSPrivacyHistoryWalk {
         /// batch balances. Recheck the original proof before and after native work;
         /// callbacks must not reenter this owner. No result survives cancellation
         /// or a failed final proof recheck. The caller still persists reservations.
+        public func loadPaymentProver(phase1: URL, ceremony: URL) throws -> TOSPrivacyNative.PaymentProver {
+            try replay.loadPaymentProver(phase1: phase1, ceremony: ceremony)
+        }
+
+        public func requestRelayOffer(_ request: Data) throws -> TOSPrivacyNative.RelayOffer {
+            try replay.requestRelayOffer(request: request)
+        }
+
         public func validateRecipient(_ descriptor: Data) throws -> Bool {
             try replay.validateRecipient(descriptor)
         }

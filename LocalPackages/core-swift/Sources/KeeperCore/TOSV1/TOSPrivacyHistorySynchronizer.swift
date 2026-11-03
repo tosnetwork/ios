@@ -57,6 +57,22 @@ internal enum TOSPrivacyHistorySynchronizer {
             return try history.summaryAndWipeSeed(seed: &seed, stopped: stopped,
                 recheck: { try observation.requireFresh(now: now()) })
         }
+        func loadPaymentProver(phase1: URL, ceremony: URL, now: () -> Int64) throws -> TOSPrivacyNative.PaymentProver {
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            try observation.requireFresh(now: now())
+            return try history.loadPaymentProver(phase1: phase1, ceremony: ceremony)
+        }
+
+        func requestRelayOffer(_ request: Data, now: () -> Int64) throws -> TOSPrivacyNative.RelayOffer {
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            try observation.requireFresh(now: now())
+            let offer = try history.requestRelayOffer(request)
+            try observation.requireFresh(now: now())
+            return offer
+        }
+
         func validateRecipient(_ descriptor: Data, now: () -> Int64) throws -> Bool {
             lock.lock(); defer { lock.unlock() }
             guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
