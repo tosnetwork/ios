@@ -2318,6 +2318,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
     private func openPrivacyWallet(wallet: Wallet) {
         let service = TOSPrivacyWalletService(mnemonics: keeperCoreMainAssembly.secureAssembly.mnemonicsRepository())
         let controller = TOSPrivacyWalletViewController(wallet: wallet, service: service, registry: .shared,
+            paymentConfiguration: .simulatorFixture(),
             authenticate: { [weak self] in await self?.getPasscode() })
         let navigation = TKNavigationController(rootViewController: controller)
         navigation.configureTransparentAppearance(); router.present(navigation)

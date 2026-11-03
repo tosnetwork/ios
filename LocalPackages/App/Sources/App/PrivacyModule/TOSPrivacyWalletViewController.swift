@@ -11,6 +11,27 @@ final class TOSPrivacyWalletViewController: UIViewController {
         let ceremony: URL
         let approvedRelay: Data
         let approvedRecoveryRelay: Data
+
+        static func simulatorFixture() -> Self? {
+            #if DEBUG && targetEnvironment(simulator)
+            guard let path = ProcessInfo.processInfo.environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+                  path.hasPrefix("/"),
+                  let bytes = try? Data(contentsOf: URL(fileURLWithPath: path), options: .mappedIfSafe),
+                  bytes.count <= 256 * 1024,
+                  let fields = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+                  let phase1 = fields["phase1"] as? String, phase1.hasPrefix("/"),
+                  let ceremony = fields["ceremony"] as? String, ceremony.hasPrefix("/"),
+                  let relay = fields["relay"] as? [String: Any],
+                  let offer = try? JSONSerialization.data(withJSONObject: relay) else { return nil }
+            var recovery = relay
+            recovery.removeValue(forKey: "lifetime")
+            guard let recovery = try? JSONSerialization.data(withJSONObject: recovery) else { return nil }
+            return Self(phase1: URL(fileURLWithPath: phase1), ceremony: URL(fileURLWithPath: ceremony),
+                        approvedRelay: offer, approvedRecoveryRelay: recovery)
+            #else
+            return nil
+            #endif
+        }
     }
 
     private enum State {
