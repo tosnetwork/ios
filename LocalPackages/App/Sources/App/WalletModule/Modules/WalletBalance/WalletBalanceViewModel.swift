@@ -27,6 +27,7 @@ protocol WalletBalanceModuleOutput: AnyObject {
     var didTapDeposit: ((_ wallet: Wallet) -> Void)? { get set }
     var didTapWithdraw: ((Wallet) -> Void)? { get set }
     var didTapSend: ((Wallet) -> Void)? { get set }
+    var didTapPrivacy: ((Wallet) -> Void)? { get set }
     var didTapScan: (() -> Void)? { get set }
     var didTapBuy: ((Wallet) -> Void)? { get set }
     var didTapSwap: ((Wallet) -> Void)? { get set }
@@ -101,6 +102,7 @@ final class WalletBalanceViewModelImplementation:
 
     var didTapReceive: ((_ wallet: Wallet) -> Void)?
     var didTapSend: ((Wallet) -> Void)?
+    var didTapPrivacy: ((Wallet) -> Void)?
     var didTapWithdraw: ((Wallet) -> Void)?
     var didTapDeposit: ((Wallet) -> Void)?
     var didTapScan: (() -> Void)?
@@ -795,7 +797,10 @@ final class WalletBalanceViewModelImplementation:
             balanceModel: headerModel,
             buttonsContent: self.createHeaderButtonsContent(wallet: totalBalanceModelState.wallet),
             updatesViewModel: updatesModel,
-            updatesAction: updatesAction
+            updatesAction: updatesAction,
+            privacyAction: totalBalanceModelState.wallet.kind == .quantum ? { [weak self] in
+                self?.didTapPrivacy?(totalBalanceModelState.wallet)
+            } : nil
         )
     }
 

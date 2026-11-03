@@ -172,12 +172,18 @@ internal final class TOSQuantumAccountReader {
     internal struct PoolObservation {
         let id: UUID
         let profile: TOSQuantumNetworkProfile
+        let birthHash: Data
+        let namespace: Data
         let network: TOSQuantumProofBridge.BoundRead
         let address: Address
         let stateJSON: Data
         fileprivate let proof: TOSQuantumProofBridge.BoundRead
         fileprivate let poolDataBOC: Data
         fileprivate let accountRoot: Data
+        func provenShardTime(now: Int64) throws -> UInt32 {
+            try requireFresh(now: now)
+            return try proof.provenAccountTime(expectedAddress: address.toRaw())
+        }
         /// These values come exclusively from this verified same-checkpoint observation.
         func replayRequest(now: Int64) throws -> Data {
             try requireFresh(now: now)
@@ -231,7 +237,9 @@ internal final class TOSQuantumAccountReader {
               object["poseidon_manifest_hash"] as? String == hex(manifestHash),
               object["groth16_vk_hash"] as? String == hex(verifyingKeyHash),
               Data(SHA256.hash(data: key)) == verifyingKeyHash else { throw TOSPQError.keyBinding }
-        let result = PoolObservation(id: id, profile: profile, network: network, address: address, stateJSON: decoded, proof: proof,
+        let result = PoolObservation(id: id, profile: profile, birthHash: identity.cell.hash(),
+                                     namespace: identity.wallet.initialAuthority.namespace,
+                                     network: network, address: address, stateJSON: decoded, proof: proof,
                                      poolDataBOC: try data.toBoc(), accountRoot: try TOSRPCOrdinaryBOC.decode(account.base64EncodedString()).hash())
         try result.requireFresh(now: now())
         return result

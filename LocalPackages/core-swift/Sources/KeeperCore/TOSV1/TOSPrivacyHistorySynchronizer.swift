@@ -57,12 +57,28 @@ internal enum TOSPrivacyHistorySynchronizer {
             return try history.summaryAndWipeSeed(seed: &seed, stopped: stopped,
                 recheck: { try observation.requireFresh(now: now()) })
         }
+        func summaryAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+                                   stopped: () -> Bool, now: () -> Int64) throws -> Data {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            return try master.summaryAndClose(history: history, binding: binding, stopped: stopped,
+                recheck: { try observation.requireFresh(now: now()) })
+        }
     }
     /// Balance/history reads use the configured RPC. This is not a claim that all wallet traffic uses Tor.
     static func synchronize(observation: TOSQuantumAccountReader.PoolObservation,
+                            endpoint suppliedEndpoint: URL? = nil,
                             stopped: () -> Bool, now: () -> Int64) throws -> Completed {
-        guard let endpoint = TOSRPCSettings.quantumEndpoint,
-              let url = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+        let url: URL
+        if let suppliedEndpoint { url = suppliedEndpoint }
+        else {
+            guard let endpoint = TOSRPCSettings.quantumEndpoint,
+                  let selected = TOSRPCSettings.jsonRPCEndpoint(for: endpoint) else { throw TOSQuantumNetworkProfile.Error.missingEndpoint }
+            url = selected
+        }
         let relay = try TOSQuantumRPCTransport(endpoint: url)
         return try synchronize(observation: observation, query: { address, lt, hash in
             let result = try relay.call(method: "getTransactions", params: ["address": address,

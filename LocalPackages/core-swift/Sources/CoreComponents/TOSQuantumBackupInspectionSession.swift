@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import TonSwift
 
 /// Owns decrypted secrets during inspection and narrow protected persistence. Never signs or returns secrets.
 public final class TOSQuantumBackupInspectionSession {
@@ -12,6 +13,7 @@ public final class TOSQuantumBackupInspectionSession {
     public let identity: TOSQuantumBackupIdentityFields
     public let encryptedDigest: Data
     private var payload: TOSQuantumBackupPayload?
+    private var secretsValidated = false
     private let lock = NSLock()
 
     public init(encrypted: Data, password: String) throws {
@@ -70,9 +72,11 @@ public final class TOSQuantumBackupInspectionSession {
     /// Keys must come from the strictly decoded snapshot; does not authenticate current chain roles.
     public func validateSecrets(primary: Data, rescue: Data) throws -> [Role] {
         lock.lock(); defer { lock.unlock() }
+        secretsValidated = false
         guard let payload else { throw TOSPQError.invalidInput }
         try payload.validateSnapshotKeys(primary: primary, rescue: rescue)
         try payload.validateProvenance()
+        secretsValidated = true
         return try payload.roles.map { entry in
             guard let role = TOSQuantumRole(rawValue: Int32(entry.role)) else { throw TOSPQError.invalidInput }
             return Role(role: role, account: entry.account, generation: entry.generation, sourceProfile: entry.sourceProfile)
@@ -83,6 +87,31 @@ public final class TOSQuantumBackupInspectionSession {
         lock.lock(); defer { lock.unlock() }
         payload?.wipe()
         payload = nil
+        secretsValidated = false
+    }
+    /// Narrow privacy use of validated original root material. Seed-only roles
+    /// are unavailable; a rotated root is not substituted for the birth primary.
+    public func privacyMaster(binding: TOSPrivacyMasterSession.Binding) throws -> TOSPrivacyMasterSession {
+        guard !Thread.isMainThread else { throw TOSPrivacyNative.Failure.requiresWorker }
+        lock.lock(); defer { lock.unlock() }
+        guard let payload, secretsValidated else { throw TOSPrivacyMasterSession.Failure.materialUnavailable }
+        let roots = try Cell.fromBoc(src: payload.birthBOC)
+        guard payload.globalID == binding.globalID, payload.namespace == binding.namespace,
+              roots.count == 1, roots[0].hash() == binding.birthHash else { throw TOSPrivacyMasterSession.Failure.binding }
+        try payload.validateProvenance()
+        for role in payload.roles where role.sourceProfile == 2 || role.sourceProfile == 3 {
+            var master = Data()
+            defer { master.resetBytes(in: 0..<master.count) }
+            if role.sourceProfile == 2 {
+                let words = role.wordIndices.map { TonSwift.Mnemonic.words[Int($0)] }
+                var password = role.phrasePassword
+                defer { password.resetBytes(in: 0..<password.count) }
+                master = try TOSQuantumMnemonic.masterAndWipePassword(words: words, password: &password)
+            } else { master = role.master }
+            do { return try TOSPrivacyMasterSession.boundMasterAndWipe(&master, binding: binding) }
+            catch TOSPrivacyMasterSession.Failure.materialUnavailable { continue }
+        }
+        throw TOSPrivacyMasterSession.Failure.materialUnavailable
     }
     /// Low-level custody primitive. The wallet service must first persist isolation and verify fresh roles.
     public func persistProtectedMaterial(id: UUID, birthHash: Data, primary: Data, rescue: Data) throws {

@@ -626,6 +626,31 @@ final class TOSWalletUITests: XCTestCase {
         }
     }
 
+    /// Run only on a dedicated disposable QA simulator: setUp resets its data.
+    func testPrivacyWalletIndependentUnconfiguredMode() throws {
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15)); enter.tap()
+        let status = app.staticTexts["privacy.wallet.status"]
+        let unconfigured = "No trusted privacy pool is configured for this wallet's network."
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", unconfigured), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        XCTAssertEqual(app.staticTexts["privacy.wallet.balance"].label, "—")
+        XCTAssertFalse(app.buttons["privacy.wallet.refresh"].isEnabled)
+        for title in ["Receive privately", "Send privately", "Deposit TOS", "Withdraw TOS"] {
+            XCTAssertTrue(app.buttons[title].exists); XCTAssertFalse(app.buttons[title].isEnabled)
+        }
+        XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+        retainScreenshot(named: "Independent privacy mode without approved pool")
+        XCUIDevice.shared.press(.home); app.activate()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+            NSPredicate(format: "label == %@", unconfigured), object: status)], timeout: 10), .completed)
+        XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+        app.buttons["Ordinary wallet"].tap()
+        XCTAssertTrue(enter.waitForExistence(timeout: 10))
+    }
+
     func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {
         try configureLiveQuantumTestNetwork()
         createQuantumWalletWithConfirmedBackupToHome()

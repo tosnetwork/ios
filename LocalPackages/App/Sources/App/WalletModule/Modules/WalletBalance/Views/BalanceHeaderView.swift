@@ -7,6 +7,8 @@ final class BalanceHeaderView: UIView, ConfigurableView {
     private let buttonsView = WalletBalanceHeaderButtonsView()
     private let buttonsRedesignView = WalletBalanceHeaderButtonsRedesignView()
     private let updatesView = WalletBalanceUpdatesView()
+    private let privacy = UIButton(type: .system)
+    private var privacyAction: (() -> Void)?
 
     private let stackView: UIStackView = {
         let stackView = UIStackView()
@@ -34,6 +36,7 @@ final class BalanceHeaderView: UIView, ConfigurableView {
         let buttonsContent: ButtonsContent
         let updatesViewModel: WalletBalanceUpdatesView.Model?
         let updatesAction: (() -> Void)?
+        let privacyAction: (() -> Void)?
 
         var hasWithdrawTooltip: Bool {
             guard case let .redesign(model) = buttonsContent else { return false }
@@ -43,6 +46,7 @@ final class BalanceHeaderView: UIView, ConfigurableView {
 
     func configure(model: Model) {
         balanceView.configure(model: model.balanceModel)
+        privacyAction = model.privacyAction; privacy.isHidden = privacyAction == nil
 
         switch model.buttonsContent {
         case let .classic(classicModel):
@@ -76,6 +80,12 @@ private extension BalanceHeaderView {
         stackView.addArrangedSubview(balanceView)
         stackView.addArrangedSubview(buttonsView)
         stackView.addArrangedSubview(buttonsRedesignView)
+        var privacyConfiguration = UIButton.Configuration.tinted()
+        privacyConfiguration.title = "Enter privacy wallet"; privacyConfiguration.baseForegroundColor = .systemIndigo
+        privacyConfiguration.contentInsets = .init(top: 12, leading: 12, bottom: 12, trailing: 12)
+        privacy.configuration = privacyConfiguration; privacy.accessibilityIdentifier = "wallet.enterPrivacy"
+        privacy.addAction(UIAction { [weak self] _ in self?.privacyAction?() }, for: .touchUpInside)
+        stackView.addArrangedSubview(privacy)
         stackView.addArrangedSubview(updatesView)
 
         buttonsRedesignView.isHidden = true
