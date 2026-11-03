@@ -49,14 +49,39 @@ def main():
             head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         if head != revision:
             raise RuntimeError('Provided proof source does not match the pinned revision')
-        builds = Path(os.environ.get('TOS_PROOF_BUILD_ROOT', cache / 'build')).resolve()
+        builds = Path(os.environ.get('TOS_PROOF_BUILD_ROOT', cache / 'build-apple')).resolve()
         host = Path(os.environ.get('TOS_PROOF_HOST_BUILD', builds / 'host')).resolve()
-        if not (host / 'CMakeCache.txt').exists():
-            subprocess.run(['cmake', '-S', str(source), '-B', str(host), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', '-DTOS_USE_ROCKSDB=OFF', '-DTOS_USE_ABSEIL=OFF'], check=True)
+        compilers = [
+            subprocess.check_output(['xcrun', '--sdk', 'macosx', '--find', name], text=True).strip()
+            for name in ('clang', 'clang++')
+        ]
+        sdk = subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip()
+        build_env = {**os.environ, 'PATH': str(Path(compilers[0]).parent) + os.pathsep + os.environ['PATH']}
+        if not (host / 'build.ninja').exists():
+            openssl = host / 'third-party' / 'openssl'
+            configure = [
+                'cmake', '-S', str(source), '-B', str(host), '-G', 'Ninja',
+                '-DCMAKE_BUILD_TYPE=Release', '-DTOS_USE_ROCKSDB=OFF',
+                '-DTOS_USE_ABSEIL=OFF', '-DUSE_QUIC=OFF',
+                f'-DCMAKE_C_COMPILER={compilers[0]}', f'-DCMAKE_CXX_COMPILER={compilers[1]}',
+                f'-DCMAKE_OSX_SYSROOT={sdk}',
+            ]
+            openssl_args = [
+                f'-DOPENSSL_ROOT_DIR={openssl}',
+                f'-DOPENSSL_CRYPTO_LIBRARY={openssl / "lib/libcrypto.a"}',
+                f'-DOPENSSL_SSL_LIBRARY={openssl / "lib/libssl.a"}',
+                f'-DOPENSSL_INCLUDE_DIR={openssl / "include"}',
+            ]
+            host_env = {**build_env, 'SDKROOT': sdk}
+            if not (openssl / 'lib/libcrypto.a').is_file():
+                result = subprocess.run(configure + ['-UOPENSSL_*'], env=host_env)
+                if result.returncode and not (openssl / 'lib/libcrypto.a').is_file():
+                    result.check_returncode()
+            subprocess.run(configure + openssl_args, check=True, env=host_env)
         files = {}
         for name, sdk, arch in [('device', 'iphoneos', 'arm64'), ('sim-arm64', 'iphonesimulator', 'arm64'), ('sim-x86_64', 'iphonesimulator', 'x86_64')]:
             target = builds / name
-            subprocess.run(['python3', str(source / 'scripts/build-embedded-proof-ios.py'), '--host-build', str(host), '--build-dir', str(target), '--sdk', sdk, '--arch', arch], check=True)
+            subprocess.run(['python3', str(source / 'scripts/build-embedded-proof-ios.py'), '--host-build', str(host), '--build-dir', str(target), '--sdk', sdk, '--arch', arch], check=True, env=build_env)
             files[name] = target / 'lite-client/proof-verify/libtosproofverify.dylib'
         output = repo / 'LocalPackages/core-swift/Generated/TOSProofVerify.xcframework'
         output.parent.mkdir(parents=True, exist_ok=True)
