@@ -4,7 +4,7 @@ import TOSShielded
 /// Synchronous crypto over the TOS mnemonic master, before role-specific derivation.
 /// The application must supply authenticated pool state and call off the UI thread.
 public enum TOSPrivacyNative {
-    public enum Failure: Error { case invalidInput, operationFailed }
+    public enum Failure: Error { case invalidInput, operationFailed, stateBinding }
     public static let maxRequestBytes = 2 * 1024 * 1024
     public static let maxResponseBytes = 1024 * 1024
     private static let lock = NSLock()
@@ -40,6 +40,23 @@ public enum TOSPrivacyNative {
                 return try copyAndRelease(response)
             }
         }
+    }
+
+    /// Layout decoding only. expectedDataHash must come from an authenticated
+    /// account proof; callers still verify address, code, network and profile pins.
+    public static func decodePoolState(boc: Data, expectedDataHash: Data) throws -> Data {
+        guard !boc.isEmpty, boc.count <= maxRequestBytes, expectedDataHash.count == 32 else {
+            throw Failure.invalidInput
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        let decoded = try boc.withUnsafeBytes { bytes in
+            try copyAndRelease(tos_shielded_pool_state(bytes.bindMemory(to: UInt8.self).baseAddress, boc.count))
+        }
+        let object = try JSONSerialization.jsonObject(with: decoded) as? [String: Any]
+        let expected = expectedDataHash.map { String(format: "%02x", $0) }.joined()
+        guard object?["data_hash"] as? String == expected else { throw Failure.stateBinding }
+        return decoded
     }
 
     private static func copyAndRelease(_ response: OpaquePointer?, exactSize: Int? = nil) throws -> Data {

@@ -112,7 +112,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/privacy-scan.json"), .copy("TestData/privacy-descriptors.json"), .copy("TestData/quantum-backup-exchange-v1"), .copy("TestData/quantum-payment"), .copy("TestData/quantum-transactions"), .copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json"), .copy("TestData/tos-native-active-wallet.json")],
+            resources: [.copy("TestData/privacy-pool-state.boc"), .copy("TestData/privacy-scan.json"), .copy("TestData/privacy-descriptors.json"), .copy("TestData/quantum-backup-exchange-v1"), .copy("TestData/quantum-payment"), .copy("TestData/quantum-transactions"), .copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json"), .copy("TestData/tos-native-active-wallet.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),

@@ -36,6 +36,32 @@ final class TOSPrivacyNativeTests: XCTestCase {
         XCTAssertEqual(seed, Data(repeating: 0, count: 32))
     }
 
+    func testPoolStateDataHashBindingAndFullWireSize() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "privacy-pool-state", withExtension: "boc"))
+        let boc = try Data(contentsOf: url)
+        let expectedHex = "50ba96d38f3e0e474737a1946973f7ba528775a246bbe9b8d02a97a0425d6b4f"
+        let chars = Array(expectedHex.utf8)
+        func nibble(_ b: UInt8) -> UInt8 { b <= 57 ? b - 48 : b - 87 }
+        let expected = Data(stride(from: 0, to: chars.count, by: 2).map { (nibble(chars[$0]) << 4) | nibble(chars[$0 + 1]) })
+        let decoded = try TOSPrivacyNative.decodePoolState(boc: boc, expectedDataHash: expected)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: decoded) as? [String: Any])
+        XCTAssertEqual(object["withdrawal_fee"] as? String, "20000000")
+        XCTAssertEqual(object["last_anchor_epoch"] as? String, "4294967295")
+        XCTAssertThrowsError(try TOSPrivacyNative.decodePoolState(boc: boc, expectedDataHash: Data(repeating: 0, count: 32))) { error in
+            guard case TOSPrivacyNative.Failure.stateBinding = error else { return XCTFail("Expected data root binding failure") }
+        }
+        let width = Int(boc[4] & 7), start = 6 + 3 * Int(boc[4] & 7)
+        XCTAssertEqual(width, 1)
+        let end = start + Int(boc[5])
+        let total = boc[start..<end].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+        var changed = Data(boc.prefix(start))
+        changed[5] = 8
+        var oversized = (total + (1 << 32)).bigEndian
+        withUnsafeBytes(of: &oversized) { changed.append(contentsOf: $0) }
+        changed.append(boc.suffix(from: end))
+        XCTAssertThrowsError(try TOSPrivacyNative.decodePoolState(boc: changed, expectedDataHash: expected))
+    }
+
     func testNativeFailureStillConsumesSeed() {
         var seed = Data(repeating: 0x42, count: 32)
         XCTAssertThrowsError(try TOSPrivacyNative.scanAndWipeSeed(seed: &seed, request: Data("{}".utf8)))

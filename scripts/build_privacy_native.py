@@ -14,9 +14,12 @@ SOURCE_URL = "https://github.com/tosnetwork/tos.git"
 SOURCE_PATHS = [
     "tools/shielded-pool-mobile",
     "tools/shielded-pool-wallet",
+    "tools/shielded-pool-codec",
     "tools/shielded-pool-circuit",
     "crypto/poseidon2",
-    "tosctl/src/block/src",
+    "tosctl/src/block",
+    "tosctl/src/lockfree",
+    "tosctl/src/common",
     "scripts",
 ]
 
@@ -65,6 +68,8 @@ def main():
             raise RuntimeError(
                 "Privacy source has local changes; preserve them and use a clean checkout"
             )
+        if not provided:
+            run(["git", "-C", source, "sparse-checkout", "set", *SOURCE_PATHS])
         head = subprocess.run(
             ["git", "-C", str(source), "rev-parse", "--verify", "HEAD"],
             capture_output=True,
