@@ -33,6 +33,10 @@ public enum TOSPrivacyHistoryWalk {
         /// batch balances. Recheck the original proof before and after native work;
         /// callbacks must not reenter this owner. No result survives cancellation
         /// or a failed final proof recheck. The caller still persists reservations.
+        public func validateRecipient(_ descriptor: Data) throws -> Bool {
+            try replay.validateRecipient(descriptor)
+        }
+
         public func receiveAndWipeSeed(seed: inout Data, root: Data, binding: Data,
                                        requireCurrent: () throws -> Void) throws -> Data {
             defer { seed.resetBytes(in: 0..<seed.count) }

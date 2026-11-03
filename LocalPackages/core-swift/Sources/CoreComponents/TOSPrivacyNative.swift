@@ -111,6 +111,24 @@ public enum TOSPrivacyNative {
             guard let handle else { throw Failure.invalidInput }
             guard tos_shielded_replay_finish(handle) == 0 else { discard(); throw Failure.operationFailed }
         }
+        public func validateRecipient(_ descriptor: Data) throws -> Bool {
+            guard descriptor.count == 2573 else { return false }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            return try descriptor.withUnsafeBytes { bytes in
+                guard let result = tos_shielded_replay_validate_recipient(
+                    handle, bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count) else {
+                    throw Failure.operationFailed
+                }
+                defer { tos_shielded_response_free(result) }
+                switch tos_shielded_response_status(result) {
+                case 0: return true
+                case 1: return false
+                default: throw Failure.operationFailed
+                }
+            }
+        }
+
         public func info() throws -> Data {
             TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
             guard let handle else { throw Failure.invalidInput }

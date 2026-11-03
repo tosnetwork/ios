@@ -57,6 +57,15 @@ internal enum TOSPrivacyHistorySynchronizer {
             return try history.summaryAndWipeSeed(seed: &seed, stopped: stopped,
                 recheck: { try observation.requireFresh(now: now()) })
         }
+        func validateRecipient(_ descriptor: Data, now: () -> Int64) throws -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            try observation.requireFresh(now: now())
+            let valid = try history.validateRecipient(descriptor)
+            try observation.requireFresh(now: now())
+            return valid
+        }
+
         func receiveAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
                                    root: Data, stopped: () -> Bool, now: () -> Int64) throws -> Data {
             defer { master.close() }

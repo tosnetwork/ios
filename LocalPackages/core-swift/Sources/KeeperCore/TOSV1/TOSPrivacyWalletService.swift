@@ -108,6 +108,18 @@ public final class TOSPrivacyWalletService {
         }
     }
 
+    public func validateRecipient(wallet: Wallet, authorization: Authorization,
+                                  selection: TOSPrivacyPoolSelection, input: String) async throws -> Bool {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.utf8.count == 3432, let descriptor = Data(base64Encoded: text),
+              descriptor.count == 2573, descriptor.base64EncodedString() == text else { return false }
+        return try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                            forReceive: false) { completed, _, _, _, job in
+            try job.check()
+            return try completed.validateRecipient(descriptor, now: self.now)
+        }
+    }
+
     public func receive(wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection) async throws -> Data {
         try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
                                      forReceive: true) { completed, master, context, _, job in

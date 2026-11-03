@@ -113,6 +113,14 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                     XCTAssertEqual(Array(descriptor.prefix(4)), [0x53, 0x48, 0x44, 0x31])
                     let index = descriptor.dropFirst(37).prefix(8).reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
                     XCTAssertEqual(index, expected)
+                    let valid = try await service.validateRecipient(wallet: wallet,
+                        authorization: .appPasscode(password), selection: selection, input: descriptor.base64EncodedString())
+                    XCTAssertTrue(valid)
+                    var wrongPool = descriptor
+                    wrongPool[36] ^= 1
+                    let invalid = try await service.validateRecipient(wallet: wallet,
+                        authorization: .appPasscode(password), selection: selection, input: wrongPool.base64EncodedString())
+                    XCTAssertFalse(invalid)
                 }
                 stage = "remove isolated vault"
                 try await vault.deleteAll()

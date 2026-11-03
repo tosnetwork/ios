@@ -7,7 +7,7 @@ import CoreComponents
 @MainActor
 final class TOSPrivacyWalletViewController: UIViewController {
     private enum State {
-        case loading, locked, unconfigured, receipt, observed(TOSPrivacyWalletService.Observed), failed(String)
+        case loading, locked, unconfigured, receipt, recipientChecked(Bool), observed(TOSPrivacyWalletService.Observed), failed(String)
     }
     private let wallet: Wallet
     private let service: TOSPrivacyWalletService
@@ -17,6 +17,8 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private let refresh = UIButton(type: .system)
     private let receive = UIButton(type: .system)
     private let descriptor = UITextView()
+    private let recipient = UITextField()
+    private let checkRecipient = UIButton(type: .system)
     private var selection: TOSPrivacyPoolSelection?
     private var access: TOSPrivacyWalletService.Access?
     private var state = State.loading
@@ -70,6 +72,18 @@ final class TOSPrivacyWalletViewController: UIViewController {
         descriptor.accessibilityIdentifier = "privacy.wallet.descriptor"
         descriptor.heightAnchor.constraint(equalToConstant: 140).isActive = true
         stack.addArrangedSubview(descriptor)
+        recipient.placeholder = "Private recipient descriptor"
+        recipient.accessibilityIdentifier = "privacy.wallet.recipient"
+        recipient.autocorrectionType = .no
+        recipient.autocapitalizationType = .none
+        recipient.borderStyle = .roundedRect
+        stack.addArrangedSubview(recipient)
+        checkRecipient.setTitle("Check private recipient", for: .normal)
+        checkRecipient.addAction(UIAction { [weak self] _ in
+            guard let self, let input = recipient.text else { return }
+            read(recipientInput: input)
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(checkRecipient)
         for title in ["Send privately", "Deposit TOS", "Withdraw TOS"] {
             let button = UIButton(type: .system); var config = UIButton.Configuration.tinted(); config.title = title
             button.configuration = config; button.isEnabled = false; stack.addArrangedSubview(button)
@@ -92,15 +106,20 @@ final class TOSPrivacyWalletViewController: UIViewController {
     }
     private func invalidate() {
         descriptor.text = ""
+        recipient.text = ""
         operation?.cancel(); operation = nil; requestID = UUID(); busy = false
     }
     private func render() {
         refresh.isEnabled = !busy && selection != nil
         receive.isEnabled = refresh.isEnabled
+        checkRecipient.isEnabled = refresh.isEnabled
+        recipient.isEnabled = !busy && selection != nil
         descriptor.isHidden = descriptor.text.isEmpty
         pool.text = selection.map { "Pool: \($0.address.toRaw())\nConfiguration: \($0.sourceDescription)" }
         amount.text = "—"
         switch state {
+        case .recipientChecked(let valid):
+            status.text = valid ? "Recipient descriptor is valid for this pool." : "Invalid recipient descriptor for this pool."
         case .receipt: status.text = "Share this descriptor with the sender."
         case .loading: status.text = "Loading privacy wallet…"
         case .locked: status.text = "Authenticate to refresh your private balance."
@@ -127,7 +146,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
             }
         }
     }
-    private func read(forReceipt: Bool = false) {
+    private func read(forReceipt: Bool = false, recipientInput: String? = nil) {
         guard !busy, let selection, let access else { return }
         descriptor.text = ""
         let id = UUID(); requestID = id; busy = true; state = .loading; render()
@@ -144,7 +163,12 @@ final class TOSPrivacyWalletViewController: UIViewController {
                 case .devicePresence:
                     authorization = .devicePresence
                 }
-                if forReceipt {
+                if let recipientInput {
+                    let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
+                                                                    selection: selection, input: recipientInput)
+                    try Task.checkCancellation(); guard requestID == id else { return }
+                    state = .recipientChecked(valid)
+                } else if forReceipt {
                     let result = try await service.receive(wallet: wallet, authorization: authorization, selection: selection)
                     try Task.checkCancellation(); guard requestID == id else { return }
                     descriptor.text = result.base64EncodedString()
@@ -158,7 +182,8 @@ final class TOSPrivacyWalletViewController: UIViewController {
                 guard requestID == id else { return }
                 if case TOSPrivacyWalletService.Failure.materialUnavailable = error {
                     state = .failed("This device does not have the original recovery material for your private assets. Restore your original wallet backup to continue.")
-                } else { state = .failed(forReceipt ? "Unable to create a private receiving descriptor." : "Unable to verify your private balance. Refresh to try again.") }
+                } else if recipientInput != nil { state = .failed("Unable to verify the private recipient.") }
+                else { state = .failed(forReceipt ? "Unable to create a private receiving descriptor." : "Unable to verify your private balance. Refresh to try again.") }
             }
         }
     }
