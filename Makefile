@@ -76,6 +76,12 @@ compile: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
 		build 2>&1 | tee $(BUILD_DIR)/compile-raw.log | xcbeautify
 
 archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
+ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
+	@test "$(TOS_PRIVACY_PROVING)" = 1
+	@test -s "$(TOS_PRIVACY_RELEASE_DIR)/relay.json"
+	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/phase1"
+	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/ceremony"
+endif
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(BUILD_DIR)/release-archive
 	@echo 'archiving unsigned TOS Wallet release...' && \
@@ -96,6 +102,14 @@ archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof prepare_priv
 		CODE_SIGNING_REQUIRED=NO \
 		archive \
 		-archivePath $(BUILD_DIR)/release-archive/TOSWallet.xcarchive | xcbeautify
+ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
+	@set -e; \
+		destination="$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app/PrivacyPayment"; \
+		mkdir "$$destination"; \
+		for entry in relay.json phase1 ceremony; do \
+			ditto "$(TOS_PRIVACY_RELEASE_DIR)/$$entry" "$$destination/$$entry"; \
+		done
+endif
 	python3 scripts/tests/check_release_test_hooks.py "$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app"
 
 # Test

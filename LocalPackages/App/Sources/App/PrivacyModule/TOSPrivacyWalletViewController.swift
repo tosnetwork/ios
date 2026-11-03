@@ -14,6 +14,21 @@ final class TOSPrivacyWalletViewController: UIViewController {
         let approvedRecoveryRelay: Data
         let testPool: TOSPrivacyPoolSelection?
 
+        static func bundledRelease() -> Self? {
+            guard let directory = Bundle.main.resourceURL?.appendingPathComponent("PrivacyPayment", isDirectory: true),
+                  let bytes = try? Data(contentsOf: directory.appendingPathComponent("relay.json"), options: .mappedIfSafe),
+                  (1...256 * 1024).contains(bytes.count),
+                  var relay = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { return nil }
+            let phase1 = directory.appendingPathComponent("phase1", isDirectory: true)
+            let ceremony = directory.appendingPathComponent("ceremony", isDirectory: true)
+            guard FileManager.default.isReadableFile(atPath: phase1.path),
+                  FileManager.default.isReadableFile(atPath: ceremony.path) else { return nil }
+            relay.removeValue(forKey: "lifetime")
+            guard let recovery = try? JSONSerialization.data(withJSONObject: relay) else { return nil }
+            return Self(phase1: phase1, ceremony: ceremony, approvedRelay: bytes,
+                        approvedRecoveryRelay: recovery, testPool: nil)
+        }
+
         static func simulatorFixture() -> Self? {
             #if DEBUG && targetEnvironment(simulator)
             guard let path = ProcessInfo.processInfo.environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
