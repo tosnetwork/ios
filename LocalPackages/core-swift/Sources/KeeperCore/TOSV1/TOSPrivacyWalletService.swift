@@ -123,20 +123,77 @@ public final class TOSPrivacyWalletService {
     public func receive(wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection) async throws -> Data {
         try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
                                      forReceive: true) { completed, master, context, _, job in
-            let parent = try self.privacyStoreParent ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                                     appropriateFor: nil, create: true)
-            var root = parent.appendingPathComponent("tos-privacy", isDirectory: true)
-            if mkdir(root.path, 0o700) != 0 && errno != EEXIST { throw POSIXError(.EIO) }
-            let fd = open(parent.path, O_RDONLY | O_DIRECTORY)
-            guard fd >= 0 else { throw POSIXError(.EIO) }
-            defer { close(fd) }
-            guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            try root.setResourceValues(values)
+            let root = try self.privacyStoreRoot()
             return try completed.receiveAndCloseMaster(master, binding: context.binding,
                 root: Data(root.path.utf8), stopped: job.stopped, now: self.now)
         }
+    }
+
+    public func requestRelayOffer(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection, approvedRelay: Data
+    ) async throws -> TOSPrivacyNative.RelayOffer {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, _, _, _, job in
+            try job.check()
+            return try completed.requestRelayOffer(approvedRelay, now: self.now)
+        }
+    }
+
+    public func loadPaymentProver(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection,
+        phase1: URL, ceremony: URL
+    ) async throws -> TOSPrivacyNative.PaymentProver {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, _, _, _, job in
+            try job.check()
+            return try completed.loadPaymentProver(phase1: phase1, ceremony: ceremony, now: self.now)
+        }
+    }
+
+    public func stagePayment(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection,
+        recipient: Data, amount: String, fee: String, quoteIdentity: String,
+        prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer
+    ) async throws -> TOSPrivacyNative.PaymentSubmission {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            let root = try self.privacyStoreRoot()
+            try job.check()
+            return try completed.stagePaymentAndCloseMaster(master, binding: context.binding, root: root,
+                recipient: recipient, amount: amount, fee: fee, quoteIdentity: quoteIdentity,
+                prover: prover, offer: offer, now: self.now)
+        }
+    }
+
+    public func recoverPayment(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection, approvedRelay: Data
+    ) async throws -> TOSPrivacyNative.PaymentSubmission? {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            guard var fields = try JSONSerialization.jsonObject(with: approvedRelay) as? [String: Any] else {
+                throw Failure.binding
+            }
+            fields["root"] = try self.privacyStoreRoot().path
+            let request = try JSONSerialization.data(withJSONObject: fields)
+            try job.check()
+            return try completed.recoverPaymentAndCloseMaster(master, binding: context.binding,
+                request: request, now: self.now)
+        }
+    }
+
+    private func privacyStoreRoot() throws -> URL {
+        let parent = try privacyStoreParent ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                 appropriateFor: nil, create: true)
+        var root = parent.appendingPathComponent("tos-privacy", isDirectory: true)
+        if mkdir(root.path, 0o700) != 0 && errno != EEXIST { throw POSIXError(.EIO) }
+        let fd = open(parent.path, O_RDONLY | O_DIRECTORY)
+        guard fd >= 0 else { throw POSIXError(.EIO) }
+        defer { close(fd) }
+        guard fsync(fd) == 0 else { throw POSIXError(.EIO) }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try root.setResourceValues(values)
+        return root
     }
 
     private func withVerifiedWallet<Value>(
