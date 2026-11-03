@@ -145,7 +145,9 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         let authorization = TOSPrivacyWalletService.Authorization.appPasscode(password)
                         let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
                             selection: selection, input: encodedRecipient)
-                        guard valid, result.summary.unspentBalance == "1000000000" else {
+                        let loseResponse = config["verify_lost_response"] as? Bool == true
+                        let startingBalance = loseResponse ? "899999999" : "1000000000"
+                        guard valid, result.summary.unspentBalance == startingBalance else {
                             throw TOSPQError.invalidInput
                         }
                         let approvedRelay = try JSONSerialization.data(withJSONObject: XCTUnwrap(config["approved_relay"]))
@@ -159,13 +161,20 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                             selection: selection, recipient: recipient, amount: "100000000", fee: details.fee,
                             quoteIdentity: details.identity, prover: prover, offer: offer)
                         stage = "submit isolated payment through Tor"
-                        _ = try await service.submitOrRetry(payment)
+                        if loseResponse {
+                            do {
+                                _ = try await service.submitOrRetry(payment)
+                                XCTFail("Expected the isolated Tor proxy to discard the response")
+                            } catch { }
+                        } else {
+                            _ = try await service.submitOrRetry(payment)
+                        }
                         stage = "verify sender debit against authenticated history"
                         var confirmed = false
                         for _ in 0..<30 {
                             let current = try await service.read(wallet: wallet, authorization: authorization,
                                 selection: selection)
-                            if current.summary.unspentBalance == "899999999" {
+                            if current.summary.unspentBalance == (loseResponse ? "799999998" : "899999999") {
                                 confirmed = true
                                 break
                             }
