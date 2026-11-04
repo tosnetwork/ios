@@ -727,6 +727,18 @@ final class TOSWalletUITests: XCTestCase {
         }
         let enter = app.buttons["wallet.enterPrivacy"]
         XCTAssertTrue(enter.waitForExistence(timeout: 15)); enter.tap()
+        let backgroundRecovery = environment["TOS_PRIVACY_UI_LOST_RESPONSE"] == "background"
+        let balanceLabel = app.staticTexts["privacy.wallet.balance"]
+        var balanceBeforeBackgroundPayment: Decimal?
+        if backgroundRecovery {
+            app.buttons["privacy.wallet.refresh"].tap()
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+            let observed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label ENDSWITH %@", " TOS"),
+                object: balanceLabel)
+            XCTAssertEqual(XCTWaiter.wait(for: [observed], timeout: 45), .completed)
+            balanceBeforeBackgroundPayment = try XCTUnwrap(Decimal(string: String(balanceLabel.label.dropLast(4)),
+                locale: Locale(identifier: "en_US_POSIX")))
+        }
         let recipientField = app.textFields["privacy.wallet.recipient"]
         let amount = app.textFields["privacy.wallet.send.amount"]
         XCTAssertTrue(recipientField.waitForExistence(timeout: 15))
@@ -756,7 +768,18 @@ final class TOSWalletUITests: XCTestCase {
             return
         }
         let review = app.alerts["Confirm private payment"]
-        XCTAssertTrue(review.waitForExistence(timeout: 240))
+        let quoteStatus = app.staticTexts["privacy.wallet.status"]
+        let quoteReadyOrFailed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                review.exists || (quoteStatus.exists && quoteStatus.label == "Unable to prepare the Tor relay quote.")
+            },
+            object: nil
+        )
+        let quoteResult = XCTWaiter.wait(for: [quoteReadyOrFailed], timeout: 240)
+        guard quoteResult == .completed, review.exists else {
+            XCTFail(quoteStatus.exists ? quoteStatus.label : "No Tor relay quote or status appeared.")
+            return
+        }
         let text = "Amount \(paymentAmount) nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
             recipient.prefix(20) + "…" + recipient.suffix(20)
         XCTAssertTrue(review.staticTexts[text].exists)
@@ -771,7 +794,7 @@ final class TOSWalletUITests: XCTestCase {
         }
         if confirm {
             let status = app.staticTexts["privacy.wallet.status"]
-            let lostResponse = environment["TOS_PRIVACY_UI_LOST_RESPONSE"] == "1"
+            let lostResponse = ["1", "background"].contains(environment["TOS_PRIVACY_UI_LOST_RESPONSE"] ?? "")
             let expected = lostResponse
                 ? "Payment status is uncertain. Check the existing payment before trying again."
                 : "Relay responded. Verify payment confirmation against the chain."
@@ -780,11 +803,19 @@ final class TOSWalletUITests: XCTestCase {
             )
             XCTAssertEqual(XCTWaiter.wait(for: [responded], timeout: 240), .completed, status.label)
             if lostResponse {
-                app.terminate()
-                app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
-                app.launch()
-                XCTAssertTrue(enter.waitForExistence(timeout: 15))
-                enter.tap()
+                if backgroundRecovery {
+                    XCUIDevice.shared.press(.home)
+                    XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10)
+                        || app.state == .runningBackgroundSuspended)
+                    app.activate()
+                    XCTAssertTrue(status.waitForExistence(timeout: 15))
+                } else {
+                    app.terminate()
+                    app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+                    app.launch()
+                    XCTAssertTrue(enter.waitForExistence(timeout: 15))
+                    enter.tap()
+                }
                 let retry = app.buttons["privacy.wallet.send.retry"]
                 if !retry.isHittable { app.scrollViews.firstMatch.swipeUp() }
                 XCTAssertTrue(retry.waitForExistence(timeout: 15))
@@ -799,8 +830,11 @@ final class TOSWalletUITests: XCTestCase {
                 if !refresh.isHittable { app.scrollViews.firstMatch.swipeDown() }
                 refresh.tap()
                 if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
-                let verified = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "0.799999998 TOS"),
-                    object: app.staticTexts["privacy.wallet.balance"])
+                let expectedBalance = balanceBeforeBackgroundPayment.map {
+                    NSDecimalNumber(decimal: $0 - Decimal(100_000_001) / Decimal(1_000_000_000)).stringValue + " TOS"
+                } ?? "0.799999998 TOS"
+                let verified = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expectedBalance),
+                    object: balanceLabel)
                 XCTAssertEqual(XCTWaiter.wait(for: [verified], timeout: 45), .completed, status.label)
             }
         }

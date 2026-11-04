@@ -359,8 +359,12 @@ final class TOSPrivacyWalletViewController: UIViewController {
                     state = .recipientChecked(false)
                     return
                 }
+                guard requestID == id else { return }
+                state = .paymentProgress("Loading private payment proof materials…"); render()
                 let prover = try await service.loadPaymentProver(wallet: wallet, authorization: authorization,
                     selection: selection, phase1: configuration.phase1, ceremony: configuration.ceremony)
+                guard requestID == id else { return }
+                state = .paymentProgress("Requesting a Tor relay quote…"); render()
                 let offer = try await service.requestRelayOffer(wallet: wallet, authorization: authorization,
                     selection: selection, approvedRelay: configuration.approvedRelay)
                 let details = try offer.details()
