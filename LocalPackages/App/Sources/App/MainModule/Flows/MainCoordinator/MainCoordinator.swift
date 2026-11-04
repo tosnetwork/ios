@@ -2328,7 +2328,15 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         }
         let controller = TOSPrivacyWalletViewController(wallet: wallet, service: service, registry: registry,
             paymentConfiguration: configuration,
-            authenticate: { [weak self] in await self?.getPasscode() })
+            authenticate: { [weak self] in await self?.getPasscode() },
+            reviewDeposit: { [weak self] intent, navigation in
+                guard let self else { return }
+                let payment = TOSQuantumPaymentViewController(wallet: wallet, amount: intent.amount,
+                    recipient: nil, comment: nil, depositIntent: intent,
+                    recipientResolver: keeperCoreMainAssembly.loadersAssembly.recipientResolver(),
+                    authenticate: { [weak self] in await self?.getPasscode() != nil })
+                navigation.pushViewController(payment, animated: true)
+            })
         let navigation = TKNavigationController(rootViewController: controller)
         navigation.configureTransparentAppearance(); router.present(navigation)
     }

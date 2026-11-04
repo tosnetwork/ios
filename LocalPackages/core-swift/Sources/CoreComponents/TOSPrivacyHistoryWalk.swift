@@ -63,6 +63,40 @@ public enum TOSPrivacyHistoryWalk {
                                                 requireCurrent: requireCurrent)
         }
 
+        public func depositValue(amount: UInt64, requireCurrent: () throws -> Void) throws -> UInt64 {
+            lock.lock(); defer { lock.unlock() }
+            guard archive != nil else { throw Failure.stopped }
+            return try replay.depositValue(amount: amount, requireCurrent: requireCurrent)
+        }
+
+        public func selfDepositAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                           amount: UInt64, queryID: UInt64,
+                                           requireCurrent: () throws -> Void) throws -> Data {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard archive != nil else { throw Failure.stopped }
+            return try replay.selfDepositAndWipeSeed(seed: &seed, root: root, binding: binding,
+                amount: amount, queryID: queryID, requireCurrent: requireCurrent)
+        }
+
+        public func backupFileAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                          fd: Int32, restore: Bool, requireCurrent: () throws -> Void) throws {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard archive != nil else { throw Failure.stopped }
+            try replay.backupFileAndWipeSeed(seed: &seed, root: root, binding: binding, fd: fd,
+                                           restore: restore, requireCurrent: requireCurrent)
+        }
+
+        public func pendingStatusAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                             requireCurrent: () throws -> Void) throws -> TOSPrivacyNative.Replay.PendingStatus {
+            defer { seed.resetBytes(in: 0..<seed.count) }
+            lock.lock(); defer { lock.unlock() }
+            guard archive != nil else { throw Failure.stopped }
+            return try replay.pendingStatusAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                                       requireCurrent: requireCurrent)
+        }
+
         public func summaryAndWipeSeed(seed: inout Data, stopped: () -> Bool,
                                        recheck: () throws -> Void) throws -> Data {
             defer { seed.resetBytes(in: 0..<seed.count) }

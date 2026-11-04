@@ -129,6 +129,51 @@ public final class TOSPrivacyWalletService {
         }
     }
 
+    /// Transfer through a caller-staged regular file. A restored wallet must be re-read against chain proofs.
+    public func transferBackup(wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection,
+                               file: URL, restore: Bool) async throws {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            let root = try self.privacyStoreRoot()
+            let handle = try restore ? FileHandle(forReadingFrom: file) : FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            try completed.backupFileAndCloseMaster(master, binding: context.binding, root: Data(root.path.utf8),
+                fd: handle.fileDescriptor, restore: restore, stopped: job.stopped, now: self.now)
+        }
+    }
+
+    public func pendingStatus(wallet: Wallet, authorization: Authorization,
+                              selection: TOSPrivacyPoolSelection) async throws -> TOSPrivacyNative.Replay.PendingStatus {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            let root = try self.privacyStoreRoot()
+            return try completed.pendingStatusAndCloseMaster(master, binding: context.binding,
+                root: Data(root.path.utf8), stopped: job.stopped, now: self.now)
+        }
+    }
+
+    public func depositValue(wallet: Wallet, authorization: Authorization,
+                             selection: TOSPrivacyPoolSelection, amount: UInt64) async throws -> UInt64 {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, _, _, _, job in
+            try completed.depositValue(amount: amount, stopped: job.stopped, now: self.now)
+        }
+    }
+
+    public func prepareSelfDeposit(wallet: Wallet, authorization: Authorization,
+                                   selection: TOSPrivacyPoolSelection, amount: UInt64,
+                                   attachedValue: UInt64, queryID: UInt64) async throws -> TOSQuantumPaymentIntent {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, master, context, _, job in
+            let root = try self.privacyStoreRoot()
+            let body = try completed.selfDepositAndCloseMaster(master, binding: context.binding,
+                root: Data(root.path.utf8), amount: amount, attachedValue: attachedValue,
+                queryID: queryID, stopped: job.stopped, now: self.now)
+            return try TOSQuantumPaymentIntent(privacyPool: selection.address,
+                                               attachedValue: attachedValue, depositBOC: body)
+        }
+    }
+
     public func requestRelayOffer(
         wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection, approvedRelay: Data
     ) async throws -> TOSPrivacyNative.RelayOffer {

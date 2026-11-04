@@ -7,6 +7,27 @@ import CoreComponents
 final class TOSQuantumPaymentTests: XCTestCase {
     private let recipient = Address(workchain: 0, hash: Data(repeating: 0x42, count: 32))
 
+    func testDepositBodySurvivesOutboxEncodingAndBindsActions() throws {
+        func deposit(queryID: UInt64) throws -> Cell {
+            try Builder().store(uint: 0x53485001, bits: 32).store(uint: queryID, bits: 64)
+                .store(uint: 1, bits: 4).store(uint: 100, bits: 8)
+                .store(uint: 0, bits: 256).store(ref: Builder().endCell()).endCell()
+        }
+        let body = try deposit(queryID: 7)
+        let intent = try TOSQuantumPaymentIntent(privacyPool: recipient, attachedValue: 125,
+                                                 depositBOC: body.toBoc())
+        let restored = try JSONDecoder().decode(TOSQuantumPaymentIntent.self,
+                                                from: JSONEncoder().encode(intent))
+        XCTAssertEqual(intent, restored)
+        XCTAssertEqual(try restored.internalMessage().body.hash(), body.hash())
+        XCTAssertEqual(try restored.actions().hash(), try intent.actions().hash())
+        let other = try TOSQuantumPaymentIntent(privacyPool: recipient, attachedValue: 125,
+                                                depositBOC: deposit(queryID: 8).toBoc())
+        XCTAssertNotEqual(try intent.actions().hash(), try other.actions().hash())
+        XCTAssertThrowsError(try TOSQuantumPaymentIntent(privacyPool: recipient, attachedValue: 100,
+                                                         depositBOC: body.toBoc()))
+    }
+
     func testTOSAmountInputPreservesNanoPrecisionAndRejectsAmbiguousValues() throws {
         for (text, expected) in [("1", "1000000000"), ("0.000000001", "1"),
             ("18446744073.709551617", "18446744073709551617"), ("1.000000000", "1000000000")] {

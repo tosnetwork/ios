@@ -1,4 +1,5 @@
 import UIKit
+import UniformTypeIdentifiers
 import KeeperCore
 import CoreComponents
 import TonSwift
@@ -6,7 +7,7 @@ import TonSwift
 /// Independent privacy mode. No ordinary balance, ordinary receiving QR or
 /// unauthenticated RPC amount is displayed here.
 @MainActor
-final class TOSPrivacyWalletViewController: UIViewController {
+final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDelegate {
     struct PaymentConfiguration {
         let phase1: URL
         let ceremony: URL
@@ -101,6 +102,9 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private let retryPayment = UIButton(type: .system)
     private let send = UIButton(type: .system)
     private let paymentAmount = UITextField()
+    private let depositAmount = UITextField()
+    private let deposit = UIButton(type: .system)
+    private let reviewDeposit: (TOSQuantumPaymentIntent, UINavigationController) -> Void
     private let wallet: Wallet
     private let service: TOSPrivacyWalletService
     private let registry: TOSPrivacyPoolRegistry
@@ -108,6 +112,8 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private let amount = UILabel(), status = UILabel(), pool = UILabel()
     private let refresh = UIButton(type: .system)
     private let receive = UIButton(type: .system)
+    private let exportBackup = UIButton(type: .system), restoreBackup = UIButton(type: .system)
+    private let checkPending = UIButton(type: .system)
     private let descriptor = UITextView()
     private let copyDescriptor = UIButton(type: .system)
     private let recipient = UITextField()
@@ -122,13 +128,20 @@ final class TOSPrivacyWalletViewController: UIViewController {
 
     init(wallet: Wallet, service: TOSPrivacyWalletService, registry: TOSPrivacyPoolRegistry,
          paymentConfiguration: PaymentConfiguration? = nil,
-         authenticate: @escaping @MainActor () async -> String?) {
+         authenticate: @escaping @MainActor () async -> String?,
+         reviewDeposit: @escaping (TOSQuantumPaymentIntent, UINavigationController) -> Void) {
         self.paymentConfiguration = paymentConfiguration
+        self.reviewDeposit = reviewDeposit
         self.wallet = wallet; self.service = service; self.registry = registry; self.authenticate = authenticate
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { return nil }
-    deinit { operation?.cancel() }
+    private var stagedBackup: URL?
+
+    deinit {
+        operation?.cancel()
+        if let stagedBackup { try? FileManager.default.removeItem(at: stagedBackup.deletingLastPathComponent()) }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad(); title = "Privacy wallet"
@@ -218,19 +231,46 @@ final class TOSPrivacyWalletViewController: UIViewController {
         send.accessibilityIdentifier = "privacy.wallet.send"
         send.addAction(UIAction { [weak self] _ in self?.reviewPayment() }, for: .touchUpInside)
         stack.addArrangedSubview(send)
-        retryPayment.setTitle("Check or retry pending payment", for: .normal)
+        checkPending.setTitle("Check pending private payment", for: .normal)
+        checkPending.accessibilityIdentifier = "privacy.wallet.pending"
+        checkPending.addAction(UIAction { [weak self] _ in self?.read(forPending: true) }, for: .touchUpInside)
+        stack.addArrangedSubview(checkPending)
+        retryPayment.setTitle("Retry pending payment through Tor", for: .normal)
         retryPayment.accessibilityIdentifier = "privacy.wallet.send.retry"
         retryPayment.isHidden = paymentConfiguration == nil
         retryPayment.addAction(UIAction { [weak self] _ in self?.recoverPendingPayment() }, for: .touchUpInside)
         stack.addArrangedSubview(retryPayment)
-        for title in ["Deposit TOS", "Withdraw TOS"] {
-            let button = UIButton(type: .system); var config = UIButton.Configuration.tinted(); config.title = title
-            button.configuration = config; button.isEnabled = false; stack.addArrangedSubview(button)
-        }
+        depositAmount.placeholder = "Deposit amount in nanoTOS"
+        depositAmount.keyboardType = .numberPad
+        depositAmount.borderStyle = .roundedRect
+        depositAmount.accessibilityIdentifier = "privacy.wallet.deposit.amount"
+        let depositKeyboard = UIToolbar()
+        let dismissDepositKeyboard = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(finishDepositAmount))
+        dismissDepositKeyboard.accessibilityIdentifier = "privacy.wallet.deposit.keyboard.done"
+        depositKeyboard.items = [UIBarButtonItem(systemItem: .flexibleSpace), dismissDepositKeyboard]
+        depositKeyboard.sizeToFit()
+        depositAmount.inputAccessoryView = depositKeyboard
+        stack.addArrangedSubview(depositAmount)
+        deposit.setTitle("Deposit TOS", for: .normal)
+        deposit.accessibilityIdentifier = "privacy.wallet.deposit"
+        deposit.addAction(UIAction { [weak self] _ in self?.prepareDeposit() }, for: .touchUpInside)
+        stack.addArrangedSubview(deposit)
+        exportBackup.setTitle("Export encrypted privacy backup", for: .normal)
+        exportBackup.accessibilityIdentifier = "privacy.wallet.backup.export"
+        exportBackup.addAction(UIAction { [weak self] _ in self?.transferBackup(from: nil) }, for: .touchUpInside)
+        stack.addArrangedSubview(exportBackup)
+        restoreBackup.setTitle("Restore encrypted privacy backup", for: .normal)
+        restoreBackup.accessibilityIdentifier = "privacy.wallet.backup.restore"
+        restoreBackup.addAction(UIAction { [weak self] _ in self?.choosePrivacyBackup() }, for: .touchUpInside)
+        stack.addArrangedSubview(restoreBackup)
+        let withdraw = UIButton(type: .system)
+        withdraw.setTitle("Withdraw TOS", for: .normal)
+        withdraw.isEnabled = false
+        stack.addArrangedSubview(withdraw)
         if paymentConfiguration == nil {
             stack.addArrangedSubview(label("Private sending requires a configured Tor relay."))
         }
-        stack.addArrangedSubview(label("Depositing and withdrawing are still in development."))
+        stack.addArrangedSubview(label("Withdrawals are still in development."))
         stack.addArrangedSubview(label("Balance synchronization uses your configured TOS node. This does not mean wallet traffic is routed through Tor. Leaving this page keeps wallet recovery records."))
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(foregrounded), name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -241,6 +281,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         if isBeingDismissed || navigationController?.isBeingDismissed == true || isMovingFromParent { invalidate() }
     }
     @objc private func close() { invalidate(); dismiss(animated: true) }
+    @objc private func finishDepositAmount() { depositAmount.resignFirstResponder() }
     @objc private func backgrounded() { invalidate(); state = .locked; render() }
     @objc private func foregrounded() {
         // Retry only local configuration lookup; never reopen authentication.
@@ -256,8 +297,13 @@ final class TOSPrivacyWalletViewController: UIViewController {
     }
     private func render() {
         refresh.isEnabled = !busy && selection != nil
+        exportBackup.isEnabled = refresh.isEnabled && access != nil
+        restoreBackup.isEnabled = exportBackup.isEnabled
+        checkPending.isEnabled = exportBackup.isEnabled
         send.isEnabled = refresh.isEnabled && paymentConfiguration != nil
         paymentAmount.isEnabled = send.isEnabled
+        depositAmount.isEnabled = refresh.isEnabled
+        deposit.isEnabled = refresh.isEnabled
         retryPayment.isEnabled = send.isEnabled
         receive.isEnabled = refresh.isEnabled
         checkRecipient.isEnabled = refresh.isEnabled
@@ -325,6 +371,45 @@ final class TOSPrivacyWalletViewController: UIViewController {
             } catch {
                 guard requestID == id else { return }
                 state = .failed("Unable to resolve the pending payment through Tor. Try checking it again.")
+            }
+        }
+    }
+
+    private func prepareDeposit() {
+        view.endEditing(true)
+        guard !busy, let selection, let access else { return }
+        let text = depositAmount.text ?? ""
+        guard let amount = UInt64(text), amount > 0, String(amount) == text else {
+            state = .failed("Enter a positive deposit amount in nanoTOS.")
+            render()
+            return
+        }
+        let id = UUID(); requestID = id; busy = true
+        state = .paymentProgress("Verifying the privacy pool and deposit fee…"); render()
+        operation = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestID == id { operation = nil; busy = false; render() } }
+            do {
+                let authorization: TOSPrivacyWalletService.Authorization
+                switch access {
+                case .appPasscode:
+                    guard let password = await authenticate() else { state = .locked; return }
+                    authorization = .appPasscode(password)
+                case .devicePresence:
+                    authorization = .devicePresence
+                }
+                try Task.checkCancellation()
+                let value = try await service.depositValue(wallet: wallet, authorization: authorization,
+                                                           selection: selection, amount: amount)
+                let intent = try await service.prepareSelfDeposit(wallet: wallet, authorization: authorization,
+                    selection: selection, amount: amount, attachedValue: value, queryID: UInt64.random(in: .min ... .max))
+                try Task.checkCancellation()
+                guard requestID == id else { return }
+                state = .locked
+                if let navigationController { reviewDeposit(intent, navigationController) }
+            } catch {
+                guard requestID == id else { return }
+                state = .failed("Unable to prepare the deposit. Check the amount and your configured TOS node.")
             }
         }
     }
@@ -415,7 +500,91 @@ final class TOSPrivacyWalletViewController: UIViewController {
         }
     }
 
-    private func read(forReceipt: Bool = false, recipientInput: String? = nil) {
+    private func choosePrivacyBackup() {
+        guard !busy, selection != nil, access != nil else { return }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if stagedBackup != nil {
+            clearStagedBackup()
+            state = .paymentStatus("Encrypted privacy backup saved.")
+            render()
+        } else if let url = urls.first {
+            transferBackup(from: url)
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        clearStagedBackup()
+    }
+
+    private func clearStagedBackup() {
+        if let stagedBackup {
+            try? FileManager.default.removeItem(at: stagedBackup.deletingLastPathComponent())
+            self.stagedBackup = nil
+        }
+    }
+
+    private func transferBackup(from source: URL?) {
+        guard !busy, let selection, let access else { return }
+        let id = UUID()
+        requestID = id; busy = true; state = .loading; render()
+        operation = Task { [weak self] in
+            guard let self else { return }
+            defer { if requestID == id { operation = nil; busy = false; render() } }
+            do {
+                let authorization: TOSPrivacyWalletService.Authorization
+                switch access {
+                case .appPasscode:
+                    let password = await authenticate()
+                    try Task.checkCancellation()
+                    guard let password else { state = .locked; return }
+                    authorization = .appPasscode(password)
+                case .devicePresence:
+                    authorization = .devicePresence
+                }
+                if let source {
+                    let scoped = source.startAccessingSecurityScopedResource()
+                    defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+                    try await service.transferBackup(wallet: wallet, authorization: authorization,
+                                                     selection: selection, file: source, restore: true)
+                    let balance = try await service.read(wallet: wallet, authorization: authorization, selection: selection)
+                    try Task.checkCancellation()
+                    guard requestID == id else { return }
+                    state = .observed(balance)
+                } else {
+                    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+                    let file = directory.appendingPathComponent("tos-privacy-backup.bin")
+                    var handedToPicker = false
+                    defer { if !handedToPicker { try? FileManager.default.removeItem(at: directory) } }
+                    guard FileManager.default.createFile(atPath: file.path, contents: nil,
+                        attributes: [.protectionKey: FileProtectionType.complete]) else {
+                        throw CocoaError(.fileWriteUnknown)
+                    }
+                    try await service.transferBackup(wallet: wallet, authorization: authorization,
+                                                     selection: selection, file: file, restore: false)
+                    try Task.checkCancellation()
+                    guard requestID == id else { return }
+                    let picker = UIDocumentPickerViewController(forExporting: [file], asCopy: true)
+                    picker.delegate = self
+                    stagedBackup = file
+                    handedToPicker = true
+                    state = .paymentStatus("Choose where to save the encrypted privacy backup.")
+                    present(picker, animated: true)
+                }
+            } catch {
+                guard requestID == id else { return }
+                state = .failed(source == nil ? "Encrypted privacy backup could not be saved." :
+                    "Restore could not be verified. Check the saved state before retrying. Restore requires the original recovery material and a fresh privacy wallet.")
+            }
+        }
+    }
+
+    private func read(forReceipt: Bool = false, forPending: Bool = false, recipientInput: String? = nil) {
         guard !busy, let selection, let access else { return }
         descriptor.text = ""
         let id = UUID(); requestID = id; busy = true; state = .loading; render()
@@ -437,6 +606,15 @@ final class TOSPrivacyWalletViewController: UIViewController {
                                                                     selection: selection, input: recipientInput)
                     try Task.checkCancellation(); guard requestID == id else { return }
                     state = .recipientChecked(valid)
+                } else if forPending {
+                    let pending = try await service.pendingStatus(wallet: wallet, authorization: authorization,
+                                                                  selection: selection)
+                    try Task.checkCancellation(); guard requestID == id else { return }
+                    switch pending {
+                    case .noRecord: state = .paymentStatus("No pending private payment.")
+                    case .unobserved: state = .paymentStatus("The pool has not yet observed this payment. Its original request is retained.")
+                    case .accepted: state = .paymentStatus("The pool accepted this private payment.")
+                    }
                 } else if forReceipt {
                     let result = try await service.receive(wallet: wallet, authorization: authorization, selection: selection)
                     try Task.checkCancellation(); guard requestID == id else { return }
@@ -452,6 +630,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
                 if case TOSPrivacyWalletService.Failure.materialUnavailable = error {
                     state = .failed("This device does not have the original recovery material for your private assets. Restore your original wallet backup to continue.")
                 } else if recipientInput != nil { state = .failed("Unable to verify the private recipient.") }
+                else if forPending { state = .failed("Unable to verify the saved private payment. Refresh to try again.") }
                 else { state = .failed(forReceipt ? "Unable to create a private receiving descriptor." : "Unable to verify your private balance. Refresh to try again.") }
             }
         }

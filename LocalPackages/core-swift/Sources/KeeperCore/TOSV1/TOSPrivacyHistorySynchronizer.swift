@@ -137,6 +137,66 @@ internal enum TOSPrivacyHistorySynchronizer {
             }
         }
 
+        func depositValue(amount: UInt64, stopped: () -> Bool, now: () -> Int64) throws -> UInt64 {
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            return try history.depositValue(amount: amount) {
+                guard !stopped() else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+                try observation.requireFresh(now: now())
+            }
+        }
+
+        func selfDepositAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+                                       root: Data, amount: UInt64, attachedValue: UInt64, queryID: UInt64,
+                                       stopped: () -> Bool, now: () -> Int64) throws -> Data {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            let poolBinding = try observation.receiveBinding(now: now())
+            func requireCurrent() throws {
+                guard !stopped() else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+                try observation.requireFresh(now: now())
+            }
+            guard try history.depositValue(amount: amount, requireCurrent: requireCurrent) == attachedValue else {
+                throw TOSPrivacyNative.Failure.stateBinding
+            }
+            return try master.selfDepositAndClose(history: history, binding: binding, root: root,
+                poolBinding: poolBinding, amount: amount, queryID: queryID, requireCurrent: requireCurrent)
+        }
+
+        func backupFileAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+                                       root: Data, fd: Int32, restore: Bool,
+                                       stopped: () -> Bool, now: () -> Int64) throws {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            let poolBinding = try observation.receiveBinding(now: now())
+            try master.backupFileAndClose(history: history, binding: binding, root: root,
+                                          poolBinding: poolBinding, fd: fd, restore: restore) {
+                guard !stopped() else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+                try observation.requireFresh(now: now())
+            }
+        }
+
+        func pendingStatusAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
+                                          root: Data, stopped: () -> Bool, now: () -> Int64) throws -> TOSPrivacyNative.Replay.PendingStatus {
+            defer { master.close() }
+            lock.lock(); defer { lock.unlock() }
+            guard let observation else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+            guard binding.globalID == observation.profile.globalID, binding.birthHash == observation.birthHash,
+                  binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
+            let poolBinding = try observation.receiveBinding(now: now())
+            return try master.pendingStatusAndClose(history: history, binding: binding, root: root,
+                                                     poolBinding: poolBinding) {
+                guard !stopped() else { throw TOSPrivacyHistoryWalk.Failure.stopped }
+                try observation.requireFresh(now: now())
+            }
+        }
+
         func summaryAndCloseMaster(_ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
                                    stopped: () -> Bool, now: () -> Int64) throws -> Data {
             defer { master.close() }

@@ -11,6 +11,8 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
     public let bounce: Bool
     public let comment: String?
     public let tokenTransfer: TOSQuantumTokenTransferIntent?
+    public let privacyDepositBOC: Data?
+    public let privacyDepositPrincipal: UInt64?
     public static let maximumCommentBytes = 4096
 
     public init(recipient: Address, amount: BigUInt, bounce: Bool, comment: String? = nil) throws {
@@ -19,12 +21,38 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         self.recipient = recipient; self.amount = amount; self.bounce = bounce
         self.comment = comment?.isEmpty == true ? nil : comment
         self.tokenTransfer = nil
+        self.privacyDepositBOC = nil
+        self.privacyDepositPrincipal = nil
     }
 
     public init(tokenTransfer: TOSQuantumTokenTransferIntent) {
         self.tokenTransfer = tokenTransfer
+        self.privacyDepositBOC = nil
+        self.privacyDepositPrincipal = nil
         recipient = tokenTransfer.wallet; amount = tokenTransfer.attachedTos
         bounce = true; comment = nil
+    }
+
+    public init(privacyPool: Address, attachedValue: UInt64, depositBOC: Data) throws {
+        guard privacyPool.workchain == 0, privacyPool.hash.count == 32, (1...4096).contains(depositBOC.count) else {
+            throw TOSPQError.invalidInput
+        }
+        let root = try Self.depositRoot(depositBOC)
+        let body = try root.beginParse()
+        guard try body.loadUint(bits: 32) == 0x53485001 else { throw TOSPQError.invalidInput }
+        try body.skip(64)
+        let width = Int(try body.loadUint(bits: 4))
+        guard width > 0, width <= 8 else { throw TOSPQError.invalidInput }
+        let principal = BigUInt(try body.loadBytes(width))
+        guard principal > 0, principal < BigUInt(attachedValue), body.remainingBits == 256,
+              root.refs.count == 1 else { throw TOSPQError.invalidInput }
+        self.recipient = privacyPool; self.amount = BigUInt(attachedValue); self.bounce = true
+        self.comment = nil; self.tokenTransfer = nil; self.privacyDepositBOC = depositBOC
+        self.privacyDepositPrincipal = UInt64(principal)
+    }
+
+    private static func depositRoot(_ boc: Data) throws -> Cell {
+        try TOSRPCOrdinaryBOC.decode(boc.base64EncodedString())
     }
 
     /// Exact TOS decimal input, without locale, exponent or floating-point conversion.
@@ -57,6 +85,10 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
             return try MessageRelaxed.internal(to: tokenTransfer.wallet, value: tokenTransfer.attachedTos,
                 bounce: true, body: tokenTransfer.body())
         }
+        if let privacyDepositBOC {
+            let body = try Self.depositRoot(privacyDepositBOC)
+            return MessageRelaxed.internal(to: recipient, value: amount, bounce: true, body: body)
+        }
         return try comment.map {
             try MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, textPayload: $0)
         } ?? MessageRelaxed.internal(to: recipient, value: amount, bounce: bounce, body: Builder().endCell())
@@ -64,7 +96,7 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.recipient == rhs.recipient && lhs.amount == rhs.amount && lhs.bounce == rhs.bounce &&
-            lhs.comment.map { Data($0.utf8) } == rhs.comment.map { Data($0.utf8) } && lhs.tokenTransfer == rhs.tokenTransfer
+            lhs.comment.map { Data($0.utf8) } == rhs.comment.map { Data($0.utf8) } && lhs.tokenTransfer == rhs.tokenTransfer && lhs.privacyDepositBOC == rhs.privacyDepositBOC
     }
 
     internal func requireBound(request: Cell, role: TOSQuantumRole) throws {
@@ -78,7 +110,7 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         guard try s.loadUint(bits: 8) == 0 else { throw TOSPQError.keyBinding }
     }
 
-    private enum CodingKeys: String, CodingKey { case version, recipient, amount, bounce, comment, tokenTransfer }
+    private enum CodingKeys: String, CodingKey { case version, recipient, amount, bounce, comment, tokenTransfer, privacyDepositBOC }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let decimal = try c.decode(String.self, forKey: .amount)
@@ -87,7 +119,13 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         let recipient = try Address.parse(c.decode(String.self, forKey: .recipient))
         let bounce = try c.decode(Bool.self, forKey: .bounce)
         let comment = try c.decodeIfPresent(String.self, forKey: .comment)
-        if let token = try c.decodeIfPresent(TOSQuantumTokenTransferIntent.self, forKey: .tokenTransfer) {
+        let token = try c.decodeIfPresent(TOSQuantumTokenTransferIntent.self, forKey: .tokenTransfer)
+        if let deposit = try c.decodeIfPresent(Data.self, forKey: .privacyDepositBOC) {
+            guard bounce, comment == nil, token == nil, amount.bitWidth <= 64 else {
+                throw TOSPQError.keyBinding
+            }
+            try self.init(privacyPool: recipient, attachedValue: UInt64(amount), depositBOC: deposit)
+        } else if let token {
             guard recipient == token.wallet, amount == token.attachedTos, bounce, comment == nil else {
                 throw TOSPQError.keyBinding
             }
@@ -104,6 +142,7 @@ public struct TOSQuantumPaymentIntent: Codable, Equatable {
         try c.encode(bounce, forKey: .bounce)
         try c.encodeIfPresent(comment, forKey: .comment)
         try c.encodeIfPresent(tokenTransfer, forKey: .tokenTransfer)
+        try c.encodeIfPresent(privacyDepositBOC, forKey: .privacyDepositBOC)
     }
 }
 

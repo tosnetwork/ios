@@ -282,6 +282,70 @@ public enum TOSPrivacyNative {
         /// Issue a descriptor only after the native store commits its index.
         public func receiveAndWipeSeed(seed: inout Data, root: Data, binding: Data,
                                       requireCurrent: () throws -> Void) throws -> Data {
+            try withReservedIndexAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                           requireCurrent: requireCurrent) { handle, key, path, pins in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_receive(
+                    handle, key.baseAddress, key.count, path.baseAddress, path.count,
+                    pins.baseAddress, pins.count), exactSize: 2573)
+            }
+        }
+
+        public func depositValue(amount: UInt64, requireCurrent: () throws -> Void) throws -> UInt64 {
+            guard !Thread.isMainThread else { throw Failure.requiresWorker }
+            TOSPrivacyNative.lock.lock(); defer { TOSPrivacyNative.lock.unlock() }
+            guard let handle else { throw Failure.invalidInput }
+            try requireCurrent()
+            let bytes = try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_deposit_value(handle, amount))
+            try requireCurrent()
+            guard let value = UInt64(String(decoding: bytes, as: UTF8.self)), value >= amount else {
+                throw Failure.operationFailed
+            }
+            return value
+        }
+
+        public func selfDepositAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                          amount: UInt64, queryID: UInt64,
+                                          requireCurrent: () throws -> Void) throws -> Data {
+            try withReservedIndexAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                           requireCurrent: requireCurrent) { handle, key, path, pins in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_self_deposit(
+                    handle, key.baseAddress, key.count, path.baseAddress, path.count,
+                    pins.baseAddress, pins.count, amount, queryID))
+            }
+        }
+
+        public func backupFileAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                          fd: Int32, restore: Bool, requireCurrent: () throws -> Void) throws {
+            let result = try withReservedIndexAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                                         requireCurrent: requireCurrent) { handle, key, path, pins in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_backup_file(
+                    handle, key.baseAddress, key.count, path.baseAddress, path.count,
+                    pins.baseAddress, pins.count, fd, restore ? 1 : 0), exactSize: 1)
+            }
+            guard result.first == 1 else { throw Failure.operationFailed }
+        }
+
+        public enum PendingStatus: UInt8, Sendable { case noRecord, unobserved, accepted }
+
+        public func pendingStatusAndWipeSeed(seed: inout Data, root: Data, binding: Data,
+                                             requireCurrent: () throws -> Void) throws -> PendingStatus {
+            let result = try withReservedIndexAndWipeSeed(seed: &seed, root: root, binding: binding,
+                                                         requireCurrent: requireCurrent) { handle, key, path, pins in
+                try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_pending_status(
+                    handle, key.baseAddress, key.count, path.baseAddress, path.count,
+                    pins.baseAddress, pins.count), exactSize: 1)
+            }
+            guard let byte = result.first, let status = PendingStatus(rawValue: byte) else {
+                throw Failure.operationFailed
+            }
+            return status
+        }
+
+        private func withReservedIndexAndWipeSeed(
+            seed: inout Data, root: Data, binding: Data, requireCurrent: () throws -> Void,
+            operation: (OpaquePointer, UnsafeBufferPointer<UInt8>, UnsafeBufferPointer<UInt8>,
+                        UnsafeBufferPointer<UInt8>) throws -> Data
+        ) throws -> Data {
             defer { seed.resetBytes(in: 0..<seed.count) }
             guard seed.count == 32, (1...4096).contains(root.count), binding.count == 228 else {
                 throw Failure.invalidInput
@@ -294,10 +358,8 @@ public enum TOSPrivacyNative {
             var result = try seed.withUnsafeBytes { key in
                 try root.withUnsafeBytes { path in
                     try binding.withUnsafeBytes { pins in
-                        try TOSPrivacyNative.copyAndRelease(tos_shielded_replay_receive(
-                            handle, key.bindMemory(to: UInt8.self).baseAddress, key.count,
-                            path.bindMemory(to: UInt8.self).baseAddress, path.count,
-                            pins.bindMemory(to: UInt8.self).baseAddress, pins.count), exactSize: 2573)
+                        try operation(handle, key.bindMemory(to: UInt8.self),
+                                      path.bindMemory(to: UInt8.self), pins.bindMemory(to: UInt8.self))
                     }
                 }
             }

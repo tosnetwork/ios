@@ -47,17 +47,20 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private var busy = false, emptyJournal = false, authenticated = false
     private var outcomeUnavailable = false
     private var reloadOnAppearance = true
+    private let depositIntent: TOSQuantumPaymentIntent?
 
     init(wallet: Wallet, amount initialAmount: BigUInt, recipient initialRecipient: TonRecipient?,
-         comment initialComment: String?, token: JettonItem? = nil, recipientResolver: RecipientResolver,
+         comment initialComment: String?, token: JettonItem? = nil,
+         depositIntent: TOSQuantumPaymentIntent? = nil, recipientResolver: RecipientResolver,
          authenticate: @escaping @MainActor () async -> Bool) {
         self.wallet = wallet; self.authenticate = authenticate; self.recipientResolver = recipientResolver
         self.tokenItem = token
+        self.depositIntent = depositIntent
         self.initialRecipient = initialRecipient
         requiresComment = initialRecipient?.isMemoRequired == true
         flaggedRecipient = initialRecipient?.isScam == true
         super.init(nibName: nil, bundle: nil)
-        recipient.text = initialRecipient?.recipientAddress.addressString
+        recipient.text = depositIntent?.recipient.toRaw() ?? initialRecipient?.recipientAddress.addressString
         bounce.isOn = initialRecipient?.recipientAddress.isBouncable ?? false
         if initialAmount > 0, let formatted = TOSQuantumHistoryRecord.formatNano(String(initialAmount)) {
             amount.text = String(formatted.dropLast(4))
@@ -181,11 +184,12 @@ final class TOSQuantumPaymentViewController: UIViewController {
     }
     private func render() {
         let editable = !busy && emptyJournal && prepared == nil && pending == nil && ended == nil
-        recipient.isEnabled = editable; amount.isEnabled = editable; attachment.isEnabled = editable
+        let fieldsEditable = editable && depositIntent == nil
+        recipient.isEnabled = fieldsEditable; amount.isEnabled = fieldsEditable; attachment.isEnabled = fieldsEditable
         attachment.isHidden = tokenItem == nil; attachmentTitle.isHidden = tokenItem == nil
         bounceRow.isHidden = tokenItem != nil
-        comment.isEditable = editable && tokenItem == nil; comment.isHidden = tokenItem != nil
-        commentTitle.isHidden = tokenItem != nil; bounce.isEnabled = editable && tokenItem == nil
+        comment.isEditable = fieldsEditable && tokenItem == nil; comment.isHidden = tokenItem != nil
+        commentTitle.isHidden = tokenItem != nil; bounce.isEnabled = fieldsEditable && tokenItem == nil
         acknowledge.isEnabled = !busy && (editable || pending?.phase == .signed)
         review.isHidden = pending != nil || prepared != nil || ended != nil; review.isEnabled = editable
         sign.isHidden = prepared == nil || pending != nil; sign.isEnabled = !busy && wallet.isQuantumSelfPayAvailable
@@ -232,6 +236,18 @@ final class TOSQuantumPaymentViewController: UIViewController {
         Log.e("Quantum payment action failed", extraInfo: info)
     }
     private func show(_ intent: TOSQuantumPaymentIntent) {
+        if let principal = intent.privacyDepositPrincipal {
+            let attached = TOSQuantumHistoryRecord.formatNano(String(intent.amount)) ?? String(intent.amount)
+            let poolFee = intent.amount - BigUInt(principal)
+            let network: String
+            if case .Quantum(let identity) = wallet.identity.kind {
+                network = String(identity.wallet.initialAuthority.globalID)
+            } else {
+                network = "Unavailable"
+            }
+            details.text = "Network global ID: \(network)\nDeposit principal: \(principal) nanoTOS\nPool fee: \(poolFee) nanoTOS\nPrivacy pool: \(intent.recipient.toRaw())\nAttached value, including pool fee: \(attached)\nRoute: configured TOS node"
+            return
+        }
         if let token = intent.tokenTransfer {
             details.text = "Token master: \(token.master.toRaw())\nRecipient: \(token.recipient.toRaw())\nToken amount: \((try? TOSTokenAmount.format(token.units, decimals: token.decimals)) ?? String(token.units))\nRaw Token units: \(token.units)\nSender Token wallet: \(token.wallet.toRaw())\nAttached TOS: \(TOSQuantumHistoryRecord.formatNano(String(token.attachedTos)) ?? String(token.attachedTos))\nForwarded TOS: \(TOSQuantumHistoryRecord.formatNano(String(token.forwardTos)) ?? String(token.forwardTos))\nQuery ID: \(token.queryId)"
             return
@@ -301,6 +317,12 @@ final class TOSQuantumPaymentViewController: UIViewController {
     private func prepare() {
         view.endEditing(true)
         guard emptyJournal, pending == nil else { return }
+        if let depositIntent {
+            run("Verifying the wallet and privacy deposit…") { [self] in
+                try await prepareIntent(depositIntent)
+            }
+            return
+        }
         do {
             let text = (recipient.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             let address = try Address.parse(text)
@@ -326,26 +348,30 @@ final class TOSQuantumPaymentViewController: UIViewController {
                 } else {
                     intent = try TOSQuantumPaymentIntent(recipient: address, amount: value, bounce: selectedBounce, comment: body)
                 }
-                let value: TOSQuantumPreparedPayment
-                do {
-                    value = try await preparation.prepare(wallet: wallet, intent: intent)
-                } catch TOSQuantumPreparedPayment.Error.insufficientValue {
-                    // Preparation is read-only: no signature or journal reservation
-                    // exists yet, so the user can safely correct the amount.
-                    status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
-                    return
-                } catch TOSQuantumPreparedPayment.Error.insufficientTokenBalance {
-                    status.text = "Insufficient Token balance. Edit the amount or receive more Tokens."
-                    return
-                }
-                try Task.checkCancellation(); prepared = value; show(value.intent)
-                details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"
-                status.text = "Review these details. Signing and estimating locally will not broadcast."
+                try await prepareIntent(intent)
             }
         } catch {
             status.text = "Check the full address, positive amount and asset precision, attached TOS, required comment and recipient warning. Comments are limited to 4096 UTF-8 bytes."
         }
     }
+    private func prepareIntent(_ intent: TOSQuantumPaymentIntent) async throws {
+        let value: TOSQuantumPreparedPayment
+        do {
+            value = try await preparation.prepare(wallet: wallet, intent: intent)
+        } catch TOSQuantumPreparedPayment.Error.insufficientValue {
+            // Preparation is read-only: no signature or journal reservation
+            // exists yet, so the user can safely correct the amount.
+            status.text = "Insufficient TOS balance for this amount. Edit the amount or receive more TOS."
+            return
+        } catch TOSQuantumPreparedPayment.Error.insufficientTokenBalance {
+            status.text = "Insufficient Token balance. Edit the amount or receive more Tokens."
+            return
+        }
+        try Task.checkCancellation(); prepared = value; show(value.intent)
+        details.text = (details.text ?? "") + "\nWallet deployment: \(value.requiresDeployment ? "Required, paid by this wallet" : "Already deployed")"
+        status.text = "Review these details. Signing and estimating locally will not broadcast."
+    }
+
     private func validateRecipient(_ text: String, expected: Address, body: String) async throws -> Bool {
         let resolved = try await recipientResolver.resolverTonRecipient(string: text, network: wallet.network)
         try Task.checkCancellation()
@@ -446,7 +472,11 @@ final class TOSQuantumPaymentViewController: UIViewController {
             show(receipt.intent)
             let hash = receipt.transactionHash.map { String(format: "%02x", $0) }.joined()
             details.text = (details.text ?? "") + "\nTransaction: \(hash)\nLogical time: \(receipt.logicalTime)"
-            status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact request. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
+            if receipt.outcome == .senderSent, receipt.intent.privacyDepositPrincipal != nil {
+                status.text = "Verified: this wallet sent the exact deposit request. Refresh the privacy balance to check pool credit. The authorization remains saved."
+            } else {
+                status.text = receipt.outcome == .senderSent ? "Verified: this wallet sent the exact request. Recipient credit is not verified here. The authorization remains saved." : "The exact request was included, but this transaction did not confirm the exact transfer. Authorization retained."
+            }
         } else {
             status.text = page.authorizationExpired ? "Authorization expired according to verified chain time. Payment outcome is unverified; authorization retained." : "Payment outcome is unverified. Authorization retained."
         }

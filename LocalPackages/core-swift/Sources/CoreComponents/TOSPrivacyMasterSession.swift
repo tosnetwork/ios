@@ -71,6 +71,33 @@ public final class TOSPrivacyMasterSession {
         }
     }
 
+    public func selfDepositAndClose(history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
+                                    root: Data, poolBinding: Data, amount: UInt64, queryID: UInt64,
+                                    requireCurrent: () throws -> Void) throws -> Data {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.selfDepositAndWipeSeed(seed: &seed, root: root, binding: poolBinding,
+                amount: amount, queryID: queryID, requireCurrent: requireCurrent)
+        }
+    }
+
+    public func backupFileAndClose(history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
+                                   root: Data, poolBinding: Data, fd: Int32, restore: Bool,
+                                   requireCurrent: () throws -> Void) throws {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.backupFileAndWipeSeed(seed: &seed, root: root, binding: poolBinding,
+                                             fd: fd, restore: restore, requireCurrent: requireCurrent)
+        }
+    }
+
+    public func pendingStatusAndClose(history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
+                                      root: Data, poolBinding: Data,
+                                      requireCurrent: () throws -> Void) throws -> TOSPrivacyNative.Replay.PendingStatus {
+        try withSeedAndClose(binding: binding) { seed in
+            try history.pendingStatusAndWipeSeed(seed: &seed, root: root, binding: poolBinding,
+                                                requireCurrent: requireCurrent)
+        }
+    }
+
     public func stagePaymentAndClose(
         history: TOSPrivacyHistoryWalk.Completed, binding: Binding,
         prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer, request: Data
