@@ -79,6 +79,7 @@ archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof prepare_priv
 ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
 	@test "$(TOS_PRIVACY_PROVING)" = 1
 	@test -s "$(TOS_PRIVACY_RELEASE_DIR)/relay.json"
+	@test -s "$(TOS_PRIVACY_RELEASE_DIR)/pool.json"
 	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/phase1"
 	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/ceremony"
 endif
@@ -106,7 +107,7 @@ ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
 	@set -e; \
 		destination="$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app/PrivacyPayment"; \
 		mkdir "$$destination"; \
-		for entry in relay.json phase1 ceremony; do \
+		for entry in relay.json pool.json phase1 ceremony; do \
 			ditto "$(TOS_PRIVACY_RELEASE_DIR)/$$entry" "$$destination/$$entry"; \
 		done
 endif

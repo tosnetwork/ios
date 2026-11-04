@@ -14,11 +14,42 @@ final class TOSPrivacyWalletViewController: UIViewController {
         let approvedRecoveryRelay: Data
         let testPool: TOSPrivacyPoolSelection?
 
+        private static func parsePool(_ pool: [String: String], globalID: Int32, source: String) -> TOSPrivacyPoolSelection? {
+            func hash(_ key: String) -> Data? {
+                guard let value = pool[key], value.utf8.count == 64,
+                      value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return nil }
+                var result = Data()
+                var index = value.startIndex
+                while index < value.endIndex {
+                    let end = value.index(index, offsetBy: 2)
+                    guard let byte = UInt8(value[index..<end], radix: 16) else { return nil }
+                    result.append(byte)
+                    index = end
+                }
+                return result
+            }
+            guard let root = pool["root_hash"], let file = pool["file_hash"],
+                  let profile = try? TOSQuantumNetworkProfile(globalID: globalID, rootHash: root, fileHash: file),
+                  let account = hash("pool_account"),
+                  let codeText = pool["code_boc"], let code = Data(base64Encoded: codeText),
+                  let profileHash = hash("profile_hash"), let manifest = hash("poseidon_manifest_hash"),
+                  let vk = hash("groth16_vk_hash"),
+                  let selection = try? TOSPrivacyPoolSelection(profile: profile, address: Address(workchain: 0, hash: account), codeBOC: code,
+                      profileHash: profileHash, manifestHash: manifest, verifyingKeyHash: vk,
+                      sourceDescription: source) else { return nil }
+            return selection
+        }
+
         static func bundledRelease() -> Self? {
             guard let directory = Bundle.main.resourceURL?.appendingPathComponent("PrivacyPayment", isDirectory: true),
                   let bytes = try? Data(contentsOf: directory.appendingPathComponent("relay.json"), options: .mappedIfSafe),
                   (1...256 * 1024).contains(bytes.count),
-                  var relay = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any] else { return nil }
+                  var relay = (try? JSONSerialization.jsonObject(with: bytes)) as? [String: Any],
+                  let poolBytes = try? Data(contentsOf: directory.appendingPathComponent("pool.json"), options: .mappedIfSafe),
+                  (1...256 * 1024).contains(poolBytes.count),
+                  let pool = (try? JSONSerialization.jsonObject(with: poolBytes)) as? [String: String],
+                  let globalID = pool["global_id"].flatMap(Int32.init),
+                  let selection = parsePool(pool, globalID: globalID, source: "Bundled privacy pool") else { return nil }
             let phase1 = directory.appendingPathComponent("phase1", isDirectory: true)
             let ceremony = directory.appendingPathComponent("ceremony", isDirectory: true)
             guard FileManager.default.isReadableFile(atPath: phase1.path),
@@ -26,7 +57,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
             relay.removeValue(forKey: "lifetime")
             guard let recovery = try? JSONSerialization.data(withJSONObject: relay) else { return nil }
             return Self(phase1: phase1, ceremony: ceremony, approvedRelay: bytes,
-                        approvedRecoveryRelay: recovery, testPool: nil)
+                        approvedRecoveryRelay: recovery, testPool: selection)
         }
 
         static func simulatorFixture() -> Self? {
@@ -45,28 +76,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
             guard let recovery = try? JSONSerialization.data(withJSONObject: recovery) else { return nil }
             let testPool: TOSPrivacyPoolSelection?
             if let pool = fields["test_pool"] as? [String: String] {
-                func hash(_ key: String) -> Data? {
-                    guard let value = pool[key], value.utf8.count == 64,
-                          value.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { return nil }
-                    var result = Data()
-                    var index = value.startIndex
-                    while index < value.endIndex {
-                        let end = value.index(index, offsetBy: 2)
-                        guard let byte = UInt8(value[index..<end], radix: 16) else { return nil }
-                        result.append(byte)
-                        index = end
-                    }
-                    return result
-                }
-                guard let root = pool["root_hash"], let file = pool["file_hash"],
-                      let profile = try? TOSQuantumNetworkProfile(globalID: 3, rootHash: root, fileHash: file),
-                      let account = hash("pool_account"),
-                      let codeText = pool["code_boc"], let code = Data(base64Encoded: codeText),
-                      let profileHash = hash("profile_hash"), let manifest = hash("poseidon_manifest_hash"),
-                      let vk = hash("groth16_vk_hash"),
-                      let selection = try? TOSPrivacyPoolSelection(profile: profile, address: Address(workchain: 0, hash: account), codeBOC: code,
-                          profileHash: profileHash, manifestHash: manifest, verifyingKeyHash: vk,
-                          sourceDescription: "Isolated simulator fixture") else { return nil }
+                guard let selection = parsePool(pool, globalID: 3, source: "Isolated simulator fixture") else { return nil }
                 testPool = selection
             } else {
                 testPool = nil
