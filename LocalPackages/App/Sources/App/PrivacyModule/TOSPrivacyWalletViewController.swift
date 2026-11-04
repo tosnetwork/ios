@@ -109,6 +109,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
     private let refresh = UIButton(type: .system)
     private let receive = UIButton(type: .system)
     private let descriptor = UITextView()
+    private let copyDescriptor = UIButton(type: .system)
     private let recipient = UITextField()
     private let checkRecipient = UIButton(type: .system)
     private var selection: TOSPrivacyPoolSelection?
@@ -164,6 +165,17 @@ final class TOSPrivacyWalletViewController: UIViewController {
         receive.accessibilityIdentifier = "privacy.wallet.receive"
         receive.addAction(UIAction { [weak self] _ in self?.read(forReceipt: true) }, for: .touchUpInside)
         stack.addArrangedSubview(receive)
+        copyDescriptor.setTitle("Copy private receiving descriptor", for: .normal)
+        copyDescriptor.accessibilityIdentifier = "privacy.wallet.descriptor.copy"
+        copyDescriptor.addAction(UIAction { [weak self] _ in
+            guard let self, let value = self.descriptor.text, !value.isEmpty else { return }
+            UIPasteboard.general.setItems(
+                [["public.utf8-plain-text": value]],
+                options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(300)]
+            )
+            UIAccessibility.post(notification: .announcement, argument: "Private receiving descriptor copied.")
+        }, for: .touchUpInside)
+        stack.addArrangedSubview(copyDescriptor)
         descriptor.isEditable = false
         descriptor.accessibilityIdentifier = "privacy.wallet.descriptor"
         descriptor.heightAnchor.constraint(equalToConstant: 140).isActive = true
@@ -251,6 +263,7 @@ final class TOSPrivacyWalletViewController: UIViewController {
         checkRecipient.isEnabled = refresh.isEnabled
         recipient.isEnabled = !busy && selection != nil
         descriptor.isHidden = descriptor.text.isEmpty
+        copyDescriptor.isHidden = descriptor.isHidden
         pool.text = selection.map { "Pool: \($0.address.toRaw())\nConfiguration: \($0.sourceDescription)" }
         amount.text = "—"
         switch state {

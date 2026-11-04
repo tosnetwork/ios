@@ -652,6 +652,10 @@ final class TOSWalletUITests: XCTestCase {
         let encoded = try XCTUnwrap(descriptor.value as? String)
         let bytes = try XCTUnwrap(Data(base64Encoded: encoded))
         XCTAssertEqual(bytes.count, 2573)
+        let copy = app.buttons["privacy.wallet.descriptor.copy"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.tap()
+        // Verify the simulator clipboard from the host to avoid cross-app paste authorization.
         let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.data")
         attachment.name = "isolated-privacy-funding-descriptor"
         attachment.lifetime = .keepAlways
