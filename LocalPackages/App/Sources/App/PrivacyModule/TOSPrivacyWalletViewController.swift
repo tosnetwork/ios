@@ -469,7 +469,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
                 try Task.checkCancellation()
                 guard requestID == id else { return }
                 let confirmation = UIAlertController(title: withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment",
-                    message: "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(withdrawal ? input : String(input.prefix(20)) + "…" + String(input.suffix(20)))" +
+                    message: (withdrawal ? "Privacy pool → ordinary address\nNetwork ID \(selection.profile.globalID)\n" : "") + "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(withdrawal ? input : String(input.prefix(20)) + "…" + String(input.suffix(20)))" +
                         (poolFee.map { "\nPool fee \($0) nanoTOS\nThe recipient and withdrawal amount are public on chain. Tor hides your connection address from the relay; it does not make the payout untraceable." } ?? ""),
                     preferredStyle: .alert)
                 confirmation.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in

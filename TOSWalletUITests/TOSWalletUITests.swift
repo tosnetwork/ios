@@ -793,6 +793,15 @@ final class TOSWalletUITests: XCTestCase {
             )
             XCTAssertEqual(XCTWaiter.wait(for: [failed], timeout: 240), .completed, status.label)
             XCTAssertFalse(app.alerts[withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment"].exists)
+            if withdrawal {
+                let expectedBalance = try XCTUnwrap(environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"]) + " TOS"
+                let refresh = app.buttons["privacy.wallet.refresh"]
+                if !refresh.isHittable { app.scrollViews.firstMatch.swipeDown() }
+                refresh.tap()
+                if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+                let unchanged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expectedBalance), object: balanceLabel)
+                XCTAssertEqual(XCTWaiter.wait(for: [unchanged], timeout: 90), .completed, status.label)
+            }
             return
         }
         let review = app.alerts[withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment"]
@@ -808,11 +817,20 @@ final class TOSWalletUITests: XCTestCase {
             XCTFail(quoteStatus.exists ? quoteStatus.label : "No Tor relay quote or status appeared.")
             return
         }
-        let text = "Amount \(paymentAmount) nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
+        let direction: String
+        if withdrawal {
+            direction = "Privacy pool → ordinary address\nNetwork ID \(try XCTUnwrap(environment["TOS_QUANTUM_GLOBAL_ID"]))\n"
+        } else { direction = "" }
+        let text = direction + "Amount \(paymentAmount) nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
             (withdrawal ? recipient : String(recipient.prefix(20)) + "…" + String(recipient.suffix(20)))
         if withdrawal {
-            XCTAssertTrue(review.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", text, "Pool fee ")).firstMatch.exists)
-            XCTAssertTrue(review.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "public on chain")).firstMatch.exists)
+            let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: fixture))) as? [String: Any])
+            let poolFee = try XCTUnwrap(fields["expected_pool_fee"] as? String)
+            XCTAssertEqual(UInt64(poolFee).map(String.init), poolFee)
+            let expected = text + "\nPool fee \(poolFee) nanoTOS\nThe recipient and withdrawal amount are public on chain. Tor hides your connection address from the relay; it does not make the payout untraceable."
+            let observed = review.staticTexts.allElementsBoundByIndex.map { $0.label }
+            XCTAssertTrue(observed.contains(expected),
+                          "Expected \(String(reflecting: expected)); observed \(observed.map { String(reflecting: $0) })")
         } else { XCTAssertTrue(review.staticTexts[text].exists) }
         review.buttons[confirm ? "Confirm" : "Cancel"].tap()
         XCTAssertFalse(review.exists)
