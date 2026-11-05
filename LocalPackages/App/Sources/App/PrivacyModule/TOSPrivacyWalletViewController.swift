@@ -421,14 +421,14 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
         guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
         let input = (recipient.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let value = paymentAmount.text ?? ""
-        let ordinaryAddress = withdrawal ? try? Address.parse(input) : nil
+        let ordinaryAddress = withdrawal ? try? TOSPrivacyWithdrawalRecipient.parse(input, network: wallet.network) : nil
         let destination = withdrawal ? ordinaryAddress?.toRaw().data(using: .utf8) : Data(base64Encoded: input)
         let validRecipient = withdrawal
             ? ordinaryAddress?.workchain == 0 && ordinaryAddress?.hash.count == 32
             : input.utf8.count == 3432 && destination?.count == 2573 && destination?.base64EncodedString() == input
         guard validRecipient, let destination,
               let amount = UInt64(value), amount > 0, String(amount) == value else {
-            state = .failed(withdrawal ? "Enter an ordinary TOS address in workchain 0 and a positive amount in nanoTOS." : "Enter a private recipient and a positive amount in nanoTOS.")
+            state = .failed(withdrawal ? "Enter an ordinary TOS address in workchain 0 for the selected network and a positive amount in nanoTOS." : "Enter a private recipient and a positive amount in nanoTOS.")
             render()
             return
         }
