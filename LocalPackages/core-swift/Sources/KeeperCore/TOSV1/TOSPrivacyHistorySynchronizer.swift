@@ -85,6 +85,7 @@ internal enum TOSPrivacyHistorySynchronizer {
         func stagePaymentAndCloseMaster(
             _ master: TOSPrivacyMasterSession, binding: TOSPrivacyMasterSession.Binding,
             root: URL, recipient: Data, amount: String, fee: String, quoteIdentity: String,
+            withdrawalFee: String? = nil,
             prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer,
             now: () -> Int64
         ) throws -> TOSPrivacyNative.PaymentSubmission {
@@ -94,14 +95,20 @@ internal enum TOSPrivacyHistorySynchronizer {
             guard root.isFileURL, binding.globalID == observation.profile.globalID,
                   binding.birthHash == observation.birthHash,
                   binding.namespace == observation.namespace else { throw TOSPQError.keyBinding }
-            let request = try JSONSerialization.data(withJSONObject: [
+            var fields: [String: Any] = [
                 "root": root.path,
                 "recipient": recipient.base64EncodedString(),
                 "amount": amount,
                 "fee": fee,
                 "quote_identity": quoteIdentity,
                 "proven_time": try observation.provenShardTime(now: now()),
-            ])
+            ]
+            if let withdrawalFee {
+                guard let address = String(data: recipient, encoding: .utf8) else { throw TOSPQError.keyBinding }
+                fields["recipient"] = address
+                fields["withdrawal_fee"] = withdrawalFee
+            }
+            let request = try JSONSerialization.data(withJSONObject: fields)
             let payment = try master.stagePaymentAndClose(history: history, binding: binding,
                 prover: prover, offer: offer, request: request)
             try observation.requireFresh(now: now())

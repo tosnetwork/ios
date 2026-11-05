@@ -101,6 +101,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
     private let paymentConfiguration: PaymentConfiguration?
     private let retryPayment = UIButton(type: .system)
     private let send = UIButton(type: .system)
+    private let withdraw = UIButton(type: .system)
     private let paymentAmount = UITextField()
     private let depositAmount = UITextField()
     private let deposit = UIButton(type: .system)
@@ -193,12 +194,12 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
         descriptor.accessibilityIdentifier = "privacy.wallet.descriptor"
         descriptor.heightAnchor.constraint(equalToConstant: 140).isActive = true
         stack.addArrangedSubview(descriptor)
-        recipient.placeholder = "Private recipient descriptor"
+        recipient.placeholder = "Private descriptor or ordinary TOS address"
         recipient.accessibilityIdentifier = "privacy.wallet.recipient"
         #if DEBUG && targetEnvironment(simulator)
         if paymentConfiguration?.testPool != nil,
            let fixtureRecipient = ProcessInfo.processInfo.environment["TOS_PRIVACY_TEST_RECIPIENT"],
-           fixtureRecipient.utf8.count == 3432 {
+           [3432, 66, 48].contains(fixtureRecipient.utf8.count) {
             recipient.text = fixtureRecipient
         }
         #endif
@@ -263,14 +264,15 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
         restoreBackup.accessibilityIdentifier = "privacy.wallet.backup.restore"
         restoreBackup.addAction(UIAction { [weak self] _ in self?.choosePrivacyBackup() }, for: .touchUpInside)
         stack.addArrangedSubview(restoreBackup)
-        let withdraw = UIButton(type: .system)
-        withdraw.setTitle("Withdraw TOS", for: .normal)
-        withdraw.isEnabled = false
+        withdraw.setTitle("Withdraw through Tor", for: .normal)
+        withdraw.accessibilityIdentifier = "privacy.wallet.withdraw"
+        withdraw.isEnabled = paymentConfiguration != nil
+        withdraw.addAction(UIAction { [weak self] _ in self?.reviewPayment(withdrawal: true) }, for: .touchUpInside)
         stack.addArrangedSubview(withdraw)
         if paymentConfiguration == nil {
             stack.addArrangedSubview(label("Private sending requires a configured Tor relay."))
         }
-        stack.addArrangedSubview(label("Withdrawals are still in development."))
+        stack.addArrangedSubview(label("Tor withdrawals pay an ordinary address. The recipient and withdrawal amount are public on chain."))
         stack.addArrangedSubview(label("Balance synchronization uses your configured TOS node. This does not mean wallet traffic is routed through Tor. Leaving this page keeps wallet recovery records."))
         NotificationCenter.default.addObserver(self, selector: #selector(backgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(foregrounded), name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -301,6 +303,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
         restoreBackup.isEnabled = exportBackup.isEnabled
         checkPending.isEnabled = exportBackup.isEnabled
         send.isEnabled = refresh.isEnabled && paymentConfiguration != nil
+        withdraw.isEnabled = send.isEnabled
         paymentAmount.isEnabled = send.isEnabled
         depositAmount.isEnabled = refresh.isEnabled
         deposit.isEnabled = refresh.isEnabled
@@ -414,14 +417,18 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
         }
     }
 
-    private func reviewPayment() {
+    private func reviewPayment(withdrawal: Bool = false) {
         guard !busy, let selection, let access, let configuration = paymentConfiguration else { return }
         let input = (recipient.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let value = paymentAmount.text ?? ""
-        guard input.utf8.count == 3432, let destination = Data(base64Encoded: input),
-              destination.count == 2573, destination.base64EncodedString() == input,
+        let ordinaryAddress = withdrawal ? try? Address.parse(input) : nil
+        let destination = withdrawal ? ordinaryAddress?.toRaw().data(using: .utf8) : Data(base64Encoded: input)
+        let validRecipient = withdrawal
+            ? ordinaryAddress?.workchain == 0 && ordinaryAddress?.hash.count == 32
+            : input.utf8.count == 3432 && destination?.count == 2573 && destination?.base64EncodedString() == input
+        guard validRecipient, let destination,
               let amount = UInt64(value), amount > 0, String(amount) == value else {
-            state = .failed("Enter a private recipient and a positive amount in nanoTOS.")
+            state = .failed(withdrawal ? "Enter an ordinary TOS address in workchain 0 and a positive amount in nanoTOS." : "Enter a private recipient and a positive amount in nanoTOS.")
             render()
             return
         }
@@ -439,11 +446,17 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
                 case .devicePresence:
                     authorization = .devicePresence
                 }
-                guard try await service.validateRecipient(wallet: wallet, authorization: authorization,
-                                                          selection: selection, input: input) else {
-                    state = .recipientChecked(false)
-                    return
+                if !withdrawal {
+                    guard try await service.validateRecipient(wallet: wallet, authorization: authorization,
+                                                              selection: selection, input: input) else {
+                        state = .recipientChecked(false)
+                        return
+                    }
                 }
+                let poolFee: String?
+                if withdrawal {
+                    poolFee = try await service.withdrawalFee(wallet: wallet, authorization: authorization, selection: selection)
+                } else { poolFee = nil }
                 guard requestID == id else { return }
                 state = .paymentProgress("Loading private payment proof materials…"); render()
                 let prover = try await service.loadPaymentProver(wallet: wallet, authorization: authorization,
@@ -455,8 +468,9 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
                 let details = try offer.details()
                 try Task.checkCancellation()
                 guard requestID == id else { return }
-                let confirmation = UIAlertController(title: "Confirm private payment",
-                    message: "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(input.prefix(20))…\(input.suffix(20))",
+                let confirmation = UIAlertController(title: withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment",
+                    message: "Amount \(value) nanoTOS\nRelay fee \(details.fee) nanoTOS\nRoute Tor\nRecipient \(withdrawal ? input : String(input.prefix(20)) + "…" + String(input.suffix(20)))" +
+                        (poolFee.map { "\nPool fee \($0) nanoTOS\nThe recipient and withdrawal amount are public on chain. Tor hides your connection address from the relay; it does not make the payout untraceable." } ?? ""),
                     preferredStyle: .alert)
                 confirmation.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
                     self?.paymentConfirmation = nil
@@ -465,7 +479,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
                     guard let self, requestID == id, !busy else { return }
                     paymentConfirmation = nil
                     submitPayment(id: id, authorization: authorization, selection: selection, recipient: destination,
-                        amount: value, details: details, prover: prover, offer: offer)
+                        amount: value, details: details, prover: prover, offer: offer, withdrawalFee: poolFee)
                 })
                 state = .locked
                 paymentConfirmation = confirmation
@@ -480,7 +494,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
     private func submitPayment(
         id: UUID, authorization: TOSPrivacyWalletService.Authorization, selection: TOSPrivacyPoolSelection,
         recipient: Data, amount: String, details: TOSPrivacyNative.RelayOfferDetails,
-        prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer
+        prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer, withdrawalFee: String? = nil
     ) {
         busy = true; state = .paymentProgress("Preparing and submitting the private payment through Tor…"); render()
         operation = Task { [weak self] in
@@ -489,7 +503,7 @@ final class TOSPrivacyWalletViewController: UIViewController, UIDocumentPickerDe
             do {
                 let payment = try await service.stagePayment(wallet: wallet, authorization: authorization,
                     selection: selection, recipient: recipient, amount: amount, fee: details.fee,
-                    quoteIdentity: details.identity, prover: prover, offer: offer)
+                    quoteIdentity: details.identity, withdrawalFee: withdrawalFee, prover: prover, offer: offer)
                 _ = try await service.submitOrRetry(payment)
                 guard requestID == id else { return }
                 state = .paymentStatus("Relay responded. Verify payment confirmation against the chain.")

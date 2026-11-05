@@ -86,6 +86,7 @@ final class TOSWalletUITests: XCTestCase {
         let environment = ProcessInfo.processInfo.environment
         let preservePrivacyWallet = (name.contains("testPrivacyPaymentCanBeSubmittedThroughTor")
             || name.contains("testPrivacyPaymentReviewCanBeCancelled")
+            || name.contains("testPrivacyWithdrawal")
             || name.contains("testVerifiedPrivacyBalanceSurvivesProcessRestart")
             || name.contains("testPrivacyBalanceRpcFailureKeepsPlaceholder")
             || name.contains("testEncryptedPrivacyBackupReachesDocumentPicker")
@@ -688,11 +689,30 @@ final class TOSWalletUITests: XCTestCase {
         try privacyPayment(confirm: false, torUnavailable: true)
     }
 
-    private func privacyPayment(confirm: Bool, torUnavailable: Bool = false) throws {
+    func testPrivacyWithdrawalReviewCanBeCancelled() throws {
+        try privacyPayment(confirm: false, withdrawal: true)
+    }
+
+    func testPrivacyWithdrawalCanBeSubmittedThroughTor() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_SUBMIT"] == "1",
+              ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"] != nil else {
+            throw XCTSkip("Requires a funded isolated withdrawal wallet and expected final balance")
+        }
+        try privacyPayment(confirm: true, withdrawal: true)
+    }
+
+    func testPrivacyWithdrawalStopsWhenTorIsUnavailable() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_TOR_UNAVAILABLE"] == "1" else {
+            throw XCTSkip("Requires a closed isolated Tor SOCKS port")
+        }
+        try privacyPayment(confirm: false, torUnavailable: true, withdrawal: true)
+    }
+
+    private func privacyPayment(confirm: Bool, torUnavailable: Bool = false, withdrawal: Bool = false) throws {
         let environment = ProcessInfo.processInfo.environment
         guard let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
               let recipient = environment["TOS_PRIVACY_TEST_RECIPIENT"],
-              recipient.utf8.count == 3432 else {
+              (withdrawal ? [66, 48].contains(recipient.utf8.count) : recipient.utf8.count == 3432) else {
             throw XCTSkip("Requires the isolated privacy payment fixture and recipient")
         }
         let launchEnvironment = [
@@ -752,7 +772,7 @@ final class TOSWalletUITests: XCTestCase {
         XCTAssertTrue(recipientField.waitForExistence(timeout: 15))
         XCTAssertEqual(recipientField.value as? String, recipient)
         let insufficient = confirm && environment["TOS_PRIVACY_UI_INSUFFICIENT"] == "1"
-        let paymentAmount = insufficient ? "799999998" : "100000000"
+        let paymentAmount = withdrawal ? "1000000000" : (insufficient ? "799999998" : "100000000")
         amount.tap(); amount.typeText(paymentAmount)
         XCTAssertEqual(amount.value as? String, paymentAmount)
         let done = app.toolbars.buttons.firstMatch
@@ -761,7 +781,7 @@ final class TOSWalletUITests: XCTestCase {
         } else {
             app.scrollViews.firstMatch.swipeUp()
         }
-        let send = app.buttons["privacy.wallet.send"]
+        let send = app.buttons[withdrawal ? "privacy.wallet.withdraw" : "privacy.wallet.send"]
         if !send.isHittable { app.scrollViews.firstMatch.swipeUp() }
         XCTAssertTrue(send.isEnabled); send.tap()
         if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
@@ -772,10 +792,10 @@ final class TOSWalletUITests: XCTestCase {
                 object: status
             )
             XCTAssertEqual(XCTWaiter.wait(for: [failed], timeout: 240), .completed, status.label)
-            XCTAssertFalse(app.alerts["Confirm private payment"].exists)
+            XCTAssertFalse(app.alerts[withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment"].exists)
             return
         }
-        let review = app.alerts["Confirm private payment"]
+        let review = app.alerts[withdrawal ? "Confirm Tor withdrawal" : "Confirm private payment"]
         let quoteStatus = app.staticTexts["privacy.wallet.status"]
         let quoteReadyOrFailed = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
@@ -789,8 +809,11 @@ final class TOSWalletUITests: XCTestCase {
             return
         }
         let text = "Amount \(paymentAmount) nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
-            recipient.prefix(20) + "…" + recipient.suffix(20)
-        XCTAssertTrue(review.staticTexts[text].exists)
+            (withdrawal ? recipient : String(recipient.prefix(20)) + "…" + String(recipient.suffix(20)))
+        if withdrawal {
+            XCTAssertTrue(review.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", text, "Pool fee ")).firstMatch.exists)
+            XCTAssertTrue(review.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "public on chain")).firstMatch.exists)
+        } else { XCTAssertTrue(review.staticTexts[text].exists) }
         review.buttons[confirm ? "Confirm" : "Cancel"].tap()
         XCTAssertFalse(review.exists)
         if insufficient {
@@ -810,7 +833,16 @@ final class TOSWalletUITests: XCTestCase {
                 predicate: NSPredicate(format: "label == %@", expected), object: status
             )
             XCTAssertEqual(XCTWaiter.wait(for: [responded], timeout: 240), .completed, status.label)
-            if lostResponse {
+            if withdrawal && !lostResponse {
+                let refresh = app.buttons["privacy.wallet.refresh"]
+                if !refresh.isHittable { app.scrollViews.firstMatch.swipeDown() }
+                refresh.tap()
+                if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+                let expectedBalance = try XCTUnwrap(environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"]) + " TOS"
+                let verified = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expectedBalance), object: balanceLabel)
+                XCTAssertEqual(XCTWaiter.wait(for: [verified], timeout: 90), .completed, status.label)
+            }
+            if lostResponse || withdrawal {
                 if backgroundRecovery {
                     XCUIDevice.shared.press(.home)
                     XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10)
@@ -821,6 +853,7 @@ final class TOSWalletUITests: XCTestCase {
                     app.terminate()
                     app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
                     app.launch()
+                    if withdrawal && app.staticTexts["Enter passcode"].waitForExistence(timeout: 5) { enterPasscode("1234") }
                     XCTAssertTrue(enter.waitForExistence(timeout: 15))
                     enter.tap()
                 }
@@ -838,9 +871,14 @@ final class TOSWalletUITests: XCTestCase {
                 if !refresh.isHittable { app.scrollViews.firstMatch.swipeDown() }
                 refresh.tap()
                 if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
-                let expectedBalance = balanceBeforeBackgroundPayment.map {
-                    NSDecimalNumber(decimal: $0 - Decimal(100_000_001) / Decimal(1_000_000_000)).stringValue + " TOS"
-                } ?? "0.799999998 TOS"
+                let expectedBalance: String
+                if withdrawal {
+                    expectedBalance = try XCTUnwrap(environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"]) + " TOS"
+                } else {
+                    expectedBalance = balanceBeforeBackgroundPayment.map {
+                        NSDecimalNumber(decimal: $0 - Decimal(100_000_001) / Decimal(1_000_000_000)).stringValue + " TOS"
+                    } ?? "0.799999998 TOS"
+                }
                 let verified = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expectedBalance),
                     object: balanceLabel)
                 XCTAssertEqual(XCTWaiter.wait(for: [verified], timeout: 45), .completed, status.label)

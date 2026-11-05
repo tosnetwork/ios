@@ -195,9 +195,24 @@ public final class TOSPrivacyWalletService {
         }
     }
 
+    /// Read the fee from the authenticated pool state before user confirmation.
+    public func withdrawalFee(
+        wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection
+    ) async throws -> String {
+        try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
+                                     forReceive: true) { completed, _, _, _, job in
+            try job.check()
+            let data = try completed.info(now: self.now())
+            guard let fields = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let fee = fields["withdrawal_fee"] as? String else { throw Failure.binding }
+            return fee
+        }
+    }
+
     public func stagePayment(
         wallet: Wallet, authorization: Authorization, selection: TOSPrivacyPoolSelection,
         recipient: Data, amount: String, fee: String, quoteIdentity: String,
+        withdrawalFee: String? = nil,
         prover: TOSPrivacyNative.PaymentProver, offer: TOSPrivacyNative.RelayOffer
     ) async throws -> TOSPrivacyNative.PaymentSubmission {
         try await withVerifiedWallet(wallet: wallet, authorization: authorization, selection: selection,
@@ -206,7 +221,7 @@ public final class TOSPrivacyWalletService {
             try job.check()
             return try completed.stagePaymentAndCloseMaster(master, binding: context.binding, root: root,
                 recipient: recipient, amount: amount, fee: fee, quoteIdentity: quoteIdentity,
-                prover: prover, offer: offer, now: self.now)
+                withdrawalFee: withdrawalFee, prover: prover, offer: offer, now: self.now)
         }
     }
 
