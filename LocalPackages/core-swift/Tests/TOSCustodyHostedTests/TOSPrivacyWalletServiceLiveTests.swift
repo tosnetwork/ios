@@ -114,7 +114,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                 XCTAssertEqual(result.summary.totalOutputs, expectedOutputs)
                 XCTAssertGreaterThan(result.provenShardTime, 0)
                 stage = "issue consecutive private receipts"
-                let checkReceiptIndices = !recovering && config["payment_recipient"] == nil && config["verify_balance_only"] as? Bool != true
+                let checkReceiptIndices = !recovering && config["payment_recipient"] == nil && config["withdrawal_recipient"] == nil && config["verify_balance_only"] as? Bool != true
                 for expected in (checkReceiptIndices ? [UInt64(0), 1] : []) {
                     let descriptor = try await service.receive(wallet: wallet,
                         authorization: .appPasscode(password), selection: selection)
@@ -146,17 +146,32 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                         authorization: .appPasscode(password), selection: selection,
                         phase1: root.appendingPathComponent("phase1", isDirectory: true),
                         ceremony: root.appendingPathComponent("ceremony", isDirectory: true))
-                    if let encodedRecipient = config["payment_recipient"] as? String {
+                    if let encodedRecipient = config["payment_recipient"] as? String ?? config["withdrawal_recipient"] as? String {
                         stage = "validate isolated payment recipient"
-                        let recipient = try XCTUnwrap(Data(base64Encoded: encodedRecipient))
+                        let withdrawal = config["withdrawal_recipient"] != nil
+                        let recipient = try XCTUnwrap(withdrawal ? encodedRecipient.data(using: .utf8) : Data(base64Encoded: encodedRecipient))
                         let authorization = TOSPrivacyWalletService.Authorization.appPasscode(password)
-                        let valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
-                            selection: selection, input: encodedRecipient)
+                        let poolFee: String?
+                        let valid: Bool
+                        if withdrawal {
+                            let address = try Address.parse(encodedRecipient)
+                            XCTAssertEqual(address.workchain, 0)
+                            poolFee = try await service.withdrawalFee(wallet: wallet, authorization: authorization, selection: selection)
+                            valid = true
+                        } else {
+                            poolFee = nil
+                            valid = try await service.validateRecipient(wallet: wallet, authorization: authorization,
+                                selection: selection, input: encodedRecipient)
+                        }
                         let loseResponse = config["verify_lost_response"] as? Bool == true
                         let insufficient = config["verify_insufficient_funds"] as? Bool == true
-                        let startingBalance = insufficient ? "699999997" : recoveryRun != nil && loseResponse ? "799999998"
-                            : (loseResponse ? "899999999" : "1000000000")
-                        let endingBalance = String(try XCTUnwrap(UInt64(startingBalance)) - 100_000_001)
+                        let startingBalance = config["expected_balance"] as? String ?? (insufficient ? "699999997" : recoveryRun != nil && loseResponse ? "799999998"
+                            : (loseResponse ? "899999999" : "1000000000"))
+                        let amount = config["withdrawal_amount"] as? String ?? "100000000"
+                        let debit = try XCTUnwrap(UInt64(amount)) + (try XCTUnwrap(UInt64(poolFee ?? "0"))) + 1
+                        let initial = try XCTUnwrap(UInt64(startingBalance))
+                        guard initial >= debit else { throw TOSPQError.invalidInput }
+                        let endingBalance = String(initial - debit)
                         guard valid, result.summary.unspentBalance == startingBalance else {
                             throw TOSPQError.invalidInput
                         }
@@ -171,7 +186,7 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                             do {
                                 _ = try await service.stagePayment(wallet: wallet, authorization: authorization,
                                     selection: selection, recipient: recipient, amount: startingBalance, fee: details.fee,
-                                    quoteIdentity: details.identity, prover: prover, offer: offer)
+                                    quoteIdentity: details.identity, withdrawalFee: poolFee, prover: prover, offer: offer)
                                 XCTFail("Expected amount plus relay fee to exceed the verified balance")
                             } catch TOSPrivacyNative.Failure.operationFailed { }
                             let current = try await service.read(wallet: wallet, authorization: authorization, selection: selection)
@@ -180,8 +195,8 @@ final class TOSPrivacyWalletServiceLiveTests: XCTestCase {
                             return
                         }
                         let payment = try await service.stagePayment(wallet: wallet, authorization: authorization,
-                            selection: selection, recipient: recipient, amount: "100000000", fee: details.fee,
-                            quoteIdentity: details.identity, prover: prover, offer: offer)
+                            selection: selection, recipient: recipient, amount: amount, fee: details.fee,
+                            quoteIdentity: details.identity, withdrawalFee: poolFee, prover: prover, offer: offer)
                         stage = "submit isolated payment through Tor"
                         if loseResponse {
                             do {

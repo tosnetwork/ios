@@ -30,7 +30,14 @@ The dedicated Privacy Wallet screen can show the shielded TOS balance for a
 verified pool, deposit ordinary TOS into that pool, and prepare and submit
 private transfers through a configured Tor relayer. The app reviews the
 recipient and quote before submission and can resume a persisted payment request.
-Withdrawals to ordinary addresses are still in development.
+Development builds with privacy proving enabled also provide withdrawals through
+the configured Tor relayer. Enter an ordinary workchain-0 address (friendly or raw format) and the withdrawal
+amount on the privacy screen. Review
+the full recipient, pool fee read from verified chain state, and relay fee before
+confirming. The ordinary payout address and amount are public on chain; Tor
+protects the connection to the relayer. Balance synchronization uses the configured
+RPC separately. Retry pending payments to recover the original submitted request.
+This change is not included in the existing v1.0.5 release artifacts.
 
 Both platforms have exercised the Tor payment flow and restart recovery in
 isolated simulator or emulator environments. Production relayer availability
