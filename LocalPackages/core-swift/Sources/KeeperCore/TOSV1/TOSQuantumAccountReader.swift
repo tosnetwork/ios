@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import CoreComponents
 import BigInt
 import TonSwift
@@ -166,6 +167,109 @@ internal final class TOSQuantumAccountReader {
         return try Observation(id: id, identity: identity, profile: profile, network: network,
                                proof: proof, account: account, now: now())
     }
+    /// Pool layout comes only from an account read bound to the enrolled network.
+    /// A pool observation is not a private balance: history replay must still match it.
+    internal struct PoolObservation {
+        let id: UUID
+        let profile: TOSQuantumNetworkProfile
+        let birthHash: Data
+        let namespace: Data
+        let network: TOSQuantumProofBridge.BoundRead
+        let address: Address
+        let stateJSON: Data
+        fileprivate let proof: TOSQuantumProofBridge.BoundRead
+        fileprivate let poolDataBOC: Data
+        fileprivate let accountRoot: Data
+        fileprivate let receiptBinding: Data
+
+        func receiveBinding(now: Int64) throws -> Data {
+            try requireFresh(now: now)
+            return receiptBinding
+        }
+        func provenShardTime(now: Int64) throws -> UInt32 {
+            try requireFresh(now: now)
+            return try proof.provenAccountTime(expectedAddress: address.toRaw())
+        }
+        /// These values come exclusively from this verified same-checkpoint observation.
+        func replayRequest(now: Int64, forReceive: Bool = false) throws -> Data {
+            try requireFresh(now: now)
+            let raw = address.toRaw()
+            guard raw.hasPrefix("0:"), accountRoot.count == 32 else { throw TOSPQError.keyBinding }
+            let head = try proof.provenTransactionHead(expectedAddress: raw)
+            let gas = try network.provenConfigParam(21)
+            let gasRoot = try TOSRPCOrdinaryBOC.decode(gas.base64EncodedString())
+            let dataRoot = try TOSRPCOrdinaryBOC.decode(poolDataBOC.base64EncodedString())
+            func hex(_ value: Data) -> String { value.map { String(format: "%02x", $0) }.joined() }
+            var request: [String: Any] = ["version": 1, "global_id": profile.globalID,
+                "account_id": String(raw.dropFirst(2)), "last_hash": hex(head.hash), "last_lt": String(head.logicalTime),
+                "account_root": hex(accountRoot), "shard_time": String(try proof.provenAccountTime(expectedAddress: raw)),
+                "pool_state_boc": poolDataBOC.base64EncodedString(), "pool_data_hash": hex(dataRoot.hash()),
+                "gas_boc": gas.base64EncodedString(), "gas_hash": hex(gasRoot.hash())]
+            if forReceive { request["receive_binding"] = hex(receiptBinding) }
+            return try JSONSerialization.data(withJSONObject: request)
+        }
+        func requireFresh(now: Int64) throws {
+            try network.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
+            try network.requireSameCheckpoint(proof)
+            try proof.requireLive(now: now, maximumAge: TOSQuantumAccountReader.maximumAge)
+            guard (-60...TOSQuantumAccountReader.maximumAge).contains(now - Int64(try proof.provenAccountTime(expectedAddress: address.toRaw()))) else {
+                throw TOSPQError.invalidInput
+            }
+        }
+    }
+
+    internal func observePool(id: UUID, identity: TOSQuantumSelfPayIdentity, profile: TOSQuantumNetworkProfile,
+                              address: Address, expectedCode: Cell,
+                              profileHash: Data, manifestHash: Data, verifyingKeyHash: Data) throws -> PoolObservation {
+        guard [profileHash, manifestHash, verifyingKeyHash].allSatisfy({ $0.count == 32 }) else { throw TOSPQError.invalidInput }
+        guard identity.wallet.initialAuthority.globalID == profile.globalID else { throw TOSPQError.keyBinding }
+        // Relayed private spending does not require a deployed/funded ordinary wallet.
+        let session = try TOSQuantumProofSession(walletID: id, locallyProvisionedAnchor: profile.anchor(), baseDirectory: baseDirectory)
+        let relay = try transport()
+        let networkRequest = try JSONSerialization.data(withJSONObject: ["mode": "live", "max_age_seconds": Self.maximumAge, "config_params": [19, 21]])
+        let network = try session.readBound(request: networkRequest, now: now(), transport: relay)
+        let config = try TOSRPCOrdinaryBOC.decode(network.provenConfigParam(19).base64EncodedString()).beginParse()
+        guard try config.loadInt(bits: 32) == Int64(profile.globalID) else { throw TOSPQError.keyBinding }
+        try config.endParse()
+        let request = try network.requestAtCheckpoint(account: address.toRaw(), maximumAge: Self.maximumAge)
+        let proof = try session.readBound(request: request, now: now(), transport: relay)
+        try network.requireSameCheckpoint(proof)
+        try proof.requireLive(now: now(), maximumAge: Self.maximumAge)
+        let account = try proof.accountState(expectedAddress: address.toRaw(), expectedCodeHash: expectedCode.hash())
+        let data = try TOSQuantumAccountState.data(account, expectedAddress: address, expectedCode: expectedCode)
+        let decoded = try TOSPrivacyNative.decodePoolState(boc: data.toBoc(), expectedDataHash: data.hash())
+        guard let object = try JSONSerialization.jsonObject(with: decoded) as? [String: Any],
+              let keyText = object["verifying_key"] as? String, let key = Data(base64Encoded: keyText), key.count == 1248 else { throw TOSPQError.invalidInput }
+        func hex(_ bytes: Data) -> String { bytes.map { String(format: "%02x", $0) }.joined() }
+        guard object["profile_hash"] as? String == hex(profileHash),
+              object["poseidon_manifest_hash"] as? String == hex(manifestHash),
+              object["groth16_vk_hash"] as? String == hex(verifyingKeyHash),
+              Data(SHA256.hash(data: key)) == verifyingKeyHash else { throw TOSPQError.keyBinding }
+        func hashBytes(_ text: String) throws -> Data {
+            let digits = Array(text.utf8)
+            guard digits.count == 64 else { throw TOSPQError.keyBinding }
+            return try Data(stride(from: 0, to: digits.count, by: 2).map { offset in
+                guard let byte = UInt8(String(decoding: digits[offset..<offset + 2], as: UTF8.self), radix: 16) else {
+                    throw TOSPQError.keyBinding
+                }
+                return byte
+            })
+        }
+        var networkID = profile.globalID.bigEndian
+        var binding = withUnsafeBytes(of: &networkID) { Data($0) }
+        try binding.append(hashBytes(String(address.toRaw().dropFirst(2))))
+        try binding.append(hashBytes(profile.rootHash))
+        try binding.append(hashBytes(profile.fileHash))
+        for hash in [expectedCode.hash(), profileHash, manifestHash, verifyingKeyHash] { binding.append(hash) }
+        let result = PoolObservation(id: id, profile: profile, birthHash: identity.cell.hash(),
+                                     namespace: identity.wallet.initialAuthority.namespace,
+                                     network: network, address: address, stateJSON: decoded, proof: proof,
+                                     poolDataBOC: try data.toBoc(), accountRoot: try TOSRPCOrdinaryBOC.decode(account.base64EncodedString()).hash(),
+                                     receiptBinding: binding)
+        try result.requireFresh(now: now())
+        return result
+    }
+
     /// Raw index rows never establish ownership, code support or a balance.
     internal struct TokenObservation {
         let owner: Observation

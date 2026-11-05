@@ -244,6 +244,7 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
         walletCoordinator.didSelectTonDetails = { [weak self] in
             self?.openTonDetails(wallet: $0)
         }
+        walletCoordinator.didTapPrivacy = { [weak self] wallet in self?.openPrivacyWallet(wallet: wallet) }
 
         walletCoordinator.didSelectJettonDetails = { [weak self] wallet, jettonItem, hasPrice in
             self?.openJettonDetails(jettonItem: jettonItem, wallet: wallet, hasPrice: hasPrice)
@@ -2313,6 +2314,31 @@ final class MainCoordinator: RouterCoordinator<TabBarControllerRouter> {
             mnemonicsRepository: keeperCoreMainAssembly.secureAssembly.mnemonicsRepository(),
             securityStore: keeperCoreMainAssembly.storesAssembly.securityStore
         )
+    }
+    private func openPrivacyWallet(wallet: Wallet) {
+        let service = TOSPrivacyWalletService(mnemonics: keeperCoreMainAssembly.secureAssembly.mnemonicsRepository())
+        let configuration = TOSPrivacyWalletViewController.PaymentConfiguration.simulatorFixture()
+            ?? TOSPrivacyWalletViewController.PaymentConfiguration.bundledRelease()
+        let registry: TOSPrivacyPoolRegistry
+        if let pool = configuration?.testPool {
+            registry = TOSPrivacyPoolRegistry()
+            try? registry.registerApproved(pool)
+        } else {
+            registry = .shared
+        }
+        let controller = TOSPrivacyWalletViewController(wallet: wallet, service: service, registry: registry,
+            paymentConfiguration: configuration,
+            authenticate: { [weak self] in await self?.getPasscode() },
+            reviewDeposit: { [weak self] intent, navigation in
+                guard let self else { return }
+                let payment = TOSQuantumPaymentViewController(wallet: wallet, amount: intent.amount,
+                    recipient: nil, comment: nil, depositIntent: intent,
+                    recipientResolver: keeperCoreMainAssembly.loadersAssembly.recipientResolver(),
+                    authenticate: { [weak self] in await self?.getPasscode() != nil })
+                navigation.pushViewController(payment, animated: true)
+            })
+        let navigation = TKNavigationController(rootViewController: controller)
+        navigation.configureTransparentAppearance(); router.present(navigation)
     }
 
     private func didOpenAppWithPushNotificationTapHandler(userInfo: [AnyHashable: Any]?) {

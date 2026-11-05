@@ -122,7 +122,7 @@ public struct TOSQuantumCreationRecord: Codable {
             let attributes = try FileManager.default.attributesOfItem(atPath: directory.path)
             guard attributes[.type] as? FileAttributeType == .typeDirectory,
                   let mode = attributes[.posixPermissions] as? NSNumber, mode.intValue & 0o077 == 0 else { throw TOSPQError.invalidInput }
-        } catch CocoaError.fileReadNoSuchFile {
+        } catch let error as CocoaError where [.fileNoSuchFile, .fileReadNoSuchFile].contains(error.code) {
             if !create { return directory }
             throw TOSPQError.invalidInput
         }
@@ -173,6 +173,18 @@ public struct TOSQuantumCreationRecord: Codable {
     public static func load(id: UUID, baseDirectory: URL? = nil) throws -> Self {
         let directory = try directory(baseDirectory, create: false)
         return try read(file: directory.appendingPathComponent(id.uuidString + ".json"))
+    }
+    /// Only confirmed absence permits choosing a separately bound recovery record.
+    internal static func loadIfPresent(id: UUID, baseDirectory: URL?) throws -> Self? {
+        let directory = try directory(baseDirectory, create: false)
+        let file = directory.appendingPathComponent(id.uuidString + ".json")
+        var info = stat()
+        if lstat(file.path, &info) != 0 {
+            let reason = errno
+            if reason == ENOENT { return nil }
+            throw POSIXError(POSIXErrorCode(rawValue: reason) ?? .EIO)
+        }
+        return try read(file: file)
     }
     private static func atomicWrite(_ data: Data, file: URL, create: Bool) throws {
         guard data.count <= 32_768 else { throw TOSPQError.invalidInput }

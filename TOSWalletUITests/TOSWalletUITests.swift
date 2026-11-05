@@ -83,7 +83,17 @@ final class TOSWalletUITests: XCTestCase {
             try setProxyMode("normal", resetCounts: true)
         }
         app = XCUIApplication()
-        app.launchEnvironment["TOS_UI_TEST_RESET"] = "1"
+        let environment = ProcessInfo.processInfo.environment
+        let preservePrivacyWallet = (name.contains("testPrivacyPaymentCanBeSubmittedThroughTor")
+            || name.contains("testPrivacyPaymentReviewCanBeCancelled")
+            || name.contains("testVerifiedPrivacyBalanceSurvivesProcessRestart")
+            || name.contains("testPrivacyBalanceRpcFailureKeepsPlaceholder")
+            || name.contains("testEncryptedPrivacyBackupReachesDocumentPicker")
+            || name.contains("testRestoreEncryptedPrivacyBackupInFreshStore")
+            || name.contains("testDepositFromOrdinaryWalletOnIsolatedChain")
+            || name.contains("testSavedPrivacyDepositReceiptAfterRestart"))
+            && environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1"
+        app.launchEnvironment["TOS_UI_TEST_RESET"] = preservePrivacyWallet ? "0" : "1"
         app.launchEnvironment["TOS_RPC_URL"] = rpcURL
         app.launchEnvironment["TOS_UI_TEST_SEND_RECIPIENT"] = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU"
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = "TOS automated transfer"
@@ -624,6 +634,512 @@ final class TOSWalletUITests: XCTestCase {
             XCTAssertEqual(try control("snapshot"), original)
             retainScreenshot(named: "Quantum explicit second protected payment verified")
         }
+    }
+
+    func testPrivacyPaymentFixtureExportsFundingDescriptor() throws {
+        guard let fixture = ProcessInfo.processInfo.environment["TOS_PRIVACY_PAYMENT_FIXTURE"] else {
+            throw XCTSkip("Requires the isolated privacy payment fixture")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        app.launch()
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15))
+        enter.tap()
+        let receive = app.buttons["privacy.wallet.receive"]
+        XCTAssertTrue(receive.waitForExistence(timeout: 15))
+        receive.tap()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        let descriptor = app.textViews["privacy.wallet.descriptor"]
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            (descriptor.value as? String)?.utf8.count == 3432
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 30), .completed)
+        let encoded = try XCTUnwrap(descriptor.value as? String)
+        let bytes = try XCTUnwrap(Data(base64Encoded: encoded))
+        XCTAssertEqual(bytes.count, 2573)
+        let copy = app.buttons["privacy.wallet.descriptor.copy"]
+        XCTAssertTrue(copy.waitForExistence(timeout: 5))
+        copy.tap()
+        // Verify the simulator clipboard from the host to avoid cross-app paste authorization.
+        let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.data")
+        attachment.name = "isolated-privacy-funding-descriptor"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testPrivacyPaymentReviewCanBeCancelled() throws {
+        try privacyPayment(confirm: false)
+    }
+
+    func testPrivacyPaymentCanBeSubmittedThroughTor() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_SUBMIT"] == "1" else {
+            throw XCTSkip("Requires the funded isolated privacy payment chain")
+        }
+        try privacyPayment(confirm: true)
+    }
+
+    func testPrivacyPaymentStopsWhenTorIsUnavailable() throws {
+        guard ProcessInfo.processInfo.environment["TOS_PRIVACY_UI_TOR_UNAVAILABLE"] == "1" else {
+            throw XCTSkip("Requires an isolated fixture with a closed Tor SOCKS port")
+        }
+        try privacyPayment(confirm: false, torUnavailable: true)
+    }
+
+    private func privacyPayment(confirm: Bool, torUnavailable: Bool = false) throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              let recipient = environment["TOS_PRIVACY_TEST_RECIPIENT"],
+              recipient.utf8.count == 3432 else {
+            throw XCTSkip("Requires the isolated privacy payment fixture and recipient")
+        }
+        let launchEnvironment = [
+            "TOS_PRIVACY_PAYMENT_FIXTURE": fixture,
+            "TOS_PRIVACY_TEST_RECIPIENT": recipient
+        ]
+        if environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1" {
+            app.terminate()
+            app.launchEnvironment.merge(launchEnvironment) { _, new in new }
+            app.launch()
+        } else if confirm {
+            guard let phrase = environment["TOS_PRIVACY_UI_FUNDED_PHRASE"],
+                  phrase.split(separator: " ").count == 24 else {
+                throw XCTSkip("Requires a funded public 24-word TOS fixture")
+            }
+            launchRecoveryPhraseImport(phrase: phrase, configureQuantumNetwork: true,
+                                       additionalEnvironment: launchEnvironment)
+            app.descendants(matching: .any)["mnemonic.continue"].tap()
+            let format = app.alerts["Recovery Phrase Format"]
+            if format.waitForExistence(timeout: 1) {
+                format.buttons["Restore Quantum Wallet"].tap()
+            } else {
+                let quantum = app.alerts["Restore TOS Wallet"].buttons["Quantum Wallet"]
+                guard quantum.waitForExistence(timeout: 5) else {
+                    XCTFail("Funded fixture did not reach Quantum wallet recovery")
+                    return
+                }
+                quantum.tap()
+            }
+            let network = app.alerts["Confirm Recovery Network"]
+            XCTAssertTrue(network.waitForExistence(timeout: 10))
+            network.buttons["Use This Network"].tap()
+            completeImportedWalletToHome()
+        } else {
+            app.terminate()
+            app.launchEnvironment.merge(launchEnvironment) { _, new in new }
+            app.launch()
+            try configureLiveQuantumTestNetwork()
+            createQuantumWalletWithConfirmedBackupToHome()
+        }
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15)); enter.tap()
+        let backgroundRecovery = environment["TOS_PRIVACY_UI_LOST_RESPONSE"] == "background"
+        let balanceLabel = app.staticTexts["privacy.wallet.balance"]
+        var balanceBeforeBackgroundPayment: Decimal?
+        if backgroundRecovery {
+            app.buttons["privacy.wallet.refresh"].tap()
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+            let observed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label ENDSWITH %@", " TOS"),
+                object: balanceLabel)
+            XCTAssertEqual(XCTWaiter.wait(for: [observed], timeout: 45), .completed)
+            balanceBeforeBackgroundPayment = try XCTUnwrap(Decimal(string: String(balanceLabel.label.dropLast(4)),
+                locale: Locale(identifier: "en_US_POSIX")))
+        }
+        let recipientField = app.textFields["privacy.wallet.recipient"]
+        let amount = app.textFields["privacy.wallet.send.amount"]
+        XCTAssertTrue(recipientField.waitForExistence(timeout: 15))
+        XCTAssertEqual(recipientField.value as? String, recipient)
+        let insufficient = confirm && environment["TOS_PRIVACY_UI_INSUFFICIENT"] == "1"
+        let paymentAmount = insufficient ? "799999998" : "100000000"
+        amount.tap(); amount.typeText(paymentAmount)
+        XCTAssertEqual(amount.value as? String, paymentAmount)
+        let done = app.toolbars.buttons.firstMatch
+        if done.exists && done.isHittable {
+            done.tap()
+        } else {
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        let send = app.buttons["privacy.wallet.send"]
+        if !send.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(send.isEnabled); send.tap()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        if torUnavailable {
+            let status = app.staticTexts["privacy.wallet.status"]
+            let failed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", "Unable to prepare the Tor relay quote."),
+                object: status
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [failed], timeout: 240), .completed, status.label)
+            XCTAssertFalse(app.alerts["Confirm private payment"].exists)
+            return
+        }
+        let review = app.alerts["Confirm private payment"]
+        let quoteStatus = app.staticTexts["privacy.wallet.status"]
+        let quoteReadyOrFailed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                review.exists || (quoteStatus.exists && quoteStatus.label == "Unable to prepare the Tor relay quote.")
+            },
+            object: nil
+        )
+        let quoteResult = XCTWaiter.wait(for: [quoteReadyOrFailed], timeout: 240)
+        guard quoteResult == .completed, review.exists else {
+            XCTFail(quoteStatus.exists ? quoteStatus.label : "No Tor relay quote or status appeared.")
+            return
+        }
+        let text = "Amount \(paymentAmount) nanoTOS\nRelay fee 1 nanoTOS\nRoute Tor\nRecipient " +
+            recipient.prefix(20) + "…" + recipient.suffix(20)
+        XCTAssertTrue(review.staticTexts[text].exists)
+        review.buttons[confirm ? "Confirm" : "Cancel"].tap()
+        XCTAssertFalse(review.exists)
+        if insufficient {
+            let status = app.staticTexts["privacy.wallet.status"]
+            let rejected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@",
+                "Payment status is uncertain. Check the existing payment before trying again."), object: status)
+            XCTAssertEqual(XCTWaiter.wait(for: [rejected], timeout: 120), .completed, status.label)
+            return
+        }
+        if confirm {
+            let status = app.staticTexts["privacy.wallet.status"]
+            let lostResponse = ["1", "background"].contains(environment["TOS_PRIVACY_UI_LOST_RESPONSE"] ?? "")
+            let expected = lostResponse
+                ? "Payment status is uncertain. Check the existing payment before trying again."
+                : "Relay responded. Verify payment confirmation against the chain."
+            let responded = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected), object: status
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [responded], timeout: 240), .completed, status.label)
+            if lostResponse {
+                if backgroundRecovery {
+                    XCUIDevice.shared.press(.home)
+                    XCTAssertTrue(app.wait(for: .runningBackground, timeout: 10)
+                        || app.state == .runningBackgroundSuspended)
+                    app.activate()
+                    XCTAssertTrue(status.waitForExistence(timeout: 15))
+                } else {
+                    app.terminate()
+                    app.launchEnvironment["TOS_UI_TEST_RESET"] = "0"
+                    app.launch()
+                    XCTAssertTrue(enter.waitForExistence(timeout: 15))
+                    enter.tap()
+                }
+                let retry = app.buttons["privacy.wallet.send.retry"]
+                if !retry.isHittable { app.scrollViews.firstMatch.swipeUp() }
+                XCTAssertTrue(retry.waitForExistence(timeout: 15))
+                retry.tap()
+                if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+                let recovered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label IN %@", [
+                    "No unresolved private payment. Refresh to verify your balance.",
+                    "Relay responded. Refresh to verify payment confirmation against the chain."
+                ]), object: status)
+                XCTAssertEqual(XCTWaiter.wait(for: [recovered], timeout: 90), .completed, status.label)
+                let refresh = app.buttons["privacy.wallet.refresh"]
+                if !refresh.isHittable { app.scrollViews.firstMatch.swipeDown() }
+                refresh.tap()
+                if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+                let expectedBalance = balanceBeforeBackgroundPayment.map {
+                    NSDecimalNumber(decimal: $0 - Decimal(100_000_001) / Decimal(1_000_000_000)).stringValue + " TOS"
+                } ?? "0.799999998 TOS"
+                let verified = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", expectedBalance),
+                    object: balanceLabel)
+                XCTAssertEqual(XCTWaiter.wait(for: [verified], timeout: 45), .completed, status.label)
+            }
+        }
+    }
+
+    func testDepositFromOrdinaryWalletOnIsolatedChain() throws {
+        let environment = ProcessInfo.processInfo.environment
+        let mode = environment["TOS_PRIVACY_UI_SUBMIT_DEPOSIT"]
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              mode == "1" || mode == "drop-response",
+              let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              let expected = environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"],
+              let before = Decimal(string: expected, locale: Locale(identifier: "en_US_POSIX")), before > 0 else {
+            throw XCTSkip("Requires an isolated wallet funded with both ordinary and privacy TOS")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        if mode == "drop-response" {
+            app.launchArguments += ["-network.tos.wallet.rpcEndpoint", "http://127.0.0.1:20658/jsonRPC"]
+        }
+        app.launch()
+        func press(_ identifier: String) throws {
+            let button = app.buttons[identifier]
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"),
+                                                  object: button)
+            guard XCTWaiter.wait(for: [ready], timeout: 120) == .completed else {
+                throw NSError(domain: "PrivacyDepositUITest", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "Required action unavailable: " + identifier])
+            }
+            for _ in 0..<4 where !button.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            XCTAssertTrue(button.isHittable, identifier)
+            button.tap()
+        }
+        func unlockIfNeeded() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        }
+        func verifyBalance(_ expected: String) {
+            let balance = app.staticTexts["privacy.wallet.balance"]
+            let match = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected + " TOS"), object: balance
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [match], timeout: 90), .completed, balance.label)
+        }
+        try press("wallet.enterPrivacy")
+        try press("privacy.wallet.refresh")
+        unlockIfNeeded()
+        verifyBalance(expected)
+        let amount = app.textFields["privacy.wallet.deposit.amount"]
+        for _ in 0..<4 where !amount.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(amount.exists)
+        amount.tap(); amount.typeText("1000000000")
+        let done = app.buttons["privacy.wallet.deposit.keyboard.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 10))
+        done.tap()
+        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        try press("privacy.wallet.deposit")
+        unlockIfNeeded()
+        let startAnother = app.buttons["quantum.payment.startAnother"]
+        if startAnother.waitForExistence(timeout: 3) { try press("quantum.payment.startAnother") }
+        try press("quantum.payment.review")
+        let details = app.staticTexts["quantum.payment.details"]
+        let reviewed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label CONTAINS %@", "Deposit principal: 1000000000 nanoTOS"),
+            object: details
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [reviewed], timeout: 120), .completed)
+        try press("quantum.payment.sign")
+        unlockIfNeeded()
+        let quoted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "Estimated total debit:"),
+                                               object: details)
+        XCTAssertEqual(XCTWaiter.wait(for: [quoted], timeout: 120), .completed)
+        try press("quantum.payment.send")
+        let status = app.staticTexts["quantum.payment.status"]
+        let sent = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Submission outcome is unknown."),
+                                             object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [sent], timeout: 90), .completed, status.label)
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-network.tos.wallet.rpcEndpoint" || $0 == "http://127.0.0.1:20658/jsonRPC" }
+        app.launch()
+        try press("wallet.enterPrivacy")
+        try press("privacy.wallet.refresh")
+        unlockIfNeeded()
+        verifyBalance(NSDecimalNumber(decimal: before + 1).stringValue)
+    }
+
+    func testSavedPrivacyDepositReceiptAfterRestart() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:20655/jsonRPC" else {
+            throw XCTSkip("Requires the isolated wallet with an already submitted deposit")
+        }
+        app.terminate()
+        app.launch()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        let coin = app.collectionViews["wallet.balance.list"].cells.containing(.staticText, identifier: "TOS").firstMatch
+        XCTAssertTrue(coin.waitForExistence(timeout: 15))
+        coin.tap()
+        let saved = app.buttons["quantum.history.payment"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 15))
+        saved.tap()
+        let verify = app.buttons["quantum.payment.verify"]
+        XCTAssertTrue(waitForEnabled(verify, expected: true))
+        for _ in 0..<4 where !verify.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(verify.isHittable)
+        verify.tap()
+        let status = app.staticTexts["quantum.payment.status"]
+        let verified = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label BEGINSWITH %@", "Verified: this wallet sent the exact deposit request."),
+            object: status
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [verified], timeout: 60), .completed, status.label)
+        let details = app.staticTexts["quantum.payment.details"].label
+        XCTAssertTrue(details.contains("Deposit principal: 1000000000 nanoTOS"))
+        XCTAssertTrue(details.contains("Transaction:"))
+        if environment["TOS_PRIVACY_UI_SUBMIT_DEPOSIT"] == "retire-confirmed" {
+            let end = app.buttons["quantum.payment.end"]
+            XCTAssertTrue(waitForEnabled(end, expected: true))
+            for _ in 0..<4 where !end.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            XCTAssertTrue(end.isHittable)
+            end.tap()
+            let confirm = app.buttons["quantum.payment.confirmEnd"]
+            guard waitForEnabled(confirm, expected: true),
+                  status.label.contains("Confirm to end the expired authorization.") else {
+                XCTFail("The original deposit must be verified and expired before ending it: " + status.label)
+                return
+            }
+            for _ in 0..<4 where !confirm.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            XCTAssertTrue(confirm.isHittable)
+            confirm.tap()
+            let ended = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label BEGINSWITH %@", "Old authorization ended."), object: status
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [ended], timeout: 30), .completed, status.label)
+        }
+    }
+
+    func testEncryptedPrivacyBackupReachesDocumentPicker() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:20655/jsonRPC" else {
+            throw XCTSkip("Requires the existing isolated privacy wallet")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        app.launch()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15))
+        enter.tap()
+        let export = app.buttons["privacy.wallet.backup.export"]
+        XCTAssertTrue(waitForEnabled(export, expected: true))
+        for _ in 0..<5 where !export.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(export.isHittable)
+        export.tap()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["Save", "保存"])).firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 60))
+        save.tap()
+        let saved = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "label == %@", "Encrypted privacy backup saved."
+        ), object: app.staticTexts["privacy.wallet.status"])
+        XCTAssertEqual(XCTWaiter.wait(for: [saved], timeout: 30), .completed)
+    }
+
+    func testRestoreEncryptedPrivacyBackupInFreshStore() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              environment["TOS_PRIVACY_UI_RESTORE_BACKUP"] == "1",
+              let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:20655/jsonRPC" else {
+            throw XCTSkip("Requires the isolated wallet with its privacy store moved aside")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        app.launch()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15))
+        enter.tap()
+        func press(_ id: String) {
+            let button = app.buttons[id]
+            XCTAssertTrue(waitForEnabled(button, expected: true))
+            for _ in 0..<5 where !button.isHittable { app.scrollViews.firstMatch.swipeUp() }
+            XCTAssertTrue(button.isHittable)
+            button.tap()
+        }
+        func unlock() {
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        }
+        press("privacy.wallet.pending")
+        unlock()
+        let empty = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "label == %@", "No pending private payment."
+        ), object: app.staticTexts["privacy.wallet.status"])
+        guard XCTWaiter.wait(for: [empty], timeout: 90) == .completed else {
+            XCTFail("The fresh store must have no pending payment before restore")
+            return
+        }
+        press("privacy.wallet.backup.restore")
+        let backup = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label BEGINSWITH %@", "tos-privacy-backup")
+        ).firstMatch
+        XCTAssertTrue(backup.waitForExistence(timeout: 30))
+        backup.tap()
+        unlock()
+        let balance = app.staticTexts["privacy.wallet.balance"]
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "2.999999999 TOS"),
+                                                 object: balance)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 90), .completed, balance.label)
+        press("privacy.wallet.pending")
+        unlock()
+        let pending = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "label == %@", "The pool accepted this private payment."
+        ), object: app.staticTexts["privacy.wallet.status"])
+        XCTAssertEqual(XCTWaiter.wait(for: [pending], timeout: 90), .completed)
+    }
+
+    func testVerifiedPrivacyBalanceSurvivesProcessRestart() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              let expected = environment["TOS_PRIVACY_UI_EXPECTED_BALANCE"],
+              let value = Decimal(string: expected, locale: Locale(identifier: "en_US_POSIX")), value > 0 else {
+            throw XCTSkip("Requires the funded isolated simulator wallet and an expected TOS balance")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        for _ in 0..<2 {
+            app.launch()
+            let enter = app.buttons["wallet.enterPrivacy"]
+            XCTAssertTrue(enter.waitForExistence(timeout: 15))
+            enter.tap()
+            let balance = app.staticTexts["privacy.wallet.balance"]
+            XCTAssertEqual(balance.label, "—")
+            let refresh = app.buttons["privacy.wallet.refresh"]
+            XCTAssertTrue(refresh.waitForExistence(timeout: 15))
+            refresh.tap()
+            if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+            let observed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "label == %@", expected + " TOS"), object: balance
+            )
+            XCTAssertEqual(XCTWaiter.wait(for: [observed], timeout: 90), .completed, balance.label)
+            app.terminate()
+        }
+    }
+
+    func testPrivacyBalanceRpcFailureKeepsPlaceholder() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["TOS_PRIVACY_UI_USE_EXISTING_WALLET"] == "1",
+              let fixture = environment["TOS_PRIVACY_PAYMENT_FIXTURE"],
+              environment["TOS_UI_RPC_URL"] == "http://127.0.0.1:20657/jsonRPC" else {
+            throw XCTSkip("Requires the isolated simulator wallet and balance fault endpoint")
+        }
+        app.terminate()
+        app.launchEnvironment["TOS_PRIVACY_PAYMENT_FIXTURE"] = fixture
+        app.launchArguments += ["-network.tos.wallet.rpcEndpoint", "http://127.0.0.1:20657/jsonRPC"]
+        app.launch()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15))
+        enter.tap()
+        let balance = app.staticTexts["privacy.wallet.balance"]
+        XCTAssertEqual(balance.label, "—")
+        app.buttons["privacy.wallet.refresh"].tap()
+        if app.staticTexts["Enter passcode"].waitForExistence(timeout: 10) { enterPasscode("1234") }
+        let status = app.staticTexts["privacy.wallet.status"]
+        let loading = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Loading privacy wallet…"),
+                                                object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [loading], timeout: 5), .completed, status.label)
+        XCTAssertEqual(balance.label, "—")
+        let failure = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Unable to verify your private balance. Refresh to try again."),
+                                                object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [failure], timeout: 60), .completed, status.label)
+        XCTAssertEqual(balance.label, "—")
+    }
+
+    /// Run only on a dedicated disposable QA simulator: setUp resets its data.
+    func testPrivacyWalletIndependentUnconfiguredMode() throws {
+        try configureLiveQuantumTestNetwork()
+        createQuantumWalletWithConfirmedBackupToHome()
+        let enter = app.buttons["wallet.enterPrivacy"]
+        XCTAssertTrue(enter.waitForExistence(timeout: 15)); enter.tap()
+        let status = app.staticTexts["privacy.wallet.status"]
+        let unconfigured = "No trusted privacy pool is configured for this wallet's network."
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", unconfigured), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        XCTAssertEqual(app.staticTexts["privacy.wallet.balance"].label, "—")
+        XCTAssertFalse(app.buttons["privacy.wallet.refresh"].isEnabled)
+        for title in ["Receive privately", "Send privately", "Deposit TOS", "Withdraw TOS"] {
+            XCTAssertTrue(app.buttons[title].exists); XCTAssertFalse(app.buttons[title].isEnabled)
+        }
+        XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+        retainScreenshot(named: "Independent privacy mode without approved pool")
+        XCUIDevice.shared.press(.home); app.activate()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate:
+            NSPredicate(format: "label == %@", unconfigured), object: status)], timeout: 10), .completed)
+        XCTAssertFalse(app.staticTexts["Enter passcode"].exists)
+        app.buttons["Ordinary wallet"].tap()
+        XCTAssertTrue(enter.waitForExistence(timeout: 10))
     }
 
     func testQuantumCreationOnLiveNetworkPersistsOriginalAddressAcrossRelaunch() throws {
@@ -2680,7 +3196,8 @@ final class TOSWalletUITests: XCTestCase {
         phrase: String,
         comment: String = "TOS automated transfer",
         recipient: String = "Ef8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAU",
-        configureQuantumNetwork: Bool = false
+        configureQuantumNetwork: Bool = false,
+        additionalEnvironment: [String: String] = [:]
     ) {
         app.terminate()
         app = XCUIApplication()
@@ -2690,6 +3207,7 @@ final class TOSWalletUITests: XCTestCase {
         app.launchEnvironment["TOS_UI_TEST_SEND_COMMENT"] = comment
         app.launchEnvironment["TOS_RPC_URL"] = ProcessInfo.processInfo.environment["TOS_UI_RPC_URL"]
             ?? "http://127.0.0.1:18645"
+        app.launchEnvironment.merge(additionalEnvironment) { _, new in new }
         app.launch()
         if configureQuantumNetwork {
             do { try configureLiveQuantumTestNetwork() }

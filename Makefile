@@ -8,6 +8,7 @@ SHELL := /bin/sh
 	setup \
 	tonconnect_generate \
 	compile \
+	prepare_privacy_native \
 	archive_v1_release \
 	test \
 	test_all \
@@ -42,14 +43,18 @@ tonconnect_generate:
 
 BUILD_DIR := ./build
 BUILD_JOBS ?= 4
+TOS_PRIVACY_PROVING ?= 0
 
 prepare_quantum_fee_state:
 	python3 scripts/build_quantum_fee_state.py
 
+prepare_privacy_native:
+	python3 scripts/build_privacy_native.py --platform ios $(if $(filter 1,$(TOS_PRIVACY_PROVING)),--proving)
+
 prepare_quantum_proof:
 	python3 scripts/build_quantum_proof.py
 
-compile: prepare_quantum_fee_state prepare_quantum_proof
+compile: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	mkdir -p $(BUILD_DIR)
 	echo 'building TosWallet...' && \
@@ -70,7 +75,14 @@ compile: prepare_quantum_fee_state prepare_quantum_proof
 		-clonedSourcePackagesDirPath $(BUILD_DIR)/SourcePackages \
 		build 2>&1 | tee $(BUILD_DIR)/compile-raw.log | xcbeautify
 
-archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof
+archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native
+ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
+	@test "$(TOS_PRIVACY_PROVING)" = 1
+	@test -s "$(TOS_PRIVACY_RELEASE_DIR)/relay.json"
+	@test -s "$(TOS_PRIVACY_RELEASE_DIR)/pool.json"
+	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/phase1"
+	@test -d "$(TOS_PRIVACY_RELEASE_DIR)/ceremony"
+endif
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(BUILD_DIR)/release-archive
 	@echo 'archiving unsigned TOS Wallet release...' && \
@@ -91,6 +103,14 @@ archive_v1_release: prepare_quantum_fee_state prepare_quantum_proof
 		CODE_SIGNING_REQUIRED=NO \
 		archive \
 		-archivePath $(BUILD_DIR)/release-archive/TOSWallet.xcarchive | xcbeautify
+ifneq ($(strip $(TOS_PRIVACY_RELEASE_DIR)),)
+	@set -e; \
+		destination="$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app/PrivacyPayment"; \
+		mkdir "$$destination"; \
+		for entry in relay.json pool.json phase1 ceremony; do \
+			ditto "$(TOS_PRIVACY_RELEASE_DIR)/$$entry" "$$destination/$$entry"; \
+		done
+endif
 	python3 scripts/tests/check_release_test_hooks.py "$(BUILD_DIR)/release-archive/TOSWallet.xcarchive/Products/Applications/TOS Wallet.app"
 
 # Test
@@ -146,7 +166,7 @@ test_all:
 
 TEST_ACTION ?= $(if $(TEST_RUN_FILE),test-without-building,test)
 
-test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof)
+test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_quantum_proof prepare_privacy_native)
 	@scripts/require_tool.sh xcbeautify "brew install xcbeautify"
 	@mkdir -p $(TEST_BUILD_ROOT) \
 		$(TEST_BUILD_ROOT)/swiftpm-cache \
@@ -160,6 +180,17 @@ test_project_scheme: $(if $(TEST_RUN_FILE),,prepare_quantum_fee_state prepare_qu
 		result_bundle="$(TEST_BUILD_ROOT)/TestResults/$(SCHEME)-$$(date +%Y%m%dT%H%M%S)-$$$$.xcresult"; \
 		SWIFTPM_CONFIG_DIR=$(TEST_BUILD_ROOT)/swiftpm-config \
 		CLANG_MODULE_CACHE_PATH=$(TEST_BUILD_ROOT)/clang-module-cache \
+		TEST_RUNNER_TOS_PRIVACY_LIVE_CONFIG='$(TOS_PRIVACY_LIVE_CONFIG)' \
+		TEST_RUNNER_TOS_PRIVACY_PAYMENT_FIXTURE='$(TOS_PRIVACY_PAYMENT_FIXTURE)' \
+		TEST_RUNNER_TOS_PRIVACY_TEST_RECIPIENT='$(TOS_PRIVACY_TEST_RECIPIENT)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_SUBMIT='$(TOS_PRIVACY_UI_SUBMIT)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_USE_EXISTING_WALLET='$(TOS_PRIVACY_UI_USE_EXISTING_WALLET)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_RESTORE_BACKUP='$(TOS_PRIVACY_UI_RESTORE_BACKUP)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_EXPECTED_BALANCE='$(TOS_PRIVACY_UI_EXPECTED_BALANCE)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_SUBMIT_DEPOSIT='$(TOS_PRIVACY_UI_SUBMIT_DEPOSIT)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_LOST_RESPONSE='$(TOS_PRIVACY_UI_LOST_RESPONSE)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_INSUFFICIENT='$(TOS_PRIVACY_UI_INSUFFICIENT)' \
+		TEST_RUNNER_TOS_PRIVACY_UI_FUNDED_PHRASE='$(TOS_PRIVACY_UI_FUNDED_PHRASE)' \
 		TEST_RUNNER_TOS_PQ_CHAIN_TIME='$(TOS_PQ_CHAIN_TIME)' \
 		TEST_RUNNER_TOS_PQ_NONCE='$(TOS_PQ_NONCE)' \
 		TEST_RUNNER_TOS_UI_RPC_URL='$(TOS_UI_RPC_URL)' \

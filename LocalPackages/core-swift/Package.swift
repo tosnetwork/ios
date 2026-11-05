@@ -30,6 +30,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-openapi-runtime", .upToNextMinor(from: "0.3.0")),
     ],
     targets: [
+        .binaryTarget(name: "TOSShielded", path: "Generated/TOSShielded.xcframework"),
         .binaryTarget(name: "TOSProofVerify", path: "Generated/TOSProofVerify.xcframework"),
         .binaryTarget(name: "TOSFeeState", path: "Generated/TOSFeeState.xcframework"),
         .target(name: "TOSPQNative", path: "Sources/TOSPQNative",
@@ -50,7 +51,7 @@ let package = Package(
             cxxSettings: [.headerSearchPath("."), .headerSearchPath("vendor/lms-reference"), .headerSearchPath("vendor/slhdsa"), .define("TOS_LMS_PORTABLE_SHA256", to: "1")]),
         .target(
             name: "CoreComponents",
-            dependencies: ["TOSPQNative", "TOSFeeState", "TOSProofVerify",
+            dependencies: ["TOSPQNative", "TOSFeeState", "TOSProofVerify", "TOSShielded",
                 .product(name: "TonSwift", package: "ton-swift"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "TKKeychain", package: "TKKeychain"),
@@ -111,7 +112,7 @@ let package = Package(
             dependencies: [
                 "KeeperCore",
             ],
-            resources: [.copy("TestData/quantum-backup-exchange-v1"), .copy("TestData/quantum-payment"), .copy("TestData/quantum-transactions"), .copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json"), .copy("TestData/tos-native-active-wallet.json")],
+            resources: [.copy("TestData/privacy-pool-state.boc"), .copy("TestData/privacy-history.json"), .copy("TestData/privacy-session.json"), .copy("TestData/privacy-scan.json"), .copy("TestData/privacy-descriptors.json"), .copy("TestData/quantum-backup-exchange-v1"), .copy("TestData/quantum-payment"), .copy("TestData/quantum-transactions"), .copy("TestData/quantum-self-pay-live"), .copy("TestData/tos-quantum-self-pay.json"), .copy("TestData/quantum-live-genesis"), .copy("TestData/tos-quantum-initial-recovery.json"), .copy("TestData/tip-1-dns-v1.json"), .copy("TestData/tos-pq-auth-vectors.json"), .copy("TestData/tos-pq-receipt-vectors.json"), .copy("TestData/tos-v5-reference-vectors.json"), .copy("TestData/tos-mnemonic-goldens.json"), .copy("TestData/tos-legacy-wallet-rpc-snapshots.json"), .copy("TestData/tos-native-active-wallet.json")],
 
             swiftSettings: [
                 .treatAllWarnings(as: .error),
